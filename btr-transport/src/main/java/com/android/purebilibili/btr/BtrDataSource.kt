@@ -8,6 +8,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Media3 boundary for the BTR downloader. A GET of a registered track is downloaded by BTR and
  * handed over in order: a bounded range (a DASH segment) as one range, an open-ended read (the
- * host's progressive path) as consecutive windows, at most [LOOKAHEAD_WINDOWS] ahead of the reader.
+ * host's progressive path) as consecutive windows started only as the player reads up to them.
  * Anything else, and any failure, goes to [fallback] from the first byte not yet delivered.
  */
 @UnstableApi
@@ -36,6 +37,8 @@ class BtrDataSource(private val fallback: DataSource) : BaseDataSource(true) {
     private var current: ByteArray? = null
     private var currentOffset = 0
     private var delivered = 0L
+    // How far the player has read, for the producer on the download loop.
+    @Volatile private var readPosition = 0L
     private var length = 0L
     private var usingFallback = false
     private var fallbackOpened = false
@@ -57,6 +60,7 @@ class BtrDataSource(private val fallback: DataSource) : BaseDataSource(true) {
     override fun open(dataSpec: DataSpec): Long {
         this.dataSpec = dataSpec
         delivered = 0
+        readPosition = dataSpec.position
         current = null
         currentOffset = 0
         window = null
@@ -83,6 +87,9 @@ class BtrDataSource(private val fallback: DataSource) : BaseDataSource(true) {
                         else -> WINDOW_BYTES
                     }
                     val windowEnd = end?.let { minOf(it, start + size - 1) } ?: (start + size - 1)
+                    // Download on the player's demand: a window starts only once the player has read
+                    // to within one window of it. A full buffer stops the reads, and so the downloads.
+                    while (index > 0 && start - readPosition > READ_AHEAD_BYTES) delay(DEMAND_POLL_MS)
                     val signals = LinkedBlockingQueue<Signal>()
                     // Suspends while LOOKAHEAD_WINDOWS windows wait for the reader.
                     ordered.send(signals)
@@ -196,6 +203,7 @@ class BtrDataSource(private val fallback: DataSource) : BaseDataSource(true) {
 
     private fun countBytes(count: Int) {
         delivered += count
+        readPosition = (dataSpec?.position ?: 0) + delivered
         if (transferring) bytesTransferred(count)
     }
 
@@ -286,7 +294,9 @@ class BtrDataSource(private val fallback: DataSource) : BaseDataSource(true) {
         // An open-ended read starts small to learn the file length quickly, then reads ahead in
         // windows like BTR's segment window (a few segments in flight).
         private const val FIRST_WINDOW_BYTES = 1024L * 1024
-        private const val WINDOW_BYTES = 4L * 1024 * 1024
+        private const val WINDOW_BYTES = 2L * 1024 * 1024
+        private const val READ_AHEAD_BYTES = WINDOW_BYTES
+        private const val DEMAND_POLL_MS = 50L
         private const val LOOKAHEAD_WINDOWS = 2
         private const val POLL_MS = 10L
         private const val HOST_LOG_MIN_BYTES = 256L * 1024
