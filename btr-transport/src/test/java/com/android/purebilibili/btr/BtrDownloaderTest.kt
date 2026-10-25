@@ -72,7 +72,7 @@ class BtrDownloaderTest {
         val settings = BtrSettings(mode = BtrCdnMode.CUSTOM, customHosts = customHosts, concurrency = concurrency)
         val downloader = BtrDownloader(fetcher, { settings }, BtrAutoConcurrency(clock), clock)
         val bans = BtrBanList()
-        val resolver = BtrResolver(listOf(original), { BtrCdnMode.CUSTOM }, { customHosts }, bans) { testScheduler.currentTime }
+        val resolver = BtrResolver(listOf(original), { BtrCdnMode.CUSTOM }, { customHosts }, bans, clock = { testScheduler.currentTime })
         return Harness(downloader, fetcher, resolver, bans)
     }
 
@@ -184,5 +184,26 @@ class BtrDownloaderTest {
         assertContentEquals(bytes(0, 2 * KIB), result.bytes)
         assertEquals(1, result.pieceCount)
         assertTrue(testScheduler.currentTime < 1_000)
+    }
+
+    @Test
+    fun aStartWithKnownNodesProbesOnlyTheFastestThree() = runTest {
+        val mainland = BtrCdnHosts.MAINLAND.take(6)
+        val fetcher = FakeFetcher(file, mainland.associateWith { FakeNode() })
+        val clock = { testScheduler.currentTime.toDouble() }
+        val settings = BtrSettings(mode = BtrCdnMode.CUSTOM, customHosts = mainland, concurrency = 8)
+        val downloader = BtrDownloader(fetcher, { settings }, BtrAutoConcurrency(clock), clock)
+        val stats = BtrNodeStats { testScheduler.currentTime }
+        listOf(mainland[3] to 9e6, mainland[1] to 7e6, mainland[4] to 5e6).forEach { (host, bps) ->
+            stats.record(host, bps, success = true)
+        }
+        val resolver = BtrResolver(listOf(original), { BtrCdnMode.CUSTOM }, { mainland }, clock = { testScheduler.currentTime }, nodeStats = stats)
+        val out = java.io.ByteArrayOutputStream()
+        downloader.downloadRange(range(0, 1024 * KIB), resolver, BtrRangeOptions(startup = true, onOrderedChunk = { chunk, _, _ ->
+            out.write(chunk)
+        }))
+        assertContentEquals(bytes(0, 1024 * KIB), out.toByteArray())
+        val head = fetcher.requests.takeWhile { it.start == 0L }
+        assertEquals(setOf(mainland[3], mainland[1], mainland[4]), head.map { it.host }.toSet())
     }
 }

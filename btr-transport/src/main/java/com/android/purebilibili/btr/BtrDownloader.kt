@@ -327,7 +327,13 @@ class BtrDownloader(
             }
             val candidates = pieceCandidates(piece, resolver, preferredUrls, round)
             val limit = minOf(8, candidates.size)
-            val batchWidth = if (probe) limit else 2
+            // A start races its probe over every candidate only while nodes are unmeasured; once
+            // two or more are known, the fastest few are enough and the others stay for rescue.
+            val batchWidth = when {
+                !probe -> 2
+                candidates.count { resolver.speed(it) > 0 } >= 2 -> minOf(limit, PROBE_FAST_WIDTH)
+                else -> limit
+            }
             val tried = HashSet<String>()
             while (tried.size < limit) {
                 currentCoroutineContext().ensureActive()
@@ -687,6 +693,7 @@ class BtrDownloader(
 
     companion object {
         private const val PIECE_ROUNDS = 3
+        private const val PROBE_FAST_WIDTH = 3
         private const val PIECE_RETRY_WINDOW_MS = 25_000.0
         // Below this a resumed request saves less than its own round trip costs.
         private const val RESUME_MIN_BYTES = 32L * 1024

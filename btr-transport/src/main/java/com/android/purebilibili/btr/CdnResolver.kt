@@ -144,6 +144,43 @@ class BtrBanList(private val limit: Int = 2, private val onBan: (String, String)
 data class BtrNodeStatus(val host: String, val state: String, val bps: Double)
 
 /**
+ * What each node delivered recently, kept across videos. A new video starts from these instead of
+ * probing every node again; a track's own fresher measurements still come first.
+ */
+class BtrNodeStats(private val clock: () -> Long = System::currentTimeMillis) {
+    /** [measuredAt] is null until a transfer long enough to give a speed. */
+    data class Sample(val bps: Double, val measuredAt: Long?, val lastSuccessAt: Long)
+
+    private val nodes = HashMap<String, Sample>()
+
+    @Synchronized
+    fun record(host: String, bps: Double, success: Boolean) {
+        if (host.isEmpty()) return
+        val now = clock()
+        val old = nodes[host]
+        val measured = bps > 0
+        nodes[host] = Sample(
+            bps = if (!measured) old?.bps ?: 0.0 else old?.bps?.takeIf { it > 0 }?.let { it * 0.65 + bps * 0.35 } ?: bps,
+            measuredAt = if (measured) now else old?.measuredAt,
+            lastSuccessAt = if (success) now else old?.lastSuccessAt ?: 0
+        )
+    }
+
+    /** A sample measured within [PRIOR_TTL_MS]; null otherwise. */
+    @Synchronized
+    fun get(host: String): Sample? = nodes[host]?.takeIf { sample ->
+        sample.measuredAt?.let { clock() - it < PRIOR_TTL_MS } == true
+    }
+
+    @Synchronized fun clear() = nodes.clear()
+
+    companion object {
+        // Longer than a track's own lifetime: a node fast ten minutes ago is the best first guess.
+        const val PRIOR_TTL_MS = 10 * 60_000L
+    }
+}
+
+/**
  * Per-track node selection. A measured speed counts for [MEASUREMENT_TTL_MS]; a node left out for
  * being slow then becomes untested again and gets another try through the exploration slot.
  */
@@ -152,7 +189,8 @@ class BtrResolver(
     private val mode: () -> BtrCdnMode,
     private val customHosts: () -> List<String> = { emptyList() },
     private val bans: BtrBanList? = null,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val nodeStats: BtrNodeStats? = null
 ) {
     private data class Health(val failures: Int = 0, val blockedUntil: Long = 0, val lastSuccessAt: Long = 0)
     private data class Route(val lastSuccessAt: Long = 0, val lastMeasuredAt: Long = 0, val bps: Double = 0.0)
@@ -167,9 +205,19 @@ class BtrResolver(
     private fun routeOf(url: String): String =
         runCatching { URI(url).let { "${it.rawAuthority}${it.rawPath}" } }.getOrDefault(url)
 
-    private fun measurement(url: String): Route? = routes[routeOf(url)]
+    private fun ownMeasurement(url: String): Route? = routes[routeOf(url)]
+    private fun ownFresh(route: Route?, now: Long): Boolean =
+        route != null && route.lastMeasuredAt > 0 && now - route.lastMeasuredAt < MEASUREMENT_TTL_MS
+
+    // This track's own measurement while fresh, else what the node delivered for earlier videos.
+    private fun measurement(url: String): Route? {
+        val own = ownMeasurement(url)
+        if (ownFresh(own, clock())) return own
+        val prior = nodeStats?.get(hostOf(url)) ?: return own
+        return Route(maxOf(own?.lastSuccessAt ?: 0, prior.lastSuccessAt), prior.measuredAt ?: 0, prior.bps)
+    }
     private fun measuredNow(url: String, now: Long): Boolean =
-        measurement(url)?.lastMeasuredAt?.let { it > 0 && now - it < MEASUREMENT_TTL_MS } == true
+        ownFresh(ownMeasurement(url), now) || nodeStats?.get(hostOf(url)) != null
     private val bySpeed = Comparator<String> { a, b ->
         val am = measurement(a) ?: Route()
         val bm = measurement(b) ?: Route()
@@ -203,10 +251,12 @@ class BtrResolver(
         val now = clock()
         val pool = urls().filter { open(it, now) }.sortedWith(bySpeed)
         if (pool.isEmpty()) return urls()
-        val width = minOf(if (mediaRangeCount == 0) pool.size else 6, pool.size)
+        // Nodes measured for earlier videos make the warm-up unnecessary.
+        val known = pool.count { measuredNow(it, now) } >= 2
+        val width = minOf(if (mediaRangeCount == 0 && !known) pool.size else 6, pool.size)
         val warmupRanges = if (mode() == BtrCdnMode.MAINLAND) 1 else 4
         val selected: MutableList<String>
-        if (mediaRangeCount < warmupRanges) {
+        if (mediaRangeCount < warmupRanges && !known) {
             selected = pool.take(width).toMutableList()
             rangeCursor = width % pool.size
         } else {
@@ -231,7 +281,9 @@ class BtrResolver(
         val now = clock()
         val originals = if (customServers(mode(), customHosts()).isNotEmpty()) emptyList()
         else originalUrls.mapNotNull(::safeMediaUrl)
-        return unbanned((originals + allUrls()).distinct()).filter { open(it, now) }.take(8)
+        // Fastest known first; with nothing measured, Bilibili's own addresses lead.
+        return unbanned((originals + allUrls()).distinct()).filter { open(it, now) }
+            .sortedByDescending { if (measuredNow(it, now)) measurement(it)?.bps ?: 0.0 else 0.0 }.take(8)
     }
 
     @Synchronized
@@ -243,7 +295,8 @@ class BtrResolver(
     @Synchronized
     fun success(url: String, bps: Double) {
         bans?.success(url)
-        val old = measurement(url) ?: Route()
+        nodeStats?.record(hostOf(url), bps, success = true)
+        val old = ownMeasurement(url) ?: Route()
         val now = clock()
         val measured = bps > 0
         health[url] = Health(lastSuccessAt = now)
@@ -258,7 +311,8 @@ class BtrResolver(
     @Synchronized
     fun sample(url: String, bps: Double) {
         if (bps <= 0) return
-        val old = measurement(url) ?: Route()
+        nodeStats?.record(hostOf(url), bps, success = false)
+        val old = ownMeasurement(url) ?: Route()
         routes[routeOf(url)] = Route(old.lastSuccessAt, clock(), if (old.bps > 0) old.bps * 0.65 + bps * 0.35 else bps)
     }
 

@@ -52,6 +52,8 @@ object BtrTransport {
     }
     private fun newBanList() = BtrBanList { host, scope -> log("ban $scope host=$host") }
     private var bans = newBanList()
+    // Node speeds survive the session reset, so the next video starts from them.
+    private val nodeStats = BtrNodeStats()
     private val tracks = LinkedHashMap<String, Track>()
     private var sessionPaths: Set<String> = emptySet()
 
@@ -117,7 +119,7 @@ object BtrTransport {
         for ((path, entry) in byPath) {
             val (kind, urls) = entry
             if (path in tracks) continue
-            tracks[path] = Track(kind, BtrResolver(urls, { settings.mode }, { settings.customHosts }, currentBans))
+            tracks[path] = Track(kind, BtrResolver(urls, { settings.mode }, { settings.customHosts }, currentBans, nodeStats = nodeStats))
         }
         while (tracks.size > 32) tracks.remove(tracks.keys.first())
         publish()

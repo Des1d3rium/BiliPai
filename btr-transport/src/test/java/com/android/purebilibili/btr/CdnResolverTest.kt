@@ -101,4 +101,29 @@ class CdnResolverTest {
         next.drop(3).forEach { resolver.success(it, 2_000_000.0) }
         assertEquals(1, resolver.rangeCandidates().count { resolver.speed(it) == 0.0 })
     }
+
+    @Test
+    fun aNewVideoStartsFromSpeedsMeasuredForTheLastOne() {
+        var now = 1_000_000L
+        val stats = BtrNodeStats { now }
+        val first = BtrResolver(listOf(signed), { BtrCdnMode.MAINLAND }, clock = { now }, nodeStats = stats)
+        val fast = first.urls().first { hostOf(it) == "upos-sz-mirrorcos.bilivideo.com" }
+        val slow = first.urls().first { hostOf(it) == "upos-sz-mirrorbd.bilivideo.com" }
+        first.success(fast, 8_000_000.0)
+        first.success(slow, 1_000_000.0)
+
+        now += 60_000
+        val nextVideo = "https://cn-gdfs-ct-01-01.bilivideo.com/upgcxcode/9/9/9-1-30080.m4s?e=other"
+        val second = BtrResolver(listOf(nextVideo), { BtrCdnMode.MAINLAND }, clock = { now }, nodeStats = stats)
+        val candidates = second.rangeCandidates()
+        // No warm-up over every node: the known fast node leads and the list is the usual width.
+        assertEquals("upos-sz-mirrorcos.bilivideo.com", hostOf(candidates.first()))
+        assertEquals(6, candidates.size)
+        assertTrue(second.speed(candidates.first()) > 0)
+        assertEquals("upos-sz-mirrorcos.bilivideo.com", hostOf(second.startupCandidates().first()))
+
+        // A prior goes stale after its lifetime.
+        now += BtrNodeStats.PRIOR_TTL_MS
+        assertEquals(0.0, second.speed(candidates.first()))
+    }
 }
