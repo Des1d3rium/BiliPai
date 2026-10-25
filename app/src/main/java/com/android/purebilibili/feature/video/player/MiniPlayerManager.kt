@@ -402,13 +402,20 @@ internal fun shouldRefreshNotificationOnPlaybackStateChange(
     return isActive && title.isNotBlank()
 }
 
+/** A buffering player that is about to play still owns the media session; removing its
+ * notification makes some system media panels send `stop` and leaves the player idle. */
 internal fun shouldKeepPlaybackNotificationVisible(
     isActive: Boolean,
     title: String,
     isPlaying: Boolean,
-    appInBackground: Boolean
+    appInBackground: Boolean,
+    isStartingPlayback: Boolean = false
 ): Boolean {
-    return isActive && title.isNotBlank() && (isPlaying || appInBackground)
+    return isActive && title.isNotBlank() && (isPlaying || isStartingPlayback || appInBackground)
+}
+
+internal fun isPlayerStartingPlayback(playWhenReady: Boolean, playbackState: Int): Boolean {
+    return playWhenReady && playbackState == Player.STATE_BUFFERING
 }
 
 internal fun shouldClearStalePlaybackNotificationOnAppResume(
@@ -896,10 +903,21 @@ class MiniPlayerManager private constructor(private val context: Context) :
         remoteReclaimMutex.withLock {
             remoteTransferJob?.cancel()
             remoteTransferJob?.join()
-            if (!remoteAudio.active) recoverRemoteAudioIfPresentLocked(failOnError = true)
-            if (!remoteAudio.active) return@withLock null
-            remotePreferencesJob?.cancel()
-            val state = remoteAudio.reclaim() ?: return@withLock null
+            val state = try {
+                if (!remoteAudio.active) recoverRemoteAudioIfPresentLocked(failOnError = true)
+                if (!remoteAudio.active) return@withLock null
+                remotePreferencesJob?.cancel()
+                remoteAudio.reclaim() ?: return@withLock null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // An unresponsive audio process must not keep the video page from loading.
+                // Stopping the service also stops its playback, so local audio cannot double up.
+                Logger.w(TAG, "Background audio did not return; stopping it before video playback", e)
+                remotePreferencesJob?.cancel()
+                remoteAudio.close()
+                return@withLock null
+            }
             state.current?.let { item ->
                 com.android.purebilibili.core.player.PlaybackProgressManager.getInstance(context).apply {
                     // A return near the beginning must replace an older (>5s) cached position too.
@@ -3211,7 +3229,11 @@ class MiniPlayerManager private constructor(private val context: Context) :
                 isActive = isActive,
                 title = title,
                 isPlaying = notificationIsPlaying,
-                appInBackground = BackgroundManager.isInBackground
+                appInBackground = BackgroundManager.isInBackground,
+                // Cold-start artwork can arrive while the first segments are still buffering.
+                isStartingPlayback = player?.let {
+                    isPlayerStartingPlayback(it.playWhenReady, it.playbackState)
+                } == true
             )
         ) {
             playbackServiceRequested = false

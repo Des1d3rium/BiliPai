@@ -28,6 +28,20 @@ internal suspend fun <T> ListenableFuture<T>.awaitBackgroundAudio(): T = suspend
     continuation.invokeOnCancellation { cancel(false) }
 }
 
+/** Thrown when the separate audio process does not answer in time. */
+internal class BackgroundAudioTimeoutException(message: String, cause: Throwable) : IllegalStateException(message, cause)
+
+/** A timeout is a remote failure, not the caller's cancellation; callers must be able to recover. */
+internal suspend fun <T> withBackgroundAudioTimeout(
+    timeoutMs: Long,
+    operation: String,
+    block: suspend kotlinx.coroutines.CoroutineScope.() -> T
+): T = try {
+    withTimeout(timeoutMs, block)
+} catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+    throw BackgroundAudioTimeoutException("Background audio $operation timed out after ${timeoutMs}ms", timeout)
+}
+
 /** The caller owns handoff coroutines; this object only owns a controller connection. */
 internal class BackgroundAudioConnection(
     private val context: Context,
@@ -68,30 +82,30 @@ internal class BackgroundAudioConnection(
         }
     }
 
-    suspend fun transfer(snapshot: BackgroundAudioSnapshot, commitLocal: () -> Long?): Boolean = withTimeout(10_000L) {
+    suspend fun transfer(snapshot: BackgroundAudioSnapshot, commitLocal: () -> Long?): Boolean = withBackgroundAudioTimeout(10_000L, "transfer") {
         ContextCompat.startForegroundService(context,
             Intent(context, BackgroundAudioService::class.java).setAction(BackgroundAudioService.ACTION_PROMOTE))
         val remote = connect()
         val prepared = remote.sendCustomCommand(SessionCommand(AUDIO_PREPARE, Bundle.EMPTY), snapshot.toAudioBundle())
             .awaitBackgroundAudio()
-        if (prepared.resultCode != SessionResult.RESULT_SUCCESS) return@withTimeout false
+        if (prepared.resultCode != SessionResult.RESULT_SUCCESS) return@withBackgroundAudioTimeout false
         active = true
         val positionMs = commitLocal()
         if (positionMs == null) {
             active = false
-            return@withTimeout false
+            return@withBackgroundAudioTimeout false
         }
         val committed = remote.sendCustomCommand(SessionCommand(AUDIO_COMMIT, Bundle.EMPTY),
             Bundle().apply { putLong("position_ms", positionMs) }).awaitBackgroundAudio()
         if (committed.resultCode != SessionResult.RESULT_SUCCESS) {
             active = false
-            return@withTimeout false
+            return@withBackgroundAudioTimeout false
         }
         onState(remote)
         true
     }
 
-    suspend fun recover(): BackgroundAudioSnapshot? = withTimeout(5000L) {
+    suspend fun recover(): BackgroundAudioSnapshot? = withBackgroundAudioTimeout(5000L, "recover") {
         val remote = connect()
         val result = remote.sendCustomCommand(SessionCommand(AUDIO_SNAPSHOT, Bundle.EMPTY), Bundle.EMPTY).awaitBackgroundAudio()
         result.extras.audioSnapshot()?.also {
@@ -100,8 +114,8 @@ internal class BackgroundAudioConnection(
         }
     }
 
-    suspend fun reclaim(): BackgroundAudioSnapshot? = withTimeout(5000L) {
-        val remote = controller ?: return@withTimeout null
+    suspend fun reclaim(): BackgroundAudioSnapshot? = withBackgroundAudioTimeout(5000L, "return") {
+        val remote = controller ?: return@withBackgroundAudioTimeout null
         val result = remote.sendCustomCommand(SessionCommand(AUDIO_RETURN, Bundle.EMPTY), Bundle.EMPTY).awaitBackgroundAudio()
         check(result.resultCode == SessionResult.RESULT_SUCCESS) { "Remote audio has not acknowledged return" }
         active = false
