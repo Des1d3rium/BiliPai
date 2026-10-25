@@ -147,4 +147,46 @@ class CdnResolverTest {
         assertEquals(null, tooLate.get("upos-sz-mirrorcosov.bilivideo.com"))
         assertEquals("", tooLate.encode())
     }
+
+    @Test
+    fun aSignatureDeadlineIsReadFromTheQuery() {
+        assertEquals(1767000000L, signedUrlDeadline("https://a.bilivideo.com/v.m4s?e=x&deadline=1767000000&os=y"))
+        assertEquals(null, signedUrlDeadline("https://a.bilivideo.com/v.m4s?e=x"))
+        // Three minutes ahead of the deadline, but never sooner than half a minute from now.
+        assertEquals(17 * 60_000L, BtrTransport.addressRefreshDelayMs(1_200L, 0L))
+        assertEquals(30_000L, BtrTransport.addressRefreshDelayMs(1_000L, 1_000_000L))
+    }
+
+    @Test
+    fun refreshedSignaturesReplaceTheOldOnesAndKeepTheSpeeds() {
+        val now = 1_000_000L
+        val stale = "https://cn-gdfs-ct-01-01.bilivideo.com/upgcxcode/1/2/3-1-30080.m4s?e=old&deadline=100"
+        val fresh = "https://cn-gdfs-ct-01-01.bilivideo.com/upgcxcode/1/2/3-1-30080.m4s?e=new&deadline=9000"
+        val resolver = BtrResolver(listOf(stale), { BtrCdnMode.MAINLAND }, clock = { now })
+        val node = resolver.urls().first()
+        resolver.success(node, 5_000_000.0)
+        assertEquals(100L, resolver.signatureDeadline())
+
+        assertTrue(resolver.updateOriginals(listOf(fresh)))
+        assertFalse(resolver.updateOriginals(listOf(fresh)))
+        assertEquals(9000L, resolver.signatureDeadline())
+        assertTrue(resolver.urls().all { addressOf(it).contains("e=new") })
+        val sameNode = resolver.urls().first { hostOf(it) == hostOf(node) }
+        assertEquals(5_000_000.0, resolver.speed(sameNode))
+    }
+
+    @Test
+    fun aBanLastsUntilItsStrikesAgeOut() {
+        var now = 0L
+        val bans = BtrBanList(clock = { now })
+        val dead = "https://a.bilivideo.com/v.m4s?s=1"
+        repeat(2) { bans.record(dead, 0, BtrTransferException("connect failed")) }
+        assertFalse(bans.allows(dead))
+        // Still banned for the next video a few minutes later.
+        now += 5 * 60_000L
+        assertFalse(bans.allows("https://a.bilivideo.com/other.m4s?s=2"))
+        now += BtrBanList.BAN_TTL_MS
+        assertTrue(bans.allows(dead))
+        assertEquals(emptyList(), bans.bannedHosts())
+    }
 }

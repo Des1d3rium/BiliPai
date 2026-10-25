@@ -64,8 +64,9 @@ object BtrTransport {
     val autoConcurrency = BtrAutoConcurrency(clock).also { auto ->
         auto.subscribe { threads -> log("auto threads=$threads reason=${auto.status().reason}") }
     }
-    private fun newBanList() = BtrBanList { host, scope -> log("ban $scope host=$host") }
-    private var bans = newBanList()
+    // One ban list for every video: a node that kept failing for the last video is skipped at the
+    // next one too, until its strikes age out (BtrBanList.BAN_TTL_MS).
+    private val bans = BtrBanList(onBan = { host, scope -> log("ban $scope host=$host") })
     // Node speeds survive the session reset, so the next video starts from them, and are saved so
     // they also survive an app restart.
     private val nodeStats = BtrNodeStats()
@@ -151,7 +152,6 @@ object BtrTransport {
         if (byPath.isEmpty()) return
         val isNewSession = byPath.keys.none { it in sessionPaths }
         if (isNewSession) {
-            bans = newBanList()
             tracks.clear()
             sessionPaths = emptySet()
             autoConcurrency.newSession()
@@ -160,11 +160,57 @@ object BtrTransport {
         val currentBans = bans
         for ((path, entry) in byPath) {
             val (kind, urls) = entry
-            if (path in tracks) continue
+            val existing = tracks[path]
+            if (existing != null) {
+                // The same file with fresh signatures: swap them in without restarting anything.
+                if (existing.resolver.updateOriginals(urls)) log("addresses refreshed kind=$kind")
+                continue
+            }
             tracks[path] = Track(kind, BtrResolver(urls, { settings.mode }, { settings.customHosts }, currentBans, nodeStats = nodeStats))
         }
         while (tracks.size > 32) tracks.remove(tracks.keys.first())
+        scheduleAddressRefresh()
         publish()
+    }
+
+    /**
+     * The host's way to fetch the current video's playurl again and pass it to [registerTracks]
+     * without reloading the player. BTR calls it before the earliest signature expires, as BTR
+     * refreshes its playinfo, and early when nodes start refusing addresses (HTTP 403).
+     */
+    @Volatile var addressRefresher: (suspend () -> Unit)? = null
+
+    private var refreshJob: kotlinx.coroutines.Job? = null
+    @Volatile private var lastRefreshAt = 0L
+
+    @Synchronized
+    private fun scheduleAddressRefresh() {
+        val deadline = tracks.values.mapNotNull { it.resolver.signatureDeadline() }.minOrNull() ?: return
+        val now = System.currentTimeMillis()
+        val delayMs = addressRefreshDelayMs(deadline, now)
+        log("signatures expire in ${(deadline * 1000 - now) / 60_000} min; refresh in ${delayMs / 60_000} min")
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            refreshAddresses("signature expires soon")
+        }
+    }
+
+    private fun refreshAddresses(reason: String) {
+        val refresher = addressRefresher ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastRefreshAt < MIN_REFRESH_INTERVAL_MS) return
+        lastRefreshAt = now
+        log("refreshing addresses: $reason")
+        scope.launch {
+            try {
+                refresher()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("address refresh failed: ${e.message}")
+            }
+        }
     }
 
     @Synchronized
@@ -222,6 +268,8 @@ object BtrTransport {
             BtrTransferEvent.Phase.START -> activeRequests.incrementAndGet()
             BtrTransferEvent.Phase.DONE, BtrTransferEvent.Phase.CANCEL, BtrTransferEvent.Phase.ERROR -> {
                 activeRequests.decrementAndGet()
+                // A refused signature is the usual sign of an expired address.
+                if ((event.error as? BtrTransferException)?.status == 403) refreshAddresses("a node refused an address")
                 if (event.phase == BtrTransferEvent.Phase.DONE) {
                     deliveredBytes.addAndGet(event.totalBytes)
                     synchronized(speedSamples) {
@@ -257,6 +305,14 @@ object BtrTransport {
             bannedHosts = bans.bannedHosts()
         )
     }
+
+    private const val REFRESH_LEAD_MS = 3 * 60_000L
+    private const val MIN_REFRESH_DELAY_MS = 30_000L
+    private const val MIN_REFRESH_INTERVAL_MS = 60_000L
+
+    /** How long to wait before refreshing addresses that expire at [deadlineSeconds]. */
+    internal fun addressRefreshDelayMs(deadlineSeconds: Long, nowMs: Long): Long =
+        maxOf(MIN_REFRESH_DELAY_MS, deadlineSeconds * 1000 - REFRESH_LEAD_MS - nowMs)
 
     // Per node-independent file: the same track served by another node keeps its path.
     internal fun routeKey(url: String): String = runCatching { URI(url).rawPath.orEmpty() }.getOrDefault("")

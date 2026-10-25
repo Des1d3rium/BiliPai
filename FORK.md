@@ -22,7 +22,7 @@ upstream files.
 | `app/build.gradle.kts` | `implementation(project(":btr-transport"))` |
 | `app/.../app/PureApplication.kt` | `PluginManager.register(BtrPlugin())` |
 | `app/.../core/player/PlaybackMediaCache.kt` | wrap the host data source in `BtrDataSource(host)` |
-| `app/.../feature/video/viewmodel/VideoPlaybackViewModel.kt` | `BtrTransport.registerTracks(...)` after the CDN rewrite; `BtrPlaybackMonitor.attach(player)` in `attachPlayer` |
+| `app/.../feature/video/viewmodel/VideoPlaybackViewModel.kt` | `BtrTransport.registerTracks(...)` after the CDN rewrite; `BtrPlaybackMonitor.attach(player)` and `BtrTransport.addressRefresher` in `attachPlayer`; the refresher (`btrAddressRefresher`) and its reset in `onCleared` |
 | `app/.../feature/video/ui/pager/PortraitVideoLoadPolicy.kt` | `BtrTransport.registerTracks(...)` |
 | `app/.../feature/bangumi/BangumiPlayerViewModel.kt` | `BtrTransport.registerTracks(...)` |
 | `app/.../feature/video/state/VideoPlayerState.kt` | deepen `resolvePlayerBufferPolicy(...)` with `BtrTransport.bufferFloor()` (anti-jitter buffer) |

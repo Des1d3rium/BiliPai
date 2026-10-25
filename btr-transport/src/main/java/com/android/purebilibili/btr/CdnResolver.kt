@@ -23,6 +23,13 @@ object BtrCdnHosts {
     val GLOBAL = OVERSEAS + MAINLAND
 }
 
+/** The `deadline` query parameter of a Bilibili signed address (epoch seconds), when present. */
+fun signedUrlDeadline(url: String): Long? = runCatching {
+    URI(url).rawQuery?.split('&')?.firstNotNullOfOrNull { part ->
+        part.takeIf { it.startsWith("deadline=") }?.removePrefix("deadline=")?.toLongOrNull()
+    }
+}.getOrNull()?.takeIf { it > 0 }
+
 internal fun isAkamaiUrl(url: String): Boolean = hostOf(url).endsWith(".akamaized.net")
 
 internal fun safeMediaUrl(url: String): String? = url.takeIf(::isBilibiliMediaUrl)
@@ -71,20 +78,32 @@ class BtrTransferException(
 ) : java.io.IOException(message, cause)
 
 /**
- * A node that twice fails without sending a byte is skipped for the rest of the video. A 4xx
- * blames the node or the address depending on which of them has delivered elsewhere.
+ * A node that twice fails without sending a byte is skipped. A 4xx blames the node or the address
+ * depending on which of them has delivered elsewhere. Strikes count for [BAN_TTL_MS], so one list
+ * can serve every video: a node banned for the last video stays banned for the next, and gets
+ * another chance once its strikes have aged out.
  */
-class BtrBanList(private val limit: Int = 2, private val onBan: (String, String) -> Unit = { _, _ -> }) {
-    private val emptyReplies = HashMap<Triple<String, String, Boolean>, Int>()
+class BtrBanList(
+    private val limit: Int = 2,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val onBan: (String, String) -> Unit = { _, _ -> }
+) {
+    private val emptyReplies = HashMap<Triple<String, String, Boolean>, MutableList<Long>>()
+    private var judgedAt = Long.MIN_VALUE
     private val goodNodes = HashSet<String>()
     private val goodAddresses = HashSet<String>()
     private val reported = HashSet<String>()
     private var banned = emptySet<String>()
 
     @Synchronized
-    private fun judge(url: String): Boolean {
+    private fun judge(url: String?): Boolean {
+        val now = clock()
+        judgedAt = now
+        emptyReplies.values.forEach { times -> times.removeAll { now - it >= BAN_TTL_MS } }
+        emptyReplies.entries.removeAll { it.value.isEmpty() }
         val strikes = HashMap<String, Int>()
-        for ((key, count) in emptyReplies) {
+        for ((key, times) in emptyReplies) {
+            val count = times.size
             val (node, address, refused) = key
             val blamed = when {
                 !refused -> "node:$node"
@@ -100,9 +119,16 @@ class BtrBanList(private val limit: Int = 2, private val onBan: (String, String)
             if (!reported.add(key)) continue
             added = true
             val isNode = key.startsWith("node:")
-            runCatching { onBan(if (isNode) key.removePrefix("node:") else hostOf(url), if (isNode) "node" else "address") }
+            runCatching { onBan(if (isNode) key.removePrefix("node:") else url?.let(::hostOf).orEmpty(), if (isNode) "node" else "address") }
         }
+        // A ban that aged out may be reported again if the node keeps failing.
+        reported.retainAll(banned)
         return added
+    }
+
+    // Bans expire with their strikes; look again now and then rather than on every request.
+    private fun refreshIfStale() {
+        if (clock() - judgedAt >= REJUDGE_MS) judge(null)
     }
 
     @Synchronized
@@ -111,7 +137,7 @@ class BtrBanList(private val limit: Int = 2, private val onBan: (String, String)
         val node = hostOf(url).ifEmpty { return false }
         val status = (error as? BtrTransferException)?.status ?: 0
         val key = Triple(node, addressOf(url), status in 400..499)
-        emptyReplies[key] = (emptyReplies[key] ?: 0) + 1
+        emptyReplies.getOrPut(key) { ArrayList() } += clock()
         return judge(url)
     }
 
@@ -126,18 +152,23 @@ class BtrBanList(private val limit: Int = 2, private val onBan: (String, String)
     }
 
     @Synchronized
-    fun allows(url: String): Boolean = "node:${hostOf(url)}" !in banned && "address:${addressOf(url)}" !in banned &&
+    fun allows(url: String): Boolean = refreshIfStale().let { "node:${hostOf(url)}" !in banned } && "address:${addressOf(url)}" !in banned &&
         "pair:${hostOf(url)} ${addressOf(url)}" !in banned
 
     @Synchronized
-    fun allowsNode(url: String): Boolean = "node:${hostOf(url)}" !in banned
+    fun allowsNode(url: String): Boolean = refreshIfStale().let { "node:${hostOf(url)}" !in banned }
 
     @Synchronized
-    fun bannedHosts(): List<String> = banned.filter { it.startsWith("node:") }.map { it.removePrefix("node:") }
+    fun bannedHosts(): List<String> = refreshIfStale().let { banned }.filter { it.startsWith("node:") }.map { it.removePrefix("node:") }
 
     @Synchronized
     fun reset() {
         emptyReplies.clear(); goodNodes.clear(); goodAddresses.clear(); reported.clear(); banned = emptySet()
+    }
+
+    companion object {
+        const val BAN_TTL_MS = 10 * 60_000L
+        private const val REJUDGE_MS = 15_000L
     }
 }
 
@@ -215,13 +246,31 @@ class BtrNodeStats(private val clock: () -> Long = System::currentTimeMillis) {
  * being slow then becomes untested again and gets another try through the exploration slot.
  */
 class BtrResolver(
-    private val originalUrls: List<String>,
+    originalUrls: List<String>,
     private val mode: () -> BtrCdnMode,
     private val customHosts: () -> List<String> = { emptyList() },
     private val bans: BtrBanList? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val nodeStats: BtrNodeStats? = null
 ) {
+    @Volatile private var originalUrls: List<String> = originalUrls
+
+    /**
+     * New signatures for the same files (a refreshed playurl). Measurements are kept per node and
+     * file, without the query, so they carry over; the old addresses' failures do not.
+     */
+    @Synchronized
+    fun updateOriginals(urls: List<String>): Boolean {
+        val next = urls.mapNotNull(::safeMediaUrl).distinct()
+        if (next.isEmpty() || next == originalUrls) return false
+        originalUrls = next
+        return true
+    }
+
+    /** The earliest signature deadline among this track's addresses, in epoch seconds; null if none. */
+    @Synchronized
+    fun signatureDeadline(): Long? = originalUrls.mapNotNull(::signedUrlDeadline).minOrNull()
+
     private data class Health(val failures: Int = 0, val blockedUntil: Long = 0, val lastSuccessAt: Long = 0)
     private data class Route(val lastSuccessAt: Long = 0, val lastMeasuredAt: Long = 0, val bps: Double = 0.0)
 
