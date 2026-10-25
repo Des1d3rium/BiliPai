@@ -262,58 +262,25 @@ internal fun SettingsPageScaffold(
             val windowSizeClass = LocalWindowSizeClass.current
             val isExpandedScreen = windowSizeClass.isExpandedScreen
 
-            when (scrollHost) {
-                SettingsPageScrollHost.LazyColumn -> {
-                    Box(
-                        modifier = scrollModifier,
-                        contentAlignment = Alignment.TopCenter
-                    ) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .then(
-                                    if (isExpandedScreen) {
-                                        Modifier.widthIn(max = 760.dp).fillMaxWidth()
-                                    } else {
-                                        Modifier.fillMaxWidth()
-                                    }
-                                ),
-                            contentPadding = PaddingValues(
-                                top = padding.calculateTopPadding(),
-                                bottom = maxOf(resolvedBottomContentPadding, padding.calculateBottomPadding()),
-                            ),
-                        ) {
-                            if (header != null) {
-                                item {
-                                    header()
-                                }
-                            }
-                            if (lazyListContent != null) {
-                                lazyListContent()
-                            } else {
-                                item {
-                                    content()
-                                }
-                            }
-                        }
-                    }
-                }
+            // 液态玻璃开启后的单选弹窗宿主：玻璃卡片与页面内容同窗渲染（Backdrop
+            // 采样不跨平台窗口），关闭玻璃或设备不支持时不装配，条目回落原生弹窗。
+            val glassPopupAvailable = appThemeConfig.liquidGlassEnabled &&
+                com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass(
+                    android.os.Build.VERSION.SDK_INT,
+                )
 
-                SettingsPageScrollHost.External -> {
-                    val chromeTop = padding.calculateTopPadding()
-                    CompositionLocalProvider(
-                        LocalSettingsTopContentPadding provides if (header != null) {
-                            0.dp
-                        } else {
-                            chromeTop
-                        },
-                    ) {
+            SettingsGlassChoicePopupHost(
+                glassAvailable = glassPopupAvailable,
+                bottomInset = resolvedBottomContentPadding,
+            ) {
+                when (scrollHost) {
+                    SettingsPageScrollHost.LazyColumn -> {
                         Box(
                             modifier = scrollModifier,
                             contentAlignment = Alignment.TopCenter
                         ) {
-                            Column(
+                            LazyColumn(
+                                state = listState,
                                 modifier = Modifier
                                     .fillMaxHeight()
                                     .then(
@@ -322,19 +289,64 @@ internal fun SettingsPageScaffold(
                                         } else {
                                             Modifier.fillMaxWidth()
                                         }
-                                    )
+                                    ),
+                                contentPadding = PaddingValues(
+                                    top = padding.calculateTopPadding(),
+                                    bottom = maxOf(resolvedBottomContentPadding, padding.calculateBottomPadding()),
+                                ),
                             ) {
                                 if (header != null) {
-                                    Box(modifier = Modifier.padding(top = chromeTop)) {
+                                    item {
                                         header()
                                     }
                                 }
-                                Box(
+                                if (lazyListContent != null) {
+                                    lazyListContent()
+                                } else {
+                                    item {
+                                        content()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsPageScrollHost.External -> {
+                        val chromeTop = padding.calculateTopPadding()
+                        CompositionLocalProvider(
+                            LocalSettingsTopContentPadding provides if (header != null) {
+                                0.dp
+                            } else {
+                                chromeTop
+                            },
+                        ) {
+                            Box(
+                                modifier = scrollModifier,
+                                contentAlignment = Alignment.TopCenter
+                            ) {
+                                Column(
                                     modifier = Modifier
-                                        .weight(1f, fill = true)
-                                        .fillMaxSize(),
+                                        .fillMaxHeight()
+                                        .then(
+                                            if (isExpandedScreen) {
+                                                Modifier.widthIn(max = 760.dp).fillMaxWidth()
+                                            } else {
+                                                Modifier.fillMaxWidth()
+                                            }
+                                        )
                                 ) {
-                                    content()
+                                    if (header != null) {
+                                        Box(modifier = Modifier.padding(top = chromeTop)) {
+                                            header()
+                                        }
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f, fill = true)
+                                            .fillMaxSize(),
+                                    ) {
+                                        content()
+                                    }
                                 }
                             }
                         }

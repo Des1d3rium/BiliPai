@@ -21,7 +21,7 @@ import com.android.purebilibili.core.ui.components.AppCardShape
 
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 //  Material Icons
@@ -74,7 +74,7 @@ fun LiveCard(
         AppCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onLiveClick(roomId, title, "") },  //  点击跳转直播
+                .appActionClickable { onLiveClick(roomId, title, "") },  //  点击跳转直播
             shape = AppCardShape.Semantic(ContainerLevel.Card),
             colors = AppCardDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -197,7 +197,7 @@ fun LiveMajorCard(
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onLiveClick(roomId, title, "") },
+            .appActionClickable { onLiveClick(roomId, title, "") },
         shape = AppCardShape.Semantic(ContainerLevel.Card),
         colors = AppCardDefaults.colors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)

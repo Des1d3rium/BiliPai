@@ -202,6 +202,17 @@ internal class HomePreloadState(
     }
 }
 
+/** Web 推荐使用稳定的协议版本；刷新与分页仅推进索引。 */
+internal fun buildHomeWebFeedParams(idx: Int, refreshCount: Int): Map<String, String> = mapOf(
+    "version" to "1",
+    "feed_version" to "V8",
+    "homepage_ver" to "1",
+    "ps" to refreshCount.toString(),
+    "fresh_idx" to idx.toString(),
+    "brush" to idx.toString(),
+    "fresh_type" to "4",
+)
+
 internal fun resolveHomeFeedWbiKeys(
     cachedKeys: Pair<String, String>?,
     navWbiImg: WbiImg?
@@ -471,8 +482,7 @@ object VideoRepository {
                 if (accountScope != videoPlaybackAccountScope()) {
                     throw CancellationException("Playback account changed")
                 }
-                // Match PiliPlus: one WBI request for the highest missing tier below the
-                // actual maximum. A failed supplement must preserve the first playable result.
+                // 限时补查实际最高画质之下缺失的一档；失败时保留首次可播放结果。
                 fetchPlayUrlWithWbiInternal(bvid, cid, missingQuality, audioLang)
             }
             if (accountScope != videoPlaybackAccountScope()) {
@@ -705,12 +715,12 @@ object VideoRepository {
             ) ?: throw Exception("无法获取 Key")
             val (imgKey, subKey) = resolvedKeys
 
-            val params = mapOf(
-                "ps" to refreshCount.toString(), "fresh_type" to "3", "fresh_idx" to idx.toString(),
-                "feed_version" to System.currentTimeMillis().toString(), "y_num" to idx.toString()
-            )
+            val params = buildHomeWebFeedParams(idx, refreshCount)
             val signedParams = WbiUtils.sign(params, imgKey, subKey)
             val feedResp = SharedContentRepository.recommendationResponse(signedParams)
+            if (feedResp.code != 0) {
+                throw ContentRequestException(feedResp.code, feedResp.message)
+            }
             
             //  [调试] 检查 API 是否返回 dimension 字段
             feedResp.data?.item?.take(3)?.forEachIndexed { index, item ->
@@ -742,9 +752,7 @@ object VideoRepository {
         return fetchMergedMobileFeed(idx)
     }
     
-    //  [合并模式] Web 端推荐流 - 参数对齐 PiliNara 原版合并模式(携带 cookie)
-    //  (feed_version=V8 常量会话、fresh_type=4、brush=idx、version=1、homepage_ver=1)
-    //  仅用于 FeedApiType.MERGED, 不影响 Web 单独模式
+    // 合并推荐的 Web 分支与单独 Web 推荐共用请求参数和当前账号 Cookie。
     private suspend fun fetchMergedWebFeed(idx: Int, refreshCount: Int): Result<List<VideoItem>> {
         try {
             val cachedKeys = WbiKeyManager.getWbiKeys().getOrNull()
@@ -755,17 +763,12 @@ object VideoRepository {
             ) ?: throw Exception("无法获取 Key")
             val (imgKey, subKey) = resolvedKeys
 
-            val params = mapOf(
-                "version" to "1",
-                "feed_version" to "V8",
-                "homepage_ver" to "1",
-                "ps" to refreshCount.toString(),
-                "fresh_idx" to idx.toString(),
-                "brush" to idx.toString(),
-                "fresh_type" to "4"
-            )
+            val params = buildHomeWebFeedParams(idx, refreshCount)
             val signedParams = WbiUtils.sign(params, imgKey, subKey)
             val feedResp = SharedContentRepository.recommendationResponse(signedParams)
+            if (feedResp.code != 0) {
+                throw ContentRequestException(feedResp.code, feedResp.message)
+            }
 
             val list = feedResp.data?.item?.filter { it.adInfo == null }?.map { it.toVideoItem() }?.filter { it.bvid.isNotEmpty() } ?: emptyList()
 
@@ -926,6 +929,8 @@ object VideoRepository {
                     Result.failure(Exception("错误码: ${resp.code}"))
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1051,10 +1056,6 @@ object VideoRepository {
             throw e
         } catch (e: Exception) {
             val diagnosis = diagnoseAiSummaryFailure(e)
-            if ((e as? retrofit2.HttpException)?.code() == 412 || e.message.orEmpty().contains("412")) {
-                wbiKeysCache = null
-                wbiKeysTimestamp = 0L
-            }
             com.android.purebilibili.core.util.Logger.w(
                 "VideoRepo",
                 "🤖 AI Summary request failed: bvid=$bvid cid=$cid status=${diagnosis.status} reason=${diagnosis.reason} retryable=${diagnosis.shouldRetryRequest}"
@@ -1107,53 +1108,8 @@ object VideoRepository {
         )
     }
 
-    //  [优化] WBI Key 缓存
-    private var wbiKeysCache: Pair<String, String>? = null
-    private var wbiKeysTimestamp: Long = 0
-    private const val WBI_CACHE_DURATION = 1000 * 60 * 30 //  优化：30分钟缓存
-    
-    //  412 错误冷却期（避免过快重试触发风控）
-    private var last412Time: Long = 0
-    private const val COOLDOWN_412_MS = 5000L // 412 后等待 5 秒
-
-    private suspend fun getWbiKeys(): Pair<String, String> {
-        val currentCheck = System.currentTimeMillis()
-        val cached = wbiKeysCache
-        if (cached != null && (currentCheck - wbiKeysTimestamp < WBI_CACHE_DURATION)) {
-            return cached
-        }
-
-        //  [优化] 增加重试逻辑，最多 3 次尝试
-        val maxRetries = 3
-        var lastError: Exception? = null
-        
-        for (attempt in 1..maxRetries) {
-            try {
-                val navResp = api.getNavInfo()
-                val wbiImg = navResp.data?.wbi_img
-                
-                if (wbiImg != null) {
-                    val imgKey = wbiImg.img_url.substringAfterLast("/").substringBefore(".")
-                    val subKey = wbiImg.sub_url.substringAfterLast("/").substringBefore(".")
-                    
-                    wbiKeysCache = Pair(imgKey, subKey)
-                    wbiKeysTimestamp = System.currentTimeMillis()
-                    com.android.purebilibili.core.util.Logger.d("VideoRepo", " WBI Keys obtained successfully (attempt $attempt)")
-                    return wbiKeysCache!!
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                lastError = e
-                android.util.Log.w("VideoRepo", "getWbiKeys attempt $attempt failed: ${e.message}")
-                if (attempt < maxRetries) {
-                    kotlinx.coroutines.delay(200L * attempt) // 递增延迟
-                }
-            }
-        }
-        
-        throw Exception("Wbi Keys Error after $maxRetries attempts: ${lastError?.message}")
-    }
+    /** 取流复用启动恢复的持久密钥及并发刷新，避免另开 nav 请求和串行重试。 */
+    private suspend fun getWbiKeys(): Pair<String, String> = WbiKeyManager.getWbiKeys().getOrThrow()
 
     suspend fun getPlayUrlData(bvid: String, cid: Long, qn: Int, audioLang: String? = null): PlayUrlData? = withContext(Dispatchers.IO) {
         fetchPlaybackUrl(
@@ -1252,8 +1208,9 @@ object VideoRepository {
         audioLang: String? = null,
         requestKind: PlayUrlRequestKind
     ): PlayUrlFetchResult? {
-        // 设备标识来自当前账号的持久 Cookie，并仅执行该账号的激活。
-        ensurePlaybackBuvid()
+        // 激活属于尽力完成的设备预热，超时后沿用当前账号已有 Cookie 取流。
+        // 不让预热请求或其互斥锁耗尽整个播放地址加载时限。
+        kotlinx.coroutines.withTimeoutOrNull(1_000L) { ensurePlaybackBuvid() }
 
         val isLoggedIn = resolveVideoPlaybackAuthState(
             hasSessionCookie = hasPlaybackSessionCookie(),

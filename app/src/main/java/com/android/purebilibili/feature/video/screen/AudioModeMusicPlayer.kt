@@ -625,6 +625,9 @@ internal fun AudioModeMusicPlayer(
                     displayTitle = displayTitle,
                 ),
                 bvid = info.bvid,
+                page = info.pages.indexOfFirst { it.cid == info.cid }.coerceAtLeast(0) + 1,
+                positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L,
+                authorId = info.owner.mid,
                 coverUrl = coverUrl,
                 upName = info.owner.name,
                 playCountText = com.android.purebilibili.core.util.FormatUtils.formatStat(

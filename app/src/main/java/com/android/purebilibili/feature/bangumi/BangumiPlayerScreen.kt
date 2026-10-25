@@ -460,6 +460,7 @@ fun BangumiPlayerScreen(
         com.android.purebilibili.feature.video.usecase.seekPlayerFromUserAction(exoPlayer, positionMs.coerceIn(0L, duration))
     }
     val playerFeatures = BangumiPlayerFeatures(
+        shareSeasonType = successState?.seasonDetail?.seasonType ?: 0,
         commentVisible = commentPanelVisible, commentOnLeft = landscapeCommentOnLeft,
         commentWidthDp = commentWidthDp,
         commentCloseProgressProvider = { landscapeCommentCloseProgress.floatValue },
@@ -602,12 +603,15 @@ fun BangumiPlayerScreen(
         }
     }
 
+    com.android.purebilibili.feature.video.screen.VideoDetailKeepScreenOnEffect(
+        window = context.findActivity()?.window,
+        player = exoPlayer,
+    )
+
     // 清理播放器 +  屏幕常亮管理
     DisposableEffect(Unit) {
         val window = context.findActivity()?.window
 
-        //  [修复] 进入番剧播放页时保持屏幕常亮，防止自动熄屏
-        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         onDispose {
             miniPlayerManager.endBangumiPlayback(exoPlayer)

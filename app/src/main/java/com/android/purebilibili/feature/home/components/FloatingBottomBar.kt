@@ -24,6 +24,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import android.os.SystemClock
+import androidx.compose.ui.platform.LocalViewConfiguration
+import com.android.purebilibili.core.ui.AppActionHaptics
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -122,6 +127,7 @@ internal val LocalFloatingBottomBarSelectedContentColor =
 
 val LocalFloatingBottomBarTabScale = staticCompositionLocalOf { { 1f } }
 
+private val LocalFloatingBottomBarActionFeedback = staticCompositionLocalOf<(() -> Unit) -> Unit> { { action -> action() } }
 private val LocalFloatingBottomBarTapFeedback = staticCompositionLocalOf<(Int) -> Unit> { { _ -> } }
 
 internal val LocalFloatingBottomBarIndicatorPosition = staticCompositionLocalOf { { 0f } }
@@ -416,6 +422,7 @@ fun RowScope.FloatingBottomBarItem(
     selected: Boolean = false,
     itemIndex: Int? = null,
     iconCrossScaleEnabled: Boolean = false,
+    enabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scale = LocalFloatingBottomBarTabScale.current
@@ -425,6 +432,7 @@ fun RowScope.FloatingBottomBarItem(
     val indicatorStretchX = LocalFloatingBottomBarIndicatorStretchX.current
     val activeContent = LocalFloatingBottomBarActiveContent.current
     val tapFeedback = LocalFloatingBottomBarTapFeedback.current
+    val actionFeedback = LocalFloatingBottomBarActionFeedback.current
     val contentColor = LocalFloatingBottomBarContentColor.current
     val selectionScale = remember(itemIndex, indicatorPosition, iconCrossScaleEnabled) {
         {
@@ -447,12 +455,15 @@ fun RowScope.FloatingBottomBarItem(
     // paint to the screen. Keep them out of hit testing so a tap reaches the visible
     // item's destination lock and press feedback before it submits navigation.
     val clickModifier = if (activeContent) Modifier else Modifier.clickable(
+        enabled = enabled,
         interactionSource = null,
         indication = null,
         role = Role.Tab,
         onClick = {
-            if (!selected) itemIndex?.let(tapFeedback)
-            onClick()
+            actionFeedback {
+                if (!selected) itemIndex?.let(tapFeedback)
+                onClick()
+            }
         },
     )
     Column(
@@ -533,6 +544,7 @@ fun FloatingBottomBar(
     isPagerDraggingProvider: (() -> Boolean)? = null,
     pagerTargetPositionProvider: (() -> Float)? = null,
     isPagerNavigatingProvider: (() -> Boolean)? = null,
+    enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
     // Do not use the system night flag here: BiliPai supports an app-only dark theme.
@@ -675,6 +687,24 @@ fun FloatingBottomBar(
     val maxTabIndex = (safeTabsCount - 1).coerceAtLeast(0)
     val selectedIndexLatest = rememberUpdatedState(selectedIndex)
     val onSelectedLatest = rememberUpdatedState(onSelected)
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
+    val latestHaptic by rememberUpdatedState(haptic)
+    val interactionEnabled by rememberUpdatedState(enabled)
+    val hapticsEnabled by rememberUpdatedState(
+        isLiquidGlassMode && enabled && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.hapticFeedbackEnabled
+    )
+    val touchSlopPx by rememberUpdatedState(LocalViewConfiguration.current.touchSlop)
+    val gestureHaptics = remember(safeTabsCount, isLiquidGlassMode) { LiquidDockHapticPolicy() }
+    val glassActionFeedback: (() -> Unit) -> Unit = { action ->
+        if (enabled) {
+            if (isLiquidGlassMode) {
+                AppActionHaptics.runAction {
+                    if (hapticsEnabled) latestHaptic(HapticType.LIGHT)
+                    action()
+                }
+            } else action()
+        }
+    }
     val onIndicatorPositionChangedLatest = rememberUpdatedState(onIndicatorPositionChanged)
     val onIndicatorDragStateChangedLatest = rememberUpdatedState(onIndicatorDragStateChanged)
     val dragScrollViewportWidthLatest = rememberUpdatedState(dragScrollViewportWidthPx)
@@ -731,6 +761,7 @@ fun FloatingBottomBar(
         isLtr,
         dragTrackingMode,
         isLiquidGlassMode,
+        gestureHaptics,
         interactiveHighlight,
     ) {
         DampedDragAnimation(
@@ -743,6 +774,7 @@ fun FloatingBottomBar(
             trackingMode = dragTrackingMode,
             useMiuixIndicatorMotion = isLiquidGlassMode,
             canDrag = { offset ->
+                if (!interactionEnabled) return@DampedDragAnimation false
                 val animation = holder.instance ?: return@DampedDragAnimation true
                 if (tabWidthPx == 0f) return@DampedDragAnimation false
 
@@ -763,7 +795,10 @@ fun FloatingBottomBar(
                 )
             },
             onDragStarted = { point ->
-                if (isLiquidGlassMode) indicatorHighlightFromDrag = true
+                if (isLiquidGlassMode) {
+                    gestureHaptics.start(targetValue, safeTabsCount, touchSlopPx / tabWidthPx.coerceAtLeast(1f))
+                    indicatorHighlightFromDrag = true
+                }
                 selectionTapFeedbackJob.generation++
                 selectionTapFeedbackJob.job?.cancel()
                 selectionTapFeedbackActive = false
@@ -794,8 +829,11 @@ fun FloatingBottomBar(
                     indicatorPosition = if (isLiquidGlassMode) value else targetIndex.toFloat(),
                 )
                 pagerFollowGate.previousExternalPosition = null
-                if (targetIndex != selected) {
-                    onSelectedLatest.value(targetIndex)
+                val hadGestureFeedback = gestureHaptics.finish()
+                if (targetIndex != selected && interactionEnabled) {
+                    if (isLiquidGlassMode && hadGestureFeedback) {
+                        AppActionHaptics.runWithoutAdditionalFeedback { onSelectedLatest.value(targetIndex) }
+                    } else onSelectedLatest.value(targetIndex)
                 }
                 onIndicatorDragStateChangedLatest.value?.invoke(false)
                 offsetJobHolder.job?.cancel()
@@ -812,6 +850,9 @@ fun FloatingBottomBar(
                         (targetValue + dragAmount.x / tabWidthPx * if (isLtr) 1f else -1f)
                             .fastCoerceIn(0f, maxTabIndex.toFloat())
                     updateValue(nextPosition)
+                    if (isLiquidGlassMode && gestureHaptics.update(nextPosition, SystemClock.uptimeMillis()) && hapticsEnabled) {
+                        latestHaptic(HapticType.GESTURE_STEP)
+                    }
                     offsetJobHolder.job?.cancel()
                     offsetJobHolder.job = animationScope.launch(start = CoroutineStart.UNDISPATCHED) {
                         offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
@@ -931,6 +972,9 @@ fun FloatingBottomBar(
                             (dampedDragAnimation.targetValue + consumed / tabWidthPx)
                                 .coerceIn(0f, maxTabIndex.toFloat())
                         )
+                        if (isLiquidGlassMode && gestureHaptics.update(dampedDragAnimation.targetValue, SystemClock.uptimeMillis()) && hapticsEnabled) {
+                            latestHaptic(HapticType.GESTURE_STEP)
+                        }
                     }
                 }
             }
@@ -1290,6 +1334,7 @@ fun FloatingBottomBar(
                 Color.Unspecified
             } else colors.activeContentColor,
             LocalFloatingBottomBarTapFeedback provides selectionTapFeedback,
+            LocalFloatingBottomBarActionFeedback provides glassActionFeedback,
             LocalFloatingBottomBarIndicatorPosition provides visualIndicatorPositionProvider,
             LocalFloatingBottomBarItemAlignmentOffset provides itemAlignmentOffsetProvider,
             LocalFloatingBottomBarBaseContentAlpha provides baseContentAlphaProvider,
@@ -1520,8 +1565,7 @@ fun FloatingBottomBar(
                                 }
                             },
                         )
-                        // Upstream records the shell's press light into the tinted material.
-                        // The indicator refracts this light even over a uniform page backdrop.
+                        // 捕获按压与滑动高光，供指示器折射和上下缝隙色散采样。
                         .then(interactiveHighlight?.modifier ?: Modifier)
                         .height(capturedContentHeight)
                         .align(Alignment.CenterStart)
@@ -1733,7 +1777,8 @@ fun FloatingBottomBar(
                         interactionSource = null,
                         indication = null,
                         role = Role.Tab,
-                        onClick = onReselected,
+                        enabled = enabled,
+                        onClick = { glassActionFeedback(onReselected) },
                     )
                     .clearAndSetSemantics {}
                     .height(if (segmentedGeometry) shellHeight else fittedIndicatorHeight)

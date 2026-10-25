@@ -124,7 +124,7 @@ internal fun rememberProfileAvatarExpansionConnection(
     val latestRange = rememberUpdatedState(rangeProvider)
     val density = LocalDensity.current.density
     val view = LocalView.current
-    val haptics = LocalAppThemeConfig.current.hapticFeedbackEnabled
+    val haptics = LocalAppThemeConfig.current.let { it.hapticFeedbackEnabled && it.hapticSettings.isEnabled(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION) }
     val motion = LocalComponentMotionEnabled.current && !rememberSystemReduceMotion() &&
         !com.android.purebilibili.core.ui.performance.isLowBlurBudgetForced()
     return remember(state, listState, enabled, density, motion, scope, view, haptics) {

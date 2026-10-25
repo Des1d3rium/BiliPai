@@ -1197,6 +1197,7 @@ internal fun VideoContentSection(
                     },
                 isPlayerCollapsed = isPlayerCollapsed,
                 miuixBackdrop = videoContentMiuixBackdrop,
+                liquidGlassTabsOffsetX = (-4).dp,
                 indicatorPositionProvider = {
                     pagerState.currentPage + pagerState.currentPageOffsetFraction
                 },
@@ -2127,7 +2128,7 @@ private fun VideoHeaderContent(
         .collectAsStateWithLifecycle(initialValue = true
         )
     val uiStyle = LocalAppUiStyle.current
-    val sectionSpacing = if (uiStyle == AppUiStyle.MATERIAL3) 6.dp else 4.dp
+    val sectionSpacing = 4.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2139,6 +2140,7 @@ private fun VideoHeaderContent(
     ) {
         UpInfoSection(
             info = info,
+            onOpenLiveRoom = onDescriptionUrlClick,
             isFollowing = isFollowing,
             followStatusKnown = followStatusKnown,
             onFollowClick = onFollowClick,
@@ -2253,6 +2255,7 @@ internal fun VideoContentTabBar(
     pagerTargetPositionProvider: (() -> Float)? = null,
     showDanmakuActions: Boolean = true,
     measurementLabels: List<String>? = null,
+    liquidGlassTabsOffsetX: Dp = 0.dp,
 ) {
     val liquidGlassEnabledForTabBar = LocalAppThemeConfig.current.liquidGlassEnabled
     val configuration = LocalConfiguration.current
@@ -2318,7 +2321,14 @@ internal fun VideoContentTabBar(
                 liquidGlassLabelHorizontalPadding = 10.dp,
                 selectedValue = selectedTabIndex,
                 onSelectionChange = onTabSelected,
-                modifier = Modifier.weight(1f),
+                // 仅移动页面显式指定的玻璃 dock；原生布局及右侧弹幕操作保持原位。
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (liquidChromeSpec.reusesLiquidGlassDock) {
+                            Modifier.offset(x = liquidGlassTabsOffsetX)
+                        } else Modifier
+                    ),
                 scrollable = true,
                 compactMiuixWhenTwoOptions = false,
                 height = liquidChromeSpec.segmentedControlHeightDp.dp,

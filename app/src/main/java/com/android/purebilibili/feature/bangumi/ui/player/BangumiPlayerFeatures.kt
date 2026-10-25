@@ -31,6 +31,7 @@ import kotlin.math.roundToInt
 
 /** Plain state and callbacks shared by the bangumi surface and the common control overlay. */
 data class BangumiPlayerFeatures(
+    val shareSeasonType: Int = 0,
     val commentVisible: Boolean = false,
     val commentOnLeft: Boolean = false,
     val commentWidthDp: Int = 0,

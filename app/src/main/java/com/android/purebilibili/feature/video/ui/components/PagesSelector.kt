@@ -87,7 +87,7 @@ fun PagesSelector(
     modifier: Modifier = Modifier,
 ) {
     if (pages.isEmpty()) return
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     var showEpisodeMenu by rememberSaveable(pages.firstOrNull()?.cid) { mutableStateOf(false) }
     val currentPage = pages.getOrNull(currentPageIndex) ?: pages.first()
     val currentTitle = "P${currentPage.page} · ${currentPage.part.ifBlank { "第${currentPage.page}P" }}"

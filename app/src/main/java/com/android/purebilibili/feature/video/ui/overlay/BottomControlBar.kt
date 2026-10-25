@@ -1,5 +1,6 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -22,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.player.resolveProgressFraction as resolveSharedProgressFraction
 import com.android.purebilibili.data.model.response.AiAudioInfo
 import com.android.purebilibili.data.model.response.SponsorProgressMarker
-import com.android.purebilibili.feature.anime4k.Anime4KPreset
-import com.android.purebilibili.feature.anime4k.VideoEnhancementAlgorithm
+import com.android.purebilibili.plugin.sdk.Anime4KPreset
+import com.android.purebilibili.plugin.sdk.VideoEnhancementAlgorithm
 import com.android.purebilibili.feature.video.playback.policy.resolveDisplayedPlaybackTransitionPosition
 import com.android.purebilibili.feature.video.progress.PbpRidgeSample
 import com.android.purebilibili.feature.video.subtitle.SubtitleDisplayMode
@@ -186,6 +187,7 @@ fun BottomControlBar(
     onPreviousEpisodeClick: () -> Unit = {},
     onNextEpisodeClick: () -> Unit = {},
     onActionBoundsChanged: (PlayerControlAnchor, IntRect) -> Unit = { _, _ -> },
+    onActionSourceChanged: (PlayerControlAnchor, com.android.purebilibili.core.ui.components.AppGlassMenuSource) -> Unit = { _, _ -> },
     subtitleControlState: SubtitleControlUiState = SubtitleControlUiState(),
     subtitleControlCallbacks: SubtitleControlCallbacks = SubtitleControlCallbacks(),
     aiAudioInfo: AiAudioInfo? = null,
@@ -217,6 +219,10 @@ fun BottomControlBar(
     progressProvider: () -> PlayerProgress = { progress },
     onFloatingPanelVisibilityChange: (Boolean) -> Unit = {},
 ) {
+    val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    val menuSources = PlayerControlAnchor.entries.associateWith {
+        com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    }
     val widthDp = viewportWidthDpOverride ?: LocalConfiguration.current.screenWidthDp
     val slotWidth = if (viewportIsLandscape && isFullscreen) 42.dp else 35.dp
     val showExtendedOptions = isFullscreen || widthDp >= 500
@@ -242,7 +248,8 @@ fun BottomControlBar(
         Modifier.testTag(tag).playerActionBounds {
             bounds[action] = it
             onActionBoundsChanged(action, it)
-        }
+            onActionSourceChanged(action, menuSources.getValue(action))
+        }.appGlassMenuSource(menuSources.getValue(action))
     val density = LocalDensity.current
     // Reference player chrome uses fixed 13sp labels; menus still respect system font scaling.
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1f)) {
@@ -287,15 +294,18 @@ fun BottomControlBar(
                 )
             }
             PiliPlayerBar(
+                groupGlassControls = glass && !viewportIsLandscape,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(PILI_PLAYER_BOTTOM_ROW_HEIGHT_DP.dp)
                     .testTag("player_control_row"),
                 left = {
-                    PlayerPlayPauseButton(isPlaying, onPlayPauseClick)
-                    ProgressTimeText(
-                        positionProvider = displayPosition,
-                        durationProvider = { progressProvider().duration },
-                        modifier = Modifier.padding(horizontal = 8.dp).testTag("player_time_viewport"),
-                    )
+                    if (!glass) PlayerPlayPauseButton(isPlaying, onPlayPauseClick)
+                    PlayerControlGlassDock(enabled = glass, shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
+                        ProgressTimeText(
+                            positionProvider = displayPosition,
+                            durationProvider = { progressProvider().duration },
+                            modifier = Modifier.padding(horizontal = 8.dp).testTag("player_time_viewport"),
+                        )
+                    }
                     if (hasEpisodeEntry) {
                         PlayerControlIconAction(
                             icon = Icons.Filled.SkipPrevious, description = "上一集",
@@ -395,6 +405,7 @@ fun BottomControlBar(
             showTitle = false,
             placement = PlayerListPopupPlacement.ANCHOR_END,
             anchorBounds = bounds[menu],
+            source = menuSources[menu],
             onDismissRequest = { localMenu = null },
         ) {
             when (menu) {

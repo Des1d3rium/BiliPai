@@ -32,7 +32,7 @@ fun rememberPiliCollectionMenuSession(
 ): PiliCollectionMenuSession {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val subscriptionHaptic = rememberHapticFeedback()
+    val subscriptionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val seasonId = remember(ugcSeason) { ugcSeason?.let(::resolveCollectionSubscriptionId) ?: 0L }
     val orderSeasonId = if (isParts) 0L else seasonId
     val aid = remember(ugcSeason, bvid, cid) {

@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.core.ui.components
 
@@ -257,6 +257,14 @@ internal fun resolveAdaptiveGroupContainerColor(
         targetAlpha = 0.62f
     )
 }
+
+/** 与实际分组共用底色及壁纸透明度，供条目容器转场使用，不改变原生材质参数。 */
+@Composable
+fun adaptivePreferenceGroupContainerColor(): Color = resolveAdaptiveGroupContainerColor(
+    uiStyle = LocalAppUiStyle.current,
+    colorScheme = MaterialTheme.colorScheme,
+    globalWallpaperVisible = LocalGlobalWallpaperBackdropVisible.current && !isMiuixNonGlassEnabled(),
+)
 
 internal fun resolveAdaptiveSearchBarContainerColor(
     uiStyle: AppUiStyle,
@@ -543,11 +551,7 @@ fun AdaptivePreferenceGroupRenderer(
     val colorScheme = MaterialTheme.colorScheme
     val defaultShape = RoundedCornerShape(visualSpec.groupCornerRadiusDp.dp)
     val appliedShape = shape ?: defaultShape
-    val resolvedContainerColor = resolveAdaptiveGroupContainerColor(
-        uiStyle = uiStyle,
-        colorScheme = colorScheme,
-        globalWallpaperVisible = LocalGlobalWallpaperBackdropVisible.current && !isMiuixNonGlassEnabled()
-    )
+    val resolvedContainerColor = adaptivePreferenceGroupContainerColor()
 
     if (uiStyle == AppUiStyle.MIUIX) {
         MiuixCard(
@@ -888,9 +892,8 @@ private fun Md3NativeListItemContent(
 ) {
     val haptic = LocalHapticFeedback.current
     val hapticsEnabled = LocalAppThemeConfig.current.hapticFeedbackEnabled
-    androidx.compose.material3.SegmentedListItem(
-        shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index = 0, count = 1),
-        content = {
+    androidx.compose.material3.ListItem(
+        headlineContent = {
             Text(
                 text = appSearchHighlightedText(title),
                 style = MaterialTheme.typography.bodyLarge,

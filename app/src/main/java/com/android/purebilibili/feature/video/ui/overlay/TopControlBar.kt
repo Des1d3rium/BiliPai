@@ -1,10 +1,15 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.BatteryManager
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
@@ -91,6 +96,8 @@ fun TopControlBar(
     isFileSource: Boolean = false,
     isUgc: Boolean = true,
     onHomeClick: (() -> Unit)? = null,
+    moreMenuSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
+    danmakuMenuSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
     onAudioClick: (() -> Unit)? = null,
     onSendDanmakuClick: (() -> Unit)? = null,
     danmakuEnabled: Boolean = true,
@@ -102,6 +109,7 @@ fun TopControlBar(
     onFavoriteLongClick: (() -> Unit)? = null,
     isDisliked: Boolean = false,
     showSponsorSubmitButton: Boolean = false,
+    sponsorSubmitDescription: String = "提交片段",
     onSponsorSubmitClick: (() -> Unit)? = null,
     showSponsorSegmentsButton: Boolean = false,
     onSponsorSegmentsClick: (() -> Unit)? = null,
@@ -141,11 +149,17 @@ fun TopControlBar(
             delay(30_000L)
         }
     }
+    val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    val buttonSpacing = if (glass) 4.dp else 0.dp
     val motionEnabled = LocalComponentMotionEnabled.current
     val hasTitle = policy.showTitle && title.isNotEmpty()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
+    val likeClick: (() -> Unit)? = onLikeClick?.let { action ->
+        { haptic(HapticType.LIGHT); action() }
+    }
     val triplePress = rememberPiliHeaderTriplePressState()
     val likeGesture = if (likeStatusKnown && onLikeClick != null && onLikeLongClick != null) {
-        piliHeaderLikeGesture(triplePress, isLiked && isCoined && isFavorited, onLikeClick, onLikeLongClick)
+        piliHeaderLikeGesture(triplePress, isLiked && isCoined && isFavorited, requireNotNull(likeClick), onLikeLongClick)
     } else null
 
     PlayerControlTouchBounds(height = policy.buttonHeightDp.dp) {
@@ -160,20 +174,35 @@ fun TopControlBar(
             PiliHeaderSlots(
                 hasTitle = hasTitle,
                 left = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(buttonSpacing)) {
                         HeaderIcon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, iconSize = 15)
-                        if (policy.showHome && onHomeClick != null) {
-                            HeaderIcon(Icons.Outlined.Home, "返回主页", onHomeClick, iconSize = 15)
-                        }
                     }
                 },
                 right = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (batteryVisible) {
-                            batteryPercent?.let { HeaderStatusText("$it%") }
-                            Spacer(Modifier.width(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(buttonSpacing)) {
+                        if (glass) {
+                            if (clockVisible || (batteryVisible && batteryPercent != null)) {
+                                PlayerControlGlassDock(
+                                    enabled = true,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.heightIn(min = policy.buttonHeightDp.dp).padding(horizontal = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        if (batteryVisible) batteryPercent?.let { HeaderStatusText("$it%") }
+                                        if (clockVisible) HeaderStatusText(currentTime)
+                                    }
+                                }
+                            }
+                        } else {
+                            if (batteryVisible) {
+                                batteryPercent?.let { HeaderStatusText("$it%") }
+                                Spacer(Modifier.width(10.dp))
+                            }
+                            if (clockVisible) HeaderStatusText(currentTime)
                         }
-                        if (clockVisible) HeaderStatusText(currentTime)
                         if (policy.showAudio && onAudioClick != null) {
                             HeaderIcon(Icons.Outlined.Headphones, "听音频", onAudioClick)
                         }
@@ -181,8 +210,8 @@ fun TopControlBar(
                             HeaderIcon(Icons.Outlined.Cast, "投屏", onCastClick)
                         }
                         if (!isFileSource && showSponsorSubmitButton && onSponsorSubmitClick != null) {
-                            HeaderButton("提交片段", onSponsorSubmitClick) {
-                                PiliPlusDanmakuGlyph("\uE814", "提交片段", Color.White, 20.dp)
+                            HeaderButton(sponsorSubmitDescription, onSponsorSubmitClick) {
+                                PiliPlusDanmakuGlyph("\uE814", sponsorSubmitDescription, Color.White, 20.dp)
                             }
                         }
                         if (showSponsorSegmentsButton && onSponsorSegmentsClick != null) {
@@ -205,7 +234,7 @@ fun TopControlBar(
                             }
                         }
                         if (onDanmakuSettingsClick != null) {
-                            HeaderButton("弹幕设置", onDanmakuSettingsClick) {
+                            HeaderButton("弹幕设置", onDanmakuSettingsClick, modifier = danmakuMenuSource?.let { Modifier.appGlassMenuSource(it, onOpen = onDanmakuSettingsClick) } ?: Modifier) {
                                 PiliPlusDanmakuSettingsIcon(tint = Color.White, size = 20.dp)
                             }
                         }
@@ -213,31 +242,41 @@ fun TopControlBar(
                             HeaderIcon(Icons.Outlined.PictureInPicture, "画中画", onPipClick)
                         }
                         if (onMoreClick != null) {
-                            HeaderIcon(Icons.Outlined.MoreVert, "更多设置", onMoreClick)
+                            HeaderIcon(Icons.Outlined.MoreVert, "更多设置", onMoreClick, modifier = moreMenuSource?.let { Modifier.appGlassMenuSource(it, onOpen = onMoreClick) } ?: Modifier)
                         }
                     }
                 },
                 title = {
-                    Column(
-                        Modifier.padding(end = if (isPortrait) 0.dp else 10.dp),
-                        verticalArrangement = Arrangement.Center,
+                    // 玻璃标题独立提供圆角材质，原生标题保持原有排版与末端间距。
+                    PlayerControlGlassDock(
+                        enabled = glass,
+                        modifier = Modifier.padding(end = if (isPortrait) 0.dp else 10.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
                     ) {
-                        AppText(
-                            text = title, color = Color.White, fontSize = policy.titleFontSp.sp, lineHeight = 19.sp,
-                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                            modifier = if (motionEnabled) Modifier.basicMarquee(
-                                iterations = Int.MAX_VALUE, spacing = androidx.compose.foundation.MarqueeSpacing(30.dp),
-                                velocity = 30.dp,
-                            ) else Modifier,
-                            tapToCopyEnabled = false,
-                        )
-                        if (onlineCount.isNotBlank()) {
+                        Column(
+                            modifier = if (glass) Modifier
+                                .heightIn(min = policy.buttonHeightDp.dp)
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                            else Modifier,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
                             AppText(
-                                text = onlineCount, color = Color.White,
-                                fontSize = policy.onlineCountFontSp.sp, lineHeight = 13.sp, maxLines = 1,
-                                softWrap = false, overflow = TextOverflow.Ellipsis,
+                                text = title, color = Color.White, fontSize = policy.titleFontSp.sp, lineHeight = 19.sp,
+                                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                                modifier = if (motionEnabled) Modifier.basicMarquee(
+                                    iterations = Int.MAX_VALUE, spacing = androidx.compose.foundation.MarqueeSpacing(30.dp),
+                                    velocity = 30.dp,
+                                ) else Modifier,
                                 tapToCopyEnabled = false,
                             )
+                            if (onlineCount.isNotBlank()) {
+                                AppText(
+                                    text = onlineCount, color = Color.White,
+                                    fontSize = policy.onlineCountFontSp.sp, lineHeight = 13.sp, maxLines = 1,
+                                    softWrap = false, overflow = TextOverflow.Ellipsis,
+                                    tapToCopyEnabled = false,
+                                )
+                            }
                         }
                     }
                 },
@@ -247,8 +286,10 @@ fun TopControlBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // 两排玻璃轮廓留出独立呼吸空间；原生控件保持原有间距。
+                        .then(if (glass) Modifier.padding(top = 6.dp) else Modifier)
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = if (glass) Arrangement.spacedBy(buttonSpacing, Alignment.End) else Arrangement.End,
                 ) {
                     if (onCommentClick != null) {
                         HeaderIcon(Icons.Outlined.Forum, "评论", onCommentClick,
@@ -264,7 +305,7 @@ fun TopControlBar(
                                 HeaderIcon(
                                     if (likeStatusKnown && isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                     if (likeStatusKnown) "点赞" else "点赞状态尚未确认",
-                                    onLikeClick, active = likeStatusKnown && isLiked, iconSize = 18,
+                                    requireNotNull(likeClick), active = likeStatusKnown && isLiked, iconSize = 18,
                                     gestureModifier = likeGesture, progress = triplePress.progress,
                                 )
                             }
@@ -276,13 +317,13 @@ fun TopControlBar(
                             )
                         }
                         if (onCoinClick != null) HeaderIcon(
-                            AppIcons.BiliCoin, "投币", onCoinClick, active = isCoined,
+                            AppIcons.BiliCoin, "投币", { haptic(HapticType.LIGHT); onCoinClick() }, active = isCoined,
                             progress = triplePress.progress, iconSize = 18,
                         )
                         if (onFavoriteClick != null) {
                             HeaderIcon(
                                 if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                "收藏", onFavoriteClick, active = isFavorited, iconSize = 18,
+                                "收藏", { haptic(HapticType.LIGHT); onFavoriteClick() }, active = isFavorited, iconSize = 18,
                                 onLongClick = onFavoriteLongClick, progress = triplePress.progress,
                             )
                         }
@@ -379,9 +420,10 @@ private fun HeaderIcon(
     onLongClick: (() -> Unit)? = null,
     gestureModifier: Modifier? = null,
     progress: Float = 0f,
+    modifier: Modifier = Modifier,
 ) {
     val progressColor = AppContentColors.accent()
-    HeaderButton(description, onClick, active, onLongClick, gestureModifier) {
+    HeaderButton(description, onClick, active, onLongClick, gestureModifier, modifier = modifier) {
         if (progress > 0f) Canvas(Modifier.size(28.dp)) {
             drawArc(progressColor, -90f, -360f * progress, useCenter = false, style = Stroke(2.dp.toPx()))
         }
@@ -401,9 +443,11 @@ private fun HeaderButton(
     active: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     gestureModifier: Modifier? = null,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    PlayerControlGlassDock(enabled = true, shape = CircleShape) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
+    PlayerControlGlassDock(enabled = true, modifier = modifier, shape = if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) androidx.compose.foundation.shape.RoundedCornerShape(50) else CircleShape) {
         Box(
             modifier = Modifier.size(width = 42.dp, height = 34.dp)
                 .semantics(mergeDescendants = true) {
@@ -411,11 +455,11 @@ private fun HeaderButton(
                     selected = active
                     if (gestureModifier != null) {
                         role = Role.Button
-                        onClick(action = { onClick(); true })
+                        onClick(action = { feedbackClick(); true })
                     }
                 }
                 .then(gestureModifier ?: Modifier.combinedClickable(
-                    role = Role.Button, onClick = onClick, onLongClick = onLongClick,
+                    role = Role.Button, onClick = feedbackClick, onLongClick = onLongClick,
                 )),
             contentAlignment = Alignment.Center,
         ) { content() }

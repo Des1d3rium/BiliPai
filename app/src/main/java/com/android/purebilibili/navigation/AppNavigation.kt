@@ -971,6 +971,7 @@ fun AppNavigation(
             sourceLayout = CardPositionManager.lastClickedVideoSourceLayout,
             sourceChromeSnapshot = CardPositionManager.lastClickedVideoSourceChromeSnapshot,
             hostOriginInRoot = navigationHostOriginInRoot,
+            sourcePixelOwner = CardPositionManager.videoCardPixelOwnerFor(source.key),
         )
         // Freeze the source before direction/offline lookups can suspend. A related click
         // replaces the previous home-card globals, which may be invalidated while those
@@ -2189,7 +2190,15 @@ fun AppNavigation(
             ) {
                 markNavigation3VideoReturnBeforeBackAction(targetKey = targetKey)
                 prepareVideoPlaybackForNavigationExit(videoKey, targetKey)
+                val before = navigation3BackStack.toList()
                 popAction()
+                repeat(
+                    com.android.purebilibili.navigation3.countSuccessfulVideoDetailPops(
+                        before, navigation3BackStack,
+                    )
+                ) {
+                    navigation3ReturnSession = navigation3ReturnSession.recordSuccessfulVideoDetailPop()
+                }
             }
 
             var liveNavigationExitPending by remember { mutableStateOf(false) }
@@ -2301,6 +2310,11 @@ fun AppNavigation(
                     },
                 )
             }
+            com.android.purebilibili.core.ui.popup.AppGlassPopupHost(
+                glassAvailable = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
+                    com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass(android.os.Build.VERSION.SDK_INT),
+                tuning = liquidGlassRenderConfig.tuning,
+            ) {
             Box(modifier = Modifier.fillMaxSize()) {
             Row(modifier = Modifier.fillMaxSize()) {
                 // Remove the whole slot on video detail so an exit animation cannot reserve width.
@@ -4938,6 +4952,10 @@ fun AppNavigation(
                     // List cover waits for the live handoff window; list info is native throughout return.
                     videoReturnContentFollowProgressEnabled =
                         appNavigationSettings.videoReturnContentFollowProgressEnabled,
+                    settingsContainerMorphEnabled =
+                        appNavigationSettings.settingsContainerMorphEnabled,
+                    settingsContainerRealtimeBlurEnabled =
+                        appNavigationSettings.settingsContainerRealtimeBlurEnabled,
                     preferWholeCardReturn = false,
                     onBack = { performSystemBackAction() },
                     onPrepareVideoCardSharedReturn = {
@@ -4948,16 +4966,21 @@ fun AppNavigation(
                         markNavigation3VideoReturnBeforeBackAction(targetKey = previousKey)
                         navigation3ReturnSession.isQuickReturnFromDetail
                     },
-                    onRelatedVideoDetailReturned = {
-                        navigation3ReturnSession =
-                            navigation3ReturnSession.restorePreviousVideoSourceAfterRelatedReturn()
-                        CardPositionManager.restoreVideoSourceKey(
-                            navigation3ReturnSession.lastVideoSourceKey
-                        )
+                    pendingRelatedReturnCount = navigation3ReturnSession.pendingRelatedReturnCount,
+                    relatedReturnRequestId = navigation3ReturnSession.relatedReturnRequestId,
+                    onRelatedVideoDetailReturned = { generation, requestId ->
+                        val restored = navigation3ReturnSession
+                            .restorePendingRelatedReturns(generation, requestId)
+                        if (restored !== navigation3ReturnSession) {
+                            navigation3ReturnSession = restored
+                            CardPositionManager.restoreVideoSource(
+                                sourceKey = restored.lastVideoSourceKey,
+                                sourceOwner = restored.transitionSession?.sourcePixelOwner,
+                            )
+                            true
+                        } else false
                     },
-                    restorePreviousVideoSourceOnDetailReturn =
-                        navigation3ReturnSession.previousTransitionSessions.isNotEmpty() ||
-                            navigation3ReturnSession.previousVideoSources.isNotEmpty(),
+                    videoSourceGeneration = navigation3ReturnSession.sourceGeneration,
                     modifier = Modifier
                         .fillMaxSize()
                         .onGloballyPositioned { coordinates ->
@@ -5450,6 +5473,7 @@ fun AppNavigation(
                     .zIndex(101f),
             )
         } // End of Main Box
+            } // Same-window glass menus
         } // End of CompositionLocalProvider
     }
 }

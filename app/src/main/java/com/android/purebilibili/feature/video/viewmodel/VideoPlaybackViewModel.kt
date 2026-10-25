@@ -22,7 +22,11 @@ import com.android.purebilibili.core.cache.PlayUrlCache
 import com.android.purebilibili.core.cooldown.PlaybackCooldownManager
 import com.android.purebilibili.core.lifecycle.BackgroundManager
 import com.android.purebilibili.core.plugin.PluginManager
-import com.android.purebilibili.core.plugin.SkipAction
+import com.android.purebilibili.plugin.sdk.SkipAction
+import com.android.purebilibili.core.plugin.PlayerPluginSessionEntry
+import com.android.purebilibili.core.plugin.PlayerPluginSessionHost
+import com.android.purebilibili.core.plugin.PluginVideoKey
+import com.android.purebilibili.core.plugin.SponsorBlockSessionApi
 import com.android.purebilibili.core.store.TodayWatchFeedbackSnapshot
 import com.android.purebilibili.core.store.TodayWatchFeedbackStore
 import com.android.purebilibili.core.store.TodayWatchProfileStore
@@ -42,11 +46,11 @@ import com.android.purebilibili.data.repository.resolveVideoPlaybackAuthState
 import com.android.purebilibili.data.repository.isExactRequestedQualitySelected
 import com.android.purebilibili.data.repository.shouldScheduleHdrAutoUpgrade
 import com.android.purebilibili.feature.plugin.CdnTransferRuntime
-import com.android.purebilibili.feature.plugin.CdnHealthEvent
+import com.android.purebilibili.plugin.sdk.CdnHealthEvent
 import com.android.purebilibili.feature.plugin.CdnDashPrefetchRequest
 import com.android.purebilibili.feature.plugin.CdnDashSegmentPrefetcher
-import com.android.purebilibili.feature.plugin.CdnLineDiagnostic
-import com.android.purebilibili.feature.plugin.PlaybackCdnPlugin
+import com.android.purebilibili.plugin.sdk.CdnLineDiagnostic
+import com.android.purebilibili.plugin.sdk.PlaybackCdnPlugin
 import com.android.purebilibili.feature.plugin.PlaybackCdnPreference
 import com.android.purebilibili.feature.plugin.applyPlaybackCdnPreference
 import com.android.purebilibili.feature.plugin.buildPlaybackCdnCacheKeys
@@ -84,6 +88,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -155,6 +160,7 @@ import com.android.purebilibili.feature.video.subtitle.resolveDefaultSubtitleLan
 
 private const val PLAYBACK_CDN_FIRST_FRAME_FALLBACK_TIMEOUT_MS = 2_500L
 private const val PLAYBACK_STALL_RECOVERY_TIMEOUT_MS = 10_000L
+private const val PLAYBACK_STARTUP_RECOVERY_TIMEOUT_MS = 5_000L
 
 internal data class PlaybackStallRecoveryDecision(
     val nextCdnIndex: Int? = null
@@ -175,8 +181,7 @@ internal fun resolvePlaybackStallRecoveryDecision(
     if (
         playbackState != Player.STATE_BUFFERING ||
         !playWhenReady ||
-        !firstFrameRendered ||
-        forwardBufferDurationMs > 0L ||
+        forwardBufferDurationMs > (if (firstFrameRendered) 0L else 500L) ||
         cdnCandidateCount <= 1 ||
         usesAdaptivePlayback
     ) {
@@ -232,7 +237,8 @@ data class SponsorContributionUiState(
 }
 
 private data class SponsorContributionRequest(
-    val plugin: com.android.purebilibili.feature.plugin.SponsorBlockPlugin,
+    val plugin: SponsorBlockSessionApi,
+    val entry: PlayerPluginSessionEntry,
     val bvid: String,
     val cid: Long,
     val durationSeconds: Float,
@@ -245,6 +251,7 @@ internal fun reduceSponsorSkipUiState(
     action: SkipAction?
 ): SponsorSkipUiState {
     return when (action) {
+        null -> previous
         is SkipAction.ShowButton -> SponsorSkipUiState(
             visible = true,
             segmentId = action.segmentId,
@@ -403,7 +410,7 @@ internal data class PlaybackCdnFallbackState(
     val selectedAudioUrl: String? = null,
     val fallbackVideoUrl: String? = null,
     val fallbackAudioUrl: String? = null,
-    val fallbackCandidates: List<com.android.purebilibili.feature.plugin.PlaybackCdnCandidate> = emptyList(),
+    val fallbackCandidates: List<com.android.purebilibili.plugin.sdk.PlaybackCdnCandidate> = emptyList(),
     val regionLabel: String? = null,
     val usesCustomRule: Boolean = false,
     val fallbackConsumed: Boolean = false
@@ -447,7 +454,7 @@ internal fun buildPlaybackCdnFallbackState(
     originalAudioUrl: String?,
     regionLabel: String?,
     audioFallbackUrl: String? = null,
-    fallbackCandidates: List<com.android.purebilibili.feature.plugin.PlaybackCdnCandidate> = emptyList(),
+    fallbackCandidates: List<com.android.purebilibili.plugin.sdk.PlaybackCdnCandidate> = emptyList(),
     usesCustomRule: Boolean = false
 ): PlaybackCdnFallbackState {
     val fallbackAudioUrl = when {
@@ -457,10 +464,10 @@ internal fun buildPlaybackCdnFallbackState(
     }
     val candidates = fallbackCandidates.ifEmpty {
         listOf(
-            com.android.purebilibili.feature.plugin.PlaybackCdnCandidate(
+            com.android.purebilibili.plugin.sdk.PlaybackCdnCandidate(
                 videoUrl = originalVideoUrl,
                 audioUrl = fallbackAudioUrl,
-                source = com.android.purebilibili.feature.plugin.PlaybackCdnCandidateSource.ORIGINAL
+                source = com.android.purebilibili.plugin.sdk.PlaybackCdnCandidateSource.ORIGINAL
             )
         )
     }
@@ -605,7 +612,7 @@ sealed class VideoPlaybackUiState {
         val currentCdnIndex: Int = 0,  // 当前使用的 CDN 索引 (0=主线路)
         val allVideoUrls: List<String> = emptyList(),  // 所有可用视频 URL (主+备用)
         val allAudioUrls: List<String> = emptyList(),   // 所有可用音频 URL (主+备用)
-        val cdnCandidateSources: List<com.android.purebilibili.feature.plugin.PlaybackCdnCandidateSource> = emptyList(),
+        val cdnCandidateSources: List<com.android.purebilibili.plugin.sdk.PlaybackCdnCandidateSource> = emptyList(),
         val cdnLineDiagnostics: List<CdnLineDiagnostic> = emptyList(),
         val isCdnProbing: Boolean = false,
         // 🖼️ [新增] 视频预览图数据（用于进度条拖动预览）
@@ -1435,6 +1442,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     private var relatedPlaybackPreparedToken = -1L
     private var relatedFirstFrameToken = -1L
     private var pendingPlaybackResumeNotice: PlaybackResumeNotice? = null
+    private var initialPartResumeNoticeCid: Long = 0L
+    private var dismissedPartResumeNoticeToken: Long = -1L
     private val videoLoadTimeline = VideoLoadTimeline(android.os.SystemClock::elapsedRealtime)
 
     private fun logVideoLoadStage(stage: VideoLoadStage, requestToken: Long) {
@@ -1632,17 +1641,16 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     private val _sponsorProgressMarkers =
         MutableStateFlow<List<com.android.purebilibili.data.model.response.SponsorProgressMarker>>(emptyList())
     val sponsorProgressMarkers = _sponsorProgressMarkers.asStateFlow()
-    private var sponsorBlockLoadedVideo: Pair<String, Long>? = null
-    private val sponsorPlaybackPlugin = com.android.purebilibili.feature.plugin.SponsorBlockPlugin()
-    private var sponsorBlockRetryVideo: Pair<String, Long>? = null
+    private var sponsorBlockRetryVideo: PluginVideoKey? = null
     private var sponsorBlockRetryAtMs = 0L
     private var sponsorBlockLoadFailures = 0
-
-    /** PluginManager owns settings; mutable playback state belongs to this ViewModel. */
-    private fun getSessionPlayerPlugins(): List<com.android.purebilibili.core.plugin.PlayerPlugin> =
-        PluginManager.getEnabledPlayerPlugins().map { plugin ->
-            if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) sponsorPlaybackPlugin else plugin
-        }
+    private var playerPluginVideoKey: PluginVideoKey? = null
+    private val playerPluginSessionHost = PlayerPluginSessionHost(
+        scope = viewModelScope,
+        onLoaded = ::onPlayerPluginSessionLoaded,
+        onLoadFailed = ::onPlayerPluginSessionLoadFailed,
+        onEnded = ::onPlayerPluginSessionEnded,
+    )
 
     private val _sponsorContributionUiState = MutableStateFlow(SponsorContributionUiState())
     val sponsorContributionUiState = _sponsorContributionUiState.asStateFlow()
@@ -2461,6 +2469,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (!playWhenReady) {
                 cancelPlaybackStallRecovery()
+            } else if (exoPlayer?.playbackState == Player.STATE_BUFFERING) {
+                schedulePlaybackStallRecovery()
             }
         }
 
@@ -2535,6 +2545,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     private fun schedulePlaybackStallRecovery() {
         val scheduledPlayer = exoPlayer ?: return
         val current = _uiState.value as? VideoPlaybackUiState.Success ?: return
+        if (scheduledPlayer.playbackState != Player.STATE_BUFFERING || !scheduledPlayer.playWhenReady) return
         val mediaKey = "${current.info.bvid}:${current.info.cid}"
         if (playbackStallRecoveryMediaKey != mediaKey) {
             playbackStallRecoveryMediaKey = mediaKey
@@ -2544,7 +2555,11 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         val ticket = playbackRecoveryGeneration
 
         playbackStallRecoveryJob = viewModelScope.launch {
-            delay(PLAYBACK_STALL_RECOVERY_TIMEOUT_MS)
+            delay(if (playbackStallRecoveryFirstFrameRendered) {
+                PLAYBACK_STALL_RECOVERY_TIMEOUT_MS
+            } else {
+                PLAYBACK_STARTUP_RECOVERY_TIMEOUT_MS
+            })
             val latestPlayer = exoPlayer ?: return@launch
             val latest = _uiState.value as? VideoPlaybackUiState.Success ?: return@launch
             if (ticket != playbackRecoveryGeneration || latestPlayer !== scheduledPlayer ||
@@ -3417,6 +3432,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 loadRelatedVideosForRequest(playbackRequest.bvid, requestToken)
             }
             
+            try {
                 val isLoggedIn = com.android.purebilibili.data.repository.VideoRepository.isPlaybackLoggedIn()
                 var storedQualityForWarning = 64
                 var autoHighestQualityEnabledForLoad = false
@@ -3426,12 +3442,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         .getAutoHighestQualitySync(context)
                     storedQualityForWarning = storedQuality
                     autoHighestQualityEnabledForLoad = autoHighestEnabled
-                    val effectiveVip = VideoRepository.refreshVipStatusForPreferredQualityIfNeeded(
-                        isLoggedIn = isLoggedIn,
-                        cachedIsVip = com.android.purebilibili.data.repository.VideoRepository.isPlaybackVip(),
-                        storedQuality = storedQuality,
-                        autoHighestEnabled = autoHighestEnabled
-                    )
+                    // 首帧前只读取当前账号缓存；实际可用画质由取流结果决定。
+                    val effectiveVip = VideoRepository.isPlaybackVip()
                     com.android.purebilibili.core.util.resolvePlaybackDefaultQualityId(
                         storedQuality = storedQuality,
                         autoHighestEnabled = autoHighestEnabled,
@@ -3498,7 +3510,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 com.android.purebilibili.core.util.Logger.d("VideoPlaybackViewModel", "📉 省流量模式(${dataSaverMode.label}): 限制画质为480P")
             }
             
-            try {
                 val capabilityContext = appContext
                 val loadQuality = finalQuality
                 val playbackSpeed = exoPlayer?.playbackParameters?.speed ?: capabilityContext?.let {
@@ -3619,6 +3630,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                             PlaybackResumeNotice(requestToken, result.info.bvid, result.info.cid, startPos)
                         } else null
 
+                        initialPartResumeNoticeCid = result.info.cid
                         val partResumeNotice = resolvePartResumeNotice(
                             requestToken = requestToken,
                             info = result.info,
@@ -3676,6 +3688,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                             videoDurationMs = result.duration
                         )
                         _uiState.value = readyState
+                        // prepare 的 BUFFERING 回调可能早于 Success 发布，补齐首次起播保护。
+                        schedulePlaybackStallRecovery()
                         publishSubjectSnapshot(readyState)
                         maybeAnnounceRestoredPlaybackPosition()
                         // Do not wait for the foreground Compose collector to mirror this state.
@@ -6079,6 +6093,27 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         return@onSuccess
                     }
 
+                    // 观看分 P 记录由播放器信息补齐，异步到达不能恢复已关闭或已切分 P 的提示。
+                    val lastPlayCid = data.lastPlayCid
+                    if (lastPlayCid != null && cid == initialPartResumeNoticeCid &&
+                        dismissedPartResumeNoticeToken != requestToken
+                    ) {
+                        val notice = resolvePartResumeNotice(
+                            requestToken = requestToken,
+                            info = currentState.info,
+                            lastPlayCid = lastPlayCid,
+                            requestedCid = playbackSessionState.currentRequest?.cid ?: 0L,
+                            noticeEnabled = appContext?.let {
+                                SettingsManager.getShowContinuePartNoticeSync(it)
+                            } ?: true,
+                        )
+                        _uiState.update { latest ->
+                            if (latest is VideoPlaybackUiState.Success &&
+                                latest.info.bvid == bvid && latest.info.cid == cid
+                            ) latest.copy(partResumeNotice = notice) else latest
+                        }
+                    }
+
                     // 1. 处理章节信息
                     val points = data.viewPoints
                     if (points.isNotEmpty()) {
@@ -8069,6 +8104,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     fun dismissPartResumeNotice() {
         val current = _uiState.value as? VideoPlaybackUiState.Success ?: return
         if (current.partResumeNotice != null) {
+            dismissedPartResumeNoticeToken = currentLoadRequestToken
             _uiState.value = current.copy(partResumeNotice = null)
         }
     }
@@ -8267,11 +8303,78 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     
     // ==========  Plugin System (SponsorBlock等) ==========
 
+    private fun currentPluginVideoKey(): PluginVideoKey? {
+        val key = playerPluginVideoKey ?: return null
+        val state = _uiState.value as? VideoPlaybackUiState.Success ?: return null
+        return key.takeIf { state.info.bvid == it.bvid && state.info.cid == it.cid }
+    }
+
+    private fun isActivePlayerPluginSession(entry: PlayerPluginSessionEntry): Boolean =
+        playerPluginSessionHost.isCurrent(entry) &&
+            currentPluginVideoKey() == entry.videoKey &&
+            PluginManager.isEnabled(entry.definition.id)
+
+    private fun currentReadyPlayerSessions(): List<PlayerPluginSessionEntry> =
+        currentPluginVideoKey()?.let(playerPluginSessionHost::readySessions) ?: emptyList()
+
+    private fun currentSponsorSessionEntry(): PlayerPluginSessionEntry? =
+        currentReadyPlayerSessions().firstOrNull {
+            it.session is SponsorBlockSessionApi && isActivePlayerPluginSession(it)
+        }
+
+    private fun onPlayerPluginSessionLoaded(entry: PlayerPluginSessionEntry) {
+        if (!isActivePlayerPluginSession(entry)) return
+        val session = entry.session as? SponsorBlockSessionApi ?: return
+        sponsorBlockRetryVideo = null
+        sponsorBlockLoadFailures = 0
+        sponsorBlockRetryAtMs = 0L
+        _sponsorProgressMarkers.value = session.getProgressMarkers()
+        updateSponsorVideoLabel(entry.videoKey.bvid, entry.videoKey.cid, session.getSegments())
+        refreshSponsorContributionAvailability()
+    }
+
+    private fun onPlayerPluginSessionLoadFailed(entry: PlayerPluginSessionEntry, error: Exception) {
+        if (!isActivePlayerPluginSession(entry)) return
+        if (entry.session is SponsorBlockSessionApi) {
+            sponsorBlockRetryVideo = entry.videoKey
+            sponsorBlockLoadFailures += 1
+            val retryDelayMs = (2_000L shl (sponsorBlockLoadFailures - 1).coerceAtMost(4))
+                .coerceAtMost(30_000L)
+            sponsorBlockRetryAtMs = android.os.SystemClock.elapsedRealtime() + retryDelayMs
+            Logger.e("PlayerVM", "${entry.definition.name} load failed; retry in ${retryDelayMs}ms", error)
+        } else {
+            Logger.e("PlayerVM", "${entry.definition.name} onVideoLoad failed", error)
+        }
+    }
+
+    private fun restoreSponsorMutedVolume() {
+        sponsorMutedOriginalVolume?.let { exoPlayer?.volume = it }
+        sponsorMutedOriginalVolume = null
+        sponsorMuteRestoreAtMs = null
+    }
+
+    private fun onPlayerPluginSessionEnded(entry: PlayerPluginSessionEntry) {
+        if (entry.session !is SponsorBlockSessionApi) return
+        sponsorBlockRetryVideo = null
+        sponsorBlockRetryAtMs = 0L
+        sponsorBlockLoadFailures = 0
+        lastPluginDispatchPositionMs = null
+        _sponsorProgressMarkers.value = emptyList()
+        clearSponsorSkipUi()
+        sponsorVideoLabels.value = emptyMap()
+        _uiState.update { state ->
+            if (state is VideoPlaybackUiState.Success && state.sponsorVideoLabel.isNotEmpty()) {
+                state.copy(sponsorVideoLabel = "")
+            } else state
+        }
+        sponsorContributionRequest = null
+        _sponsorContributionUiState.value = SponsorContributionUiState()
+        restoreSponsorMutedVolume()
+    }
+
     /** Cached detail restoration bypasses the normal post-load plugin plan. */
     private fun restoreSponsorPlaybackState(state: VideoPlaybackUiState.Success) {
-        val sponsorEnabled = getSessionPlayerPlugins().any {
-            it is com.android.purebilibili.feature.plugin.SponsorBlockPlugin
-        }
+        val sponsorEnabled = currentSponsorSessionEntry() != null
         if (sponsorEnabled && state.sponsorVideoLabel.isNotEmpty()) {
             val key = state.info.bvid to state.info.cid
             sponsorVideoLabels.update { labels ->
@@ -8421,7 +8524,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                             PlaybackPostLoadTask.PLUGIN_ON_VIDEO_LOAD -> {
                                 sponsorContributionRequest = null
                                 _sponsorContributionUiState.value = SponsorContributionUiState()
-                                sponsorBlockLoadedVideo = null
                                 refreshSponsorContributionAvailability()
                             }
                             PlaybackPostLoadTask.START_PLUGIN_CHECK -> startPluginCheck()
@@ -8523,76 +8625,29 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         )
                     }
                 }
-                val plugins = getSessionPlayerPlugins()
-                refreshSponsorContributionAvailability(plugins)
-                val currentVideo = _uiState.value as? VideoPlaybackUiState.Success
-                val sponsorPlugin = plugins
-                    .filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>()
-                    .firstOrNull()
-                if (sponsorPlugin == null) {
-                    sponsorBlockLoadedVideo = null
-                    sponsorBlockRetryVideo = null
-                    sponsorBlockLoadFailures = 0
-                    sponsorBlockRetryAtMs = 0L
-                    sponsorPlaybackPlugin.onVideoEnd()
-                    _sponsorProgressMarkers.value = emptyList()
-                    clearSponsorSkipUi()
-                    sponsorVideoLabels.value = emptyMap()
-                    currentVideo?.let { updateSponsorVideoLabel(it.info.bvid, it.info.cid, emptyList()) }
-                } else if (currentVideo != null) {
-                    val bvid = currentVideo.info.bvid
-                    val cid = currentVideo.info.cid
-                    val videoKey = bvid to cid
-                    if (sponsorBlockRetryVideo != videoKey) {
-                        sponsorBlockRetryVideo = videoKey
-                        sponsorBlockLoadFailures = 0
-                        sponsorBlockRetryAtMs = 0L
-                        _sponsorProgressMarkers.value = emptyList()
-                        clearSponsorSkipUi()
-                    }
-                    if (sponsorBlockLoadedVideo != videoKey &&
-                        android.os.SystemClock.elapsedRealtime() >= sponsorBlockRetryAtMs
-                    ) {
-                        try {
-                            sponsorPlugin.onVideoLoad(bvid, cid)
-                            sponsorBlockLoadedVideo = videoKey
-                            sponsorBlockLoadFailures = 0
-                            sponsorBlockRetryAtMs = 0L
-                            val stillCurrent = _uiState.value as? VideoPlaybackUiState.Success
-                            if (stillCurrent?.info?.bvid == bvid && stillCurrent.info.cid == cid) {
-                                _sponsorProgressMarkers.value = sponsorPlugin.getProgressMarkers()
-                                updateSponsorVideoLabel(bvid, cid, sponsorPlugin.getSegments())
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            sponsorBlockLoadFailures += 1
-                            val retryDelayMs = (2_000L shl (sponsorBlockLoadFailures - 1).coerceAtMost(4))
-                                .coerceAtMost(30_000L)
-                            sponsorBlockRetryAtMs = android.os.SystemClock.elapsedRealtime() + retryDelayMs
-                            Logger.e("PlayerVM", "SponsorBlock $bvid/$cid load failed; retry in ${retryDelayMs}ms", e)
-                        }
-                    }
-                }
-                if (plugins.none { it is com.android.purebilibili.feature.plugin.SponsorBlockPlugin } &&
-                    _sponsorProgressMarkers.value.isNotEmpty()
+                refreshSponsorContributionAvailability()
+                val videoKey = currentPluginVideoKey()
+                if (videoKey != null && sponsorBlockRetryVideo == videoKey &&
+                    sponsorBlockRetryAtMs > 0L &&
+                    android.os.SystemClock.elapsedRealtime() >= sponsorBlockRetryAtMs
                 ) {
-                    _sponsorProgressMarkers.value = emptyList()
-                    clearSponsorSkipUi()
+                    sponsorBlockRetryAtMs = 0L
+                    playerPluginSessionHost.currentSessions().firstOrNull {
+                        it.videoKey == videoKey && it.session is SponsorBlockSessionApi
+                    }?.let { playerPluginSessionHost.retryLoad(it.definition.id) }
                 }
+                val plugins = videoKey?.let(playerPluginSessionHost::readySessions) ?: emptyList()
                 val intervalMs = resolvePluginPollingIntervalMs(
                     hasPlugins = plugins.isNotEmpty(),
                     isPlaying = exoPlayer?.isPlaying == true
                 )
                 delay(intervalMs)
-                if (plugins.isEmpty()) continue
+                if (plugins.isEmpty() || currentPluginVideoKey() != videoKey) continue
 
                 val currentPos = playbackUseCase.getCurrentPosition()
                 val restoreAt = sponsorMuteRestoreAtMs
                 if (restoreAt != null && currentPos >= restoreAt) {
-                    sponsorMutedOriginalVolume?.let { exoPlayer?.volume = it }
-                    sponsorMutedOriginalVolume = null
-                    sponsorMuteRestoreAtMs = null
+                    restoreSponsorMutedVolume()
                 }
                 if (!shouldDispatchPluginPositionUpdate(
                         lastDispatchedPositionMs = lastPluginDispatchPositionMs,
@@ -8603,14 +8658,13 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 }
                 lastPluginDispatchPositionMs = currentPos
                 
-                for (plugin in plugins) {
-                    if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
-                        val activeVideo = _uiState.value as? VideoPlaybackUiState.Success
-                        val activeKey = activeVideo?.let { it.info.bvid to it.info.cid }
-                        if (activeKey == null || sponsorBlockLoadedVideo != activeKey) continue
-                    }
+                for (entry in plugins) {
+                    if (!isActivePlayerPluginSession(entry)) continue
+                    val plugin = entry.session
                     try {
-                        when (val action = plugin.onPositionUpdate(currentPos)) {
+                        val action = plugin.onPositionUpdate(currentPos)
+                        if (!isActivePlayerPluginSession(entry)) continue
+                        when (action) {
                             is SkipAction.SkipTo -> {
                                 val snapshot = buildSponsorBlockVideoSnapshot(_uiState.value)
                                 val playerDurationMs = playbackUseCase.getDuration()
@@ -8637,7 +8691,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                                 if (action.showToast) toast(action.reason)
                                 Logger.d(
                                     "PlayerVM",
-                                    "Plugin ${plugin.name} skip: requested=${action.positionMs}ms, " +
+                                    "Plugin ${entry.definition.name} skip: requested=${action.positionMs}ms, " +
                                         "resolved=${resolvedTargetPositionMs}ms, duration=${playerDurationMs}ms, " +
                                         "category=${action.category}, state=${exoPlayer?.playbackState}, " +
                                         "playWhenReady=${exoPlayer?.playWhenReady}"
@@ -8651,7 +8705,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                                 _sponsorSkipUiState.value = nextUiState
                                 _showSkipButton.value = nextUiState.visible
                                 _currentSkipReason.value = action.label
-                                if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
+                                if (plugin is SponsorBlockSessionApi) {
                                     _currentSponsorSegment.value = plugin.getActiveSegment()
                                 }
                             }
@@ -8668,8 +8722,10 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                             }
                             else -> {}
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        Logger.e("PlayerVM", "Plugin ${plugin.name} onPositionUpdate failed", e)
+                        Logger.e("PlayerVM", "Plugin ${entry.definition.name} onPositionUpdate failed", e)
                     }
                 }
             }
@@ -8677,10 +8733,9 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
     
     fun dismissSponsorSkipButton() {
-        getSessionPlayerPlugins().forEach { plugin ->
-            if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
-                plugin.markAsSkipped(_sponsorSkipUiState.value.segmentId ?: return@forEach)
-            }
+        val segmentId = _sponsorSkipUiState.value.segmentId
+        if (segmentId != null) {
+            (currentSponsorSessionEntry()?.session as? SponsorBlockSessionApi)?.markAsSkipped(segmentId)
         }
         clearSponsorSkipUi()
     }
@@ -8688,12 +8743,15 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     /** Explicit voting is only available for the segment the user is currently reviewing. */
     fun voteCurrentSponsorSegment(voteType: Int) {
         val segmentId = _sponsorSkipUiState.value.segmentId ?: return
-        val plugin = getSessionPlayerPlugins()
-            .filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>()
-            .firstOrNull() ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            plugin.voteOnCommunitySegment(segmentId, voteType)
-                .onSuccess { toast("已提交社区投票") }
+        val entry = currentSponsorSessionEntry() ?: return
+        val plugin = entry.session as SponsorBlockSessionApi
+        viewModelScope.launch {
+            if (!isActivePlayerPluginSession(entry)) return@launch
+            val result = withContext(Dispatchers.IO) {
+                plugin.voteOnCommunitySegment(segmentId, voteType)
+            }
+            if (!isActivePlayerPluginSession(entry)) return@launch
+            result.onSuccess { toast("已提交社区投票") }
                 .onFailure { error -> toast(error.message ?: "社区投票失败") }
         }
     }
@@ -8702,21 +8760,18 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         val targetPosition = _sponsorSkipUiState.value.skipToMs.takeIf { it > 0L } ?: return
         val segmentId = _sponsorSkipUiState.value.segmentId
         val snapshot = buildSponsorBlockVideoSnapshot(_uiState.value)
-        var segmentCategory: String? = null
-        getSessionPlayerPlugins().forEach { plugin ->
-            if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin && segmentId != null) {
-                val segment = plugin.markAsSkipped(segmentId)
-                segmentCategory = segment?.category
-                recordSponsorBlockSkip(
-                    snapshot = snapshot,
-                    segmentId = segment?.UUID ?: segmentId,
-                    segmentCategoryName = segment?.categoryName,
-                    startMs = segment?.startTimeMs,
-                    endMs = segment?.endTimeMs ?: targetPosition,
-                    trigger = SponsorBlockSkipTrigger.MANUAL
-                )
-            }
-        }
+        val entry = currentSponsorSessionEntry() ?: return
+        val plugin = entry.session as SponsorBlockSessionApi
+        val segment = segmentId?.let(plugin::markAsSkipped)
+        val segmentCategory = segment?.category
+        recordSponsorBlockSkip(
+            snapshot = snapshot,
+            segmentId = segment?.UUID ?: segmentId,
+            segmentCategoryName = segment?.categoryName,
+            startMs = segment?.startTimeMs,
+            endMs = segment?.endTimeMs ?: targetPosition,
+            trigger = SponsorBlockSkipTrigger.MANUAL
+        )
         val resolvedTargetPosition = resolveSponsorBlockSkipTargetPositionMs(
             requestedPositionMs = targetPosition,
             durationMs = playbackUseCase.getDuration(),
@@ -8751,24 +8806,35 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             trigger = trigger,
             timestampMs = System.currentTimeMillis()
         )
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                SponsorBlockInsightStore.appendRecord(context, record)
-            }.onFailure { error ->
-                Logger.w("PlayerVM", "记录空降助手跳过历史失败: ${error.message}")
-            }
-            getSessionPlayerPlugins()
-                .filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>()
-                .forEach { plugin ->
-                    plugin.uploadViewedSegmentIfEnabled(capturedSegmentId)
+        val entry = currentSponsorSessionEntry()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    SponsorBlockInsightStore.appendRecord(context, record)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Logger.w("PlayerVM", "记录空降助手跳过历史失败: ${error.message}")
                 }
+            }
+            if (entry != null && isActivePlayerPluginSession(entry)) {
+                withContext(Dispatchers.IO) {
+                    (entry.session as SponsorBlockSessionApi).uploadViewedSegmentIfEnabled(capturedSegmentId)
+                }
+            }
         }
     }
 
     fun notifyPluginsOfExplicitSeek(positionMs: Long) {
-        getSessionPlayerPlugins().forEach { plugin ->
-            plugin.onUserSeek(positionMs)
-            if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
+        currentReadyPlayerSessions().forEach { entry ->
+            if (!isActivePlayerPluginSession(entry)) return@forEach
+            val plugin = entry.session
+            try {
+                plugin.onUserSeek(positionMs)
+            } catch (error: Exception) {
+                Logger.e("PlayerVM", "${entry.definition.name} onUserSeek failed", error)
+            }
+            if (plugin is SponsorBlockSessionApi) {
                 _currentSponsorSegment.value = plugin.getActiveSegment()
             }
         }
@@ -8892,21 +8958,28 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     fun submitSponsorContribution() {
         val current = _sponsorContributionUiState.value
         val request = sponsorContributionRequest ?: return
-        if (current.phase != SponsorContributionPhase.REVIEW) return
+        if (current.phase != SponsorContributionPhase.REVIEW ||
+            !isActivePlayerPluginSession(request.entry)
+        ) return
         _sponsorContributionUiState.value = current.copy(
             phase = SponsorContributionPhase.SUBMITTING,
             message = null,
         )
-        viewModelScope.launch(Dispatchers.IO) {
-            request.plugin.submitCommunitySegment(
-                bvid = request.bvid,
-                cid = request.cid,
-                videoDurationSeconds = request.durationSeconds,
-                startMs = request.startMs,
-                endMs = request.endMs,
-                category = current.category,
-                actionType = current.actionType,
-            ).onSuccess {
+        viewModelScope.launch {
+            if (!isActivePlayerPluginSession(request.entry)) return@launch
+            val result = withContext(Dispatchers.IO) {
+                request.plugin.submitCommunitySegment(
+                    bvid = request.bvid,
+                    cid = request.cid,
+                    videoDurationSeconds = request.durationSeconds,
+                    startMs = request.startMs,
+                    endMs = request.endMs,
+                    category = current.category,
+                    actionType = current.actionType,
+                )
+            }
+            if (!isActivePlayerPluginSession(request.entry) || sponsorContributionRequest !== request) return@launch
+            result.onSuccess {
                 _sponsorContributionUiState.value = _sponsorContributionUiState.value.copy(
                     phase = SponsorContributionPhase.SUCCESS,
                     message = "社区片段已提交",
@@ -8929,13 +9002,10 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         refreshSponsorContributionAvailability()
     }
 
-    private fun refreshSponsorContributionAvailability(
-        enabledPlugins: List<com.android.purebilibili.core.plugin.PlayerPlugin> =
-            getSessionPlayerPlugins(),
-    ) {
+    private fun refreshSponsorContributionAvailability() {
         val current = _sponsorContributionUiState.value
         if (current.phase !in setOf(SponsorContributionPhase.HIDDEN, SponsorContributionPhase.READY)) return
-        val context = resolveSponsorContributionContext(enabledPlugins)
+        val context = resolveSponsorContributionContext()
         _sponsorContributionUiState.value = if (context == null) {
             SponsorContributionUiState()
         } else {
@@ -8946,19 +9016,16 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    private fun resolveSponsorContributionContext(
-        enabledPlugins: List<com.android.purebilibili.core.plugin.PlayerPlugin> =
-            getSessionPlayerPlugins(),
-    ): SponsorContributionRequest? {
-        val plugin = enabledPlugins
-            .filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>()
-            .firstOrNull { it.isCommunityContributionEnabled() }
-            ?: return null
+    private fun resolveSponsorContributionContext(): SponsorContributionRequest? {
+        val entry = currentSponsorSessionEntry() ?: return null
+        val plugin = entry.session as SponsorBlockSessionApi
+        if (!plugin.isCommunityContributionEnabled()) return null
         val snapshot = buildSponsorBlockVideoSnapshot(_uiState.value) ?: return null
         val durationMs = playbackUseCase.getDuration()
         if (snapshot.bvid.isBlank() || snapshot.cid <= 0L || durationMs <= 0L) return null
         return SponsorContributionRequest(
             plugin = plugin,
+            entry = entry,
             bvid = snapshot.bvid,
             cid = snapshot.cid,
             durationSeconds = durationMs / 1000f,
@@ -9089,7 +9156,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         val allVideoUrls: List<String>,
         val allAudioUrls: List<String>,
         val cdnCacheKeysByUrl: Map<String, String>,
-        val candidateSources: List<com.android.purebilibili.feature.plugin.PlaybackCdnCandidateSource>,
+        val candidateSources: List<com.android.purebilibili.plugin.sdk.PlaybackCdnCandidateSource>,
         val regionLabel: String?,
         val lineDiagnostics: List<CdnLineDiagnostic>,
         val fallbackState: PlaybackCdnFallbackState
@@ -9192,7 +9259,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 audioFallbackUrl = rawAudioUrls.drop(1).firstOrNull(),
                 fallbackCandidates = originalCandidates,
                 usesCustomRule = cdnRewrite?.sources?.firstOrNull() ==
-                    com.android.purebilibili.feature.plugin.PlaybackCdnCandidateSource.CUSTOM
+                    com.android.purebilibili.plugin.sdk.PlaybackCdnCandidateSource.CUSTOM
             )
         )
     }
@@ -9580,6 +9647,26 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             _toastEvent.send(payload)
         }
     }
+
+    init {
+        viewModelScope.launch {
+            combine(
+                PluginManager.pluginsFlow,
+                _uiState.map { state ->
+                    (state as? VideoPlaybackUiState.Success)?.info?.let { info ->
+                        if (info.bvid.isBlank() || info.cid <= 0L) null else {
+                            playerPluginVideoKey?.takeIf { it.bvid == info.bvid && it.cid == info.cid }
+                                ?: PluginVideoKey(info.bvid, info.cid)
+                        }
+                    }
+                }.distinctUntilChanged(),
+            ) { _, key -> key }.collect { key ->
+                playerPluginVideoKey = key
+                playerPluginSessionHost.update(PluginManager.getEnabledPlayerPlugins(), key)
+                refreshSponsorContributionAvailability()
+            }
+        }
+    }
     
     @SuppressLint("UnsafeOptInUsageError")
     override fun onCleared() {
@@ -9588,6 +9675,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         exoPlayer?.removeAnalyticsListener(videoBandwidthListener)
         // A player retained for listening must not retain this cleared screen through its listener.
         exoPlayer?.removeListener(playbackEndListener)
+        playerPluginSessionHost.close()
         super.onCleared()
         onPageIdentityCommitted = null
         recordCreatorWatchProgressSnapshot()
@@ -9609,14 +9697,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             miniPlayerManager.onHasPreviousNavigationCallback = null
         }
         
-        //  通知插件系统：视频结束
-        getSessionPlayerPlugins().forEach { plugin ->
-            try {
-                plugin.onVideoEnd()
-            } catch (e: Exception) {
-                Logger.e("PlayerVM", "Plugin ${plugin.name} onVideoEnd failed", e)
-            }
-        }
         
         exoPlayer = null
     }

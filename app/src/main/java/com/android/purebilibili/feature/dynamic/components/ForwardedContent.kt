@@ -13,7 +13,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.android.purebilibili.core.ui.AppSpacingTokens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.platform.LocalContext
@@ -130,7 +130,7 @@ fun ForwardedContent(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             // Tap the forward card (not @ / video / images) → open the original dynamic.
-            .clickable(
+            .appActionClickable(
                 enabled = onDynamicDetailClick != null && origDynamicId.isNotEmpty(),
                 onClick = openOrigDynamic
             )
@@ -151,7 +151,7 @@ fun ForwardedContent(
                     fontSize = MaterialTheme.typography.labelMedium.fontSize,
                     fontWeight = FontWeight.Medium,
                     color = AppContentColors.accent(), // 主题自适应颜色
-                    modifier = Modifier.clickable(enabled = origAuthorClickMid != null) {
+                    modifier = Modifier.appActionClickable(enabled = origAuthorClickMid != null) {
                         origAuthorClickMid?.let(onUserClick)
                     }
                 )

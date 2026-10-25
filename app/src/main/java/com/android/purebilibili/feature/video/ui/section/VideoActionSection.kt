@@ -5,6 +5,7 @@ import com.android.purebilibili.core.ui.motion.AppMotionEasing
 import com.android.purebilibili.core.ui.AppContentColors
 import com.android.purebilibili.core.ui.components.appElasticPress
 import com.android.purebilibili.core.ui.components.AppIcon
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import com.android.purebilibili.core.ui.components.AppText
 
 import androidx.compose.animation.Crossfade
@@ -146,7 +147,7 @@ fun ActionButtonsRow(
             uiStyle = uiStyle,
         )
     }
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val countRequests = remember(info.bvid) { VideoActionCountRequests() }
     val latestOnLikeClick by rememberUpdatedState(onLikeClick)
     val triplePress = rememberVideoTriplePressState(info.bvid, likeStatusKnown) {
@@ -196,6 +197,7 @@ fun ActionButtonsRow(
                     countIdentity = info.bvid,
                     onClick = {
                         if (likeStatusKnown) {
+                            haptic(HapticType.LIGHT)
                             countRequests.requestLike()
                             latestOnLikeClick()
                         }
@@ -209,6 +211,7 @@ fun ActionButtonsRow(
                             // cancel the very long press that is filling the progress rings.
                             detectTapGestures(
                                 onTap = {
+                                    haptic(HapticType.LIGHT)
                                     countRequests.requestLike()
                                     latestOnLikeClick()
                                 },
@@ -261,6 +264,7 @@ fun ActionButtonsRow(
                     countValue = info.stat.coin,
                     countIdentity = info.bvid,
                     onClick = {
+                        haptic(HapticType.LIGHT)
                         countRequests.requestCoin()
                         onCoinClick()
                     },
@@ -303,6 +307,7 @@ fun ActionButtonsRow(
                     countValue = info.stat.favorite,
                     countIdentity = info.bvid,
                     onClick = {
+                        haptic(HapticType.LIGHT)
                         countRequests.requestFavorite()
                         onFavoriteClick()
                     },
@@ -405,6 +410,7 @@ private fun TripleProgressActionButton(
     countValue: Int? = null,
     horizontalPadding: Dp = 4.dp
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
     val interactionSource = remember { MutableInteractionSource() }
     val inactiveTint = AppContentColors.secondaryText()
     val iconTint = resolveVideoActionTint(
@@ -435,7 +441,7 @@ private fun TripleProgressActionButton(
                     Modifier.combinedClickable(
                         interactionSource = interactionSource,
                         indication = null,
-                        onClick = onClick,
+                        onClick = feedbackClick,
                         onLongClick = onLongClick
                     )
                 }
@@ -516,7 +522,7 @@ private fun TripleLikeActionButton(
     onProgressChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
 
     // 长按进度状态
     var isLongPressing by remember { mutableStateOf(false) }
@@ -712,6 +718,7 @@ private fun BiliActionButton(
     enableActivePulse: Boolean = false,
     horizontalPadding: Dp = 4.dp
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
     val interactionSource = remember { MutableInteractionSource() }
 
     // Active state pulse animation
@@ -756,7 +763,7 @@ private fun BiliActionButton(
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = feedbackClick,
                 onLongClick = onLongClick
             )
             .padding(horizontal = horizontalPadding, vertical = 2.dp)
@@ -797,6 +804,7 @@ fun ActionButton(
     iconSize: Dp = 24.dp,
     onClick: () -> Unit = {}
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
     val resolvedIconColor = iconColor.takeOrElse {
         if (isActive) AppContentColors.accent() else AppContentColors.secondaryText()
     }
@@ -832,7 +840,7 @@ fun ActionButton(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
-            ) { onClick() }
+            ) { feedbackClick() }
     ) {
         // Icon container - uses colored background, higher alpha in dark mode
         Box(

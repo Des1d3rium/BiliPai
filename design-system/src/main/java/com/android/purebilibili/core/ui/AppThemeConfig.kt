@@ -1,13 +1,13 @@
 package com.android.purebilibili.core.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
@@ -25,6 +25,7 @@ data class AppThemeConfig(
     val progressiveTopBlurEnabled: Boolean = true,
     val progressiveTopFadeEnabled: Boolean = true,
     val hapticFeedbackEnabled: Boolean = true,
+    val hapticSettings: AppHapticSettings = AppHapticSettings(),
     val globalTextTapCopyEnabled: Boolean = false,
     val uiEntranceAnimationEnabled: Boolean = true,
     val globalDragFeedbackEnabled: Boolean = true,
@@ -85,10 +86,6 @@ val LocalComponentMotionEnabled = compositionLocalOf { true }
 /** System accessibility preference, independent of card and navigation animation switches. */
 val LocalSystemReduceMotion = compositionLocalOf { false }
 
-private object DisabledAppHapticFeedback : HapticFeedback {
-    override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
-}
-
 @Composable
 fun ProvideAppThemeConfig(
     config: AppThemeConfig,
@@ -96,12 +93,13 @@ fun ProvideAppThemeConfig(
 ) {
     CompositionLocalProvider(LocalAppThemeConfig provides config) {
         val platformHaptic = LocalHapticFeedback.current
+        val delegate = (platformHaptic as? AppPolicyHapticFeedback)?.delegate ?: platformHaptic
+        val latestConfig = rememberUpdatedState(config)
+        val sceneHaptic = remember(delegate) {
+            AppPolicyHapticFeedback(delegate, { latestConfig.value })
+        }
         CompositionLocalProvider(
-            LocalHapticFeedback provides if (config.hapticFeedbackEnabled) {
-                platformHaptic
-            } else {
-                DisabledAppHapticFeedback
-            },
+            LocalHapticFeedback provides sceneHaptic,
             content = content,
         )
     }

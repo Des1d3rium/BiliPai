@@ -60,7 +60,7 @@ internal fun PlaybackOrderSelectionSheet(
     onDismiss: () -> Unit,
     isFullscreen: Boolean = false,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     val nativeOptions = listOf(
         PlaybackCompletionBehavior.STOP_AFTER_CURRENT,
         PlaybackCompletionBehavior.PLAY_IN_ORDER,

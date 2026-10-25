@@ -1,6 +1,8 @@
 // 文件路径: feature/bangumi/ui/player/BangumiPlayerComponents.kt
 package com.android.purebilibili.feature.bangumi.ui.player
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import com.android.purebilibili.core.ui.AppSurfaceTokens
 
 import com.android.purebilibili.core.ui.MediaContrastPalette
@@ -65,7 +67,7 @@ import com.android.purebilibili.data.model.response.Page
 import com.android.purebilibili.data.model.response.VideoshotData
 import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.core.util.Logger
-import com.android.purebilibili.feature.anime4k.Anime4KConfig
+import com.android.purebilibili.plugin.sdk.Anime4KConfig
 import com.android.purebilibili.feature.anime4k.gl.Anime4KGLSurfaceView
 import com.android.purebilibili.feature.anime4k.isAnime4KGles3Available
 import com.android.purebilibili.feature.anime4k.resolveInitialVideoEnhancementEnabled
@@ -94,7 +96,7 @@ import com.android.purebilibili.feature.video.ui.section.shouldTriggerFullscreen
 import com.android.purebilibili.feature.video.ui.section.resolveSystemStreamVolumeFromGesture
 import com.android.purebilibili.feature.video.util.captureAndSaveVideoScreenshot
 import com.android.purebilibili.data.model.response.SponsorSegment
-import com.android.purebilibili.feature.plugin.Anime4KPlugin
+import com.android.purebilibili.plugin.sdk.VideoEnhancementPluginApi
 import com.android.purebilibili.feature.bangumi.resolveBangumiDanmakuTopInsetDp
 import com.android.purebilibili.feature.bangumi.resolveBangumiPlayerTopControlsPaddingTopDp
 import com.android.purebilibili.core.store.DEFAULT_LONG_PRESS_SPEED
@@ -180,6 +182,7 @@ fun BangumiPlayerView(
     onReloadVideo: () -> Unit = {},
     onShowMessage: (String) -> Unit = {}
 ) {
+    val keepPlaybackAwake = com.android.purebilibili.feature.video.screen.rememberVideoPlaybackKeepAwake(exoPlayer)
     val context = LocalContext.current
     val playerInteractionSettings by SettingsManager.getPlayerInteractionSettings(context)
         .collectAsStateWithLifecycle(
@@ -219,8 +222,8 @@ fun BangumiPlayerView(
     val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
     val hostLifecycleStarted = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     val registeredPlugins by PluginManager.pluginsFlow.collectAsStateWithLifecycle()
-    val anime4kPluginInfo = registeredPlugins.firstOrNull { it.plugin.id == Anime4KPlugin.PLUGIN_ID }
-    val anime4kPlugin = anime4kPluginInfo?.plugin as? Anime4KPlugin
+    val anime4kPluginInfo = registeredPlugins.firstOrNull { it.plugin.id == BuiltinPluginIds.VIDEO_ENHANCEMENT }
+    val anime4kPlugin = PluginManager.getPlugin(VideoEnhancementPluginApi::class)
     val anime4kConfig = if (anime4kPlugin == null) {
         Anime4KConfig()
     } else {
@@ -644,7 +647,7 @@ fun BangumiPlayerView(
                             //（只有音频）。Anime4K 启用后由 VideoOutputRouter 主动解除本绑定并接管 surface。
                             player = exoPlayer
                             useController = false
-                            keepScreenOn = true
+                            keepScreenOn = keepPlaybackAwake
                             resizeMode = currentAspectRatio.playerResizeMode
                             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             setBackgroundColor(android.graphics.Color.BLACK)
@@ -652,6 +655,7 @@ fun BangumiPlayerView(
                     },
                     update = { view ->
                         playerViewRef = view
+                        view.keepScreenOn = keepPlaybackAwake
                         view.resizeMode = currentAspectRatio.playerResizeMode
                         view.visibility = if (anime4kFrameVisible) View.INVISIBLE else View.VISIBLE
                         // MediaSource/Player 变化后确保直出绑定仍与播放器同步；
@@ -844,6 +848,7 @@ fun BangumiPlayerView(
                         playerViewRef?.videoSurfaceView is android.view.TextureView
                 },
         ) {
+        val captureAndShareScreenshot = com.android.purebilibili.feature.video.ui.components.rememberVideoScreenshotAction()
         BangumiPlayerOverlayHost(
             player = exoPlayer,
             danmakuManager = danmakuManager,
@@ -921,16 +926,8 @@ fun BangumiPlayerView(
                     onShowMessage("截图失败，请稍后重试")
                     return@BangumiPlayerOverlayHost
                 }
-                scope.launch {
-                    val success = captureAndSaveVideoScreenshot(
-                        context = context,
-                        playerView = playerView,
-                        videoWidth = exoPlayer.videoSize.width,
-                        videoHeight = exoPlayer.videoSize.height,
-                        videoTitle = subtitle.ifBlank { title.ifBlank { "bangumi" } }
-                    )
-                    onShowMessage(if (success) "截图已保存到相册" else "截图失败，请稍后重试")
-                }
+                captureAndShareScreenshot(playerView, exoPlayer.videoSize.width, exoPlayer.videoSize.height,
+                    subtitle.ifBlank { title.ifBlank { "bangumi" } })
             },
             onReloadVideo = onReloadVideo,
             anime4kEnabled = videoEnhancementEnabled,
@@ -944,9 +941,9 @@ fun BangumiPlayerView(
                 videoEnhancementSessionOverride = enabled
                 scope.launch {
                     if (enabled && anime4kPluginInfo?.enabled != true) {
-                        PluginManager.setEnabled(Anime4KPlugin.PLUGIN_ID, true)
+                        PluginManager.setEnabled(BuiltinPluginIds.VIDEO_ENHANCEMENT, true)
                     }
-                    Anime4KPlugin.getInstance()?.rememberCurrentVideoEnabled(enabled)
+                    anime4kPlugin?.rememberCurrentVideoEnabled(enabled)
                 }
             },
             onVideoEnhancementAlgorithmChange = { algorithm ->

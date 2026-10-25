@@ -1,6 +1,8 @@
 // 文件路径: feature/dynamic/components/DynamicSidebar.kt
 package com.android.purebilibili.feature.dynamic.components
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import com.android.purebilibili.core.ui.AppChromeSizeTokens
@@ -14,7 +16,7 @@ import com.android.purebilibili.core.ui.motion.AppMotionTokens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.*
@@ -351,7 +353,7 @@ fun DynamicSidebar(
                                 .padding(bottom = AppSpacingTokens.Medium)
                                 .size(AppChromeSizeTokens.MinimumTouchTarget)
                                 .clip(CircleShape)
-                                .clickable { onToggleShowHidden() },
+                                .appActionClickable { onToggleShowHidden() },
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
@@ -430,7 +432,7 @@ fun DynamicSidebar(
                                 showLabel = isExpanded,
                                 showUnreadBadge = user.uid in uplistUpdateMids,
                                 allowManageMenu = !isShortcut,
-                                onClick = { onUserClick(user.uid) },
+                                onClick = appActionWithFeedback { onUserClick(user.uid) },
                                 onTogglePin = { onTogglePin(user.uid) },
                                 onToggleHidden = { onToggleHidden(user.uid) }
                             )
@@ -560,7 +562,7 @@ fun SidebarItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(vertical = AppSpacingTokens.Small)
     ) {
         Box(
@@ -643,10 +645,11 @@ fun SidebarUserItem(
     onToggleHidden: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val glassMenuAvailable = com.android.purebilibili.core.ui.components.appGlassMenuAvailable()
     val displayName = if (user.isHidden) "${user.name}(隐)" else user.name
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
 
-    Box {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showMenu = true }, enabled = allowManageMenu) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -658,13 +661,13 @@ fun SidebarUserItem(
                     else Modifier
                 )
                 .combinedClickable(
-                    onClick = {
+                    onClick = appActionWithFeedback {
                         performDynamicSidebarUserAvatarClick(
                             haptic = haptic,
                             onClick = onClick
                         )
                     },
-                    onLongClick = { if (allowManageMenu) showMenu = true }
+                    onLongClick = if (glassMenuAvailable) null else ({ if (allowManageMenu) showMenu = true })
                 )
                 .padding(vertical = AppSpacingTokens.Small) // 内部间距
                 .alpha(if (user.isHidden) 0.5f else 1f)
@@ -735,7 +738,8 @@ fun SidebarUserItem(
         AppDropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer) // 自适应菜单背景
+            modifier = if (com.android.purebilibili.core.ui.components.appGlassMenuAvailable()) Modifier
+                else Modifier.background(MaterialTheme.colorScheme.surfaceContainer) // 自适应菜单背景
         ) {
             AppDropdownMenuItem(
                 text = { AppText(if (user.isPinned) "取消置顶" else "置顶", color = AppContentColors.primaryText()) },

@@ -188,9 +188,12 @@ enum class HapticType {
  * - 旧版本: 使用 LONG_PRESS/KEYBOARD_TAP 等
  */
 @Composable
-fun rememberHapticFeedback(): (HapticType) -> Unit {
+fun rememberHapticFeedback(
+    scene: com.android.purebilibili.core.ui.AppHapticScene = com.android.purebilibili.core.ui.AppHapticScene.CONTROLS,
+): (HapticType) -> Unit {
     val view = LocalView.current
-    return remember(view) {
+    val config by rememberUpdatedState(com.android.purebilibili.core.ui.LocalAppThemeConfig.current)
+    return remember(view, scene) {
         { type: HapticType ->
             val feedbackConstant = when (type) {
                 HapticType.LIGHT -> {
@@ -224,8 +227,12 @@ fun rememberHapticFeedback(): (HapticType) -> Unit {
                 }
             }
             // [新增] 全局触感反馈开关检查
-            if (com.android.purebilibili.core.store.SettingsManager.isHapticFeedbackEnabledSync(view.context)) {
-                view.performHapticFeedback(feedbackConstant)
+            if (config.hapticFeedbackEnabled && config.hapticSettings.isEnabled(scene)) {
+                com.android.purebilibili.core.ui.AppActionHaptics.dispatch {
+                    view.performHapticFeedback(feedbackConstant)
+                }
+            } else {
+                com.android.purebilibili.core.ui.AppActionHaptics.suppressCurrentActionFeedback()
             }
         }
     }
@@ -267,8 +274,10 @@ fun Modifier.bouncyClickable(
             indication = null,
             enabled = enabled
         ) {
-            haptic(hapticType)
-            onClick()
+            com.android.purebilibili.core.ui.AppActionHaptics.runAction {
+                onClick()
+                haptic(hapticType)
+            }
         }
 }
 
@@ -283,8 +292,10 @@ fun Modifier.hapticClickable(
     val haptic = rememberHapticFeedback()
     
     this.clickable(enabled = enabled) {
-        haptic(hapticType)
-        onClick()
+        com.android.purebilibili.core.ui.AppActionHaptics.runAction {
+            onClick()
+            haptic(hapticType)
+        }
     }
 }
 
@@ -333,10 +344,12 @@ fun Modifier.iOSTapEffect(
             interactionSource = interactionSource,
             indication = null
         ) {
-            if (hapticEnabled) {
-                haptic(HapticType.LIGHT)
+            com.android.purebilibili.core.ui.AppActionHaptics.runAction {
+                onClick()
+                if (hapticEnabled) {
+                    haptic(HapticType.LIGHT)
+                }
             }
-            onClick()
         }
 }
 
@@ -433,9 +446,11 @@ fun Modifier.iOSCardTapEffect(
             interactionSource = interactionSource,
             indication = null
         ) {
-            if (hapticEnabled) {
-                haptic(HapticType.LIGHT)
+            com.android.purebilibili.core.ui.AppActionHaptics.runAction {
+                onClick()
+                if (hapticEnabled) {
+                    haptic(HapticType.LIGHT)
+                }
             }
-            onClick()
         }
 }

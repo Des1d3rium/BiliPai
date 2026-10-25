@@ -95,6 +95,13 @@ fun BangumiPlayerContent(
     onTimestampClick: ((Long) -> Unit)? = null,
     currentVideoPositionMsProvider: () -> Long = { 0L }
 ) {
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.android.purebilibili.feature.share.LocalReplyShareContext provides
+            com.android.purebilibili.feature.share.ReplyShareContext(
+                url = "https://www.bilibili.com/bangumi/play/ep${currentEpisode.id}",
+                title = detail.title, cover = currentEpisode.cover,
+            ),
+    ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     CommentFraudFeedbackHost(commentViewModel = commentViewModel, enabled = handleCommentFeedback)
     val showIdentityDecorations by com.android.purebilibili.core.store.SettingsManager
@@ -859,6 +866,7 @@ fun BangumiPlayerContent(
         currentVideoPositionMsProvider = currentVideoPositionMsProvider,
         emotePackages = emotePackages,
     )
+    }
 }
 
 /**

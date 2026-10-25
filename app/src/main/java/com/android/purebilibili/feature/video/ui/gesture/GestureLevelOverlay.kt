@@ -586,7 +586,7 @@ private fun GestureLevelStepHaptics(
     percent: Int,
     active: Boolean
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_GESTURES)
     val policy = remember(kind, style) { Md3GestureLevelHapticPolicy() }
     LaunchedEffect(active, percent, policy) {
         when (policy.update(percent, active, SystemClock.uptimeMillis())) {

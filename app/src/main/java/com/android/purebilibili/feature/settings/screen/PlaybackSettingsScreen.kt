@@ -1206,9 +1206,9 @@ SettingsItemAnchor("playback.data_saver_mode") {
                                     icon = rememberSettingsSemanticIcon(SettingsIconRole.DATA_SAVER_COVER_QUALITY),
                                 title = playbackSettingTitle("playback.home_settings.low_quality_home_cover_in_data_saver"),
                                 subtitle = if (homeSettings.lowQualityHomeCoverInDataSaver) {
-                                    "省流量模式生效时，首页加载较低清晰度封面"
+                                    "省流量时进一步降低首页封面分辨率"
                                 } else {
-                                    "默认始终加载高清首页封面"
+                                    "保留高清尺寸，图片压缩质量仍遵循省流量模式"
                                 },
                                 checked = homeSettings.lowQualityHomeCoverInDataSaver,
                                 onCheckedChange = { enabled ->
@@ -1389,6 +1389,32 @@ private fun PlaybackInteractionSettingsSection(
                 iconTint = AppContentColors.secondaryText()
             )
             }
+        AppPreferenceDivider()
+        val showContinuePartNotice = com.android.purebilibili.core.store.SettingsManager
+            .getShowContinuePartNotice(context)
+            .collectAsStateWithLifecycle(
+                initialValue = com.android.purebilibili.core.store.SettingsManager
+                    .getShowContinuePartNoticeSync(context)
+            ).value
+        SettingsItemAnchor("playback.show_continue_part_notice") {
+            AppSwitchPreference(
+                icon = rememberSettingsSemanticIcon(SettingsIconRole.CONTINUE_PART_NOTICE),
+                title = playbackSettingTitle("playback.show_continue_part_notice"),
+                subtitle = if (showContinuePartNotice) {
+                    "显示“上次看到第 N P”，点击跳转；仅在上次观看的是其他分P时出现"
+                } else {
+                    "关闭后不再展示分P继续播放提示"
+                },
+                checked = showContinuePartNotice,
+                onCheckedChange = {
+                    scope.launch {
+                        com.android.purebilibili.core.store.SettingsManager
+                            .setShowContinuePartNotice(context, it)
+                    }
+                },
+                iconTint = AppContentColors.secondaryText()
+            )
+        }
         AppPreferenceDivider()
         SettingsItemAnchor("playback.space_played_video_locate_prompt_enabled") {
             AppSwitchPreference(
@@ -2834,33 +2860,6 @@ SettingsItemAnchor("playback.video_ambient_settings.power_saving") {
                 },
             )
         }
-        AppPreferenceDivider()
-
-        val showContinuePartNotice = com.android.purebilibili.core.store.SettingsManager
-            .getShowContinuePartNotice(context)
-            .collectAsStateWithLifecycle(
-                initialValue = com.android.purebilibili.core.store.SettingsManager
-                    .getShowContinuePartNoticeSync(context)
-            ).value
-        SettingsItemAnchor("playback.show_continue_part_notice") {
-            AppSwitchPreference(
-                icon = rememberSettingsSemanticIcon(SettingsIconRole.CONTINUE_PART_NOTICE),
-                title = playbackSettingTitle("playback.show_continue_part_notice"),
-                subtitle = if (showContinuePartNotice) {
-                    "多P视频上次看到其他分P时，播放器内提示一键跳转"
-                } else {
-                    "关闭后不再展示分P继续播放提示"
-                },
-                checked = showContinuePartNotice,
-                onCheckedChange = {
-                    scope.launch {
-                        com.android.purebilibili.core.store.SettingsManager
-                            .setShowContinuePartNotice(context, it)
-                    }
-                },
-                iconTint = AppContentColors.secondaryText()
-            )
-            }
         AppPreferenceDivider()
             SettingsItemAnchor("playback.show_fullscreen_lock_button") {
                 AppSwitchPreference(

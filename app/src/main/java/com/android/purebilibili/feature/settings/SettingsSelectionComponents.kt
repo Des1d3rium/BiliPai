@@ -21,7 +21,7 @@ internal fun <T> SettingsSingleChoicePreference(
     enabled: Boolean = true,
     icon: ImageVector? = null,
     iconTint: Color = AppContentColors.accent(),
-    /** 可选的每项前导视觉，例如色彩风格的三色小样；Miuix 滚轮会忽略。 */
+    /** 可选的每项前导视觉，例如色彩风格的三色小样；各材质菜单共用前导内容槽。 */
     optionLeading: (@Composable (T) -> Unit)? = null,
     onSelectionChange: (T) -> Unit,
 ) {

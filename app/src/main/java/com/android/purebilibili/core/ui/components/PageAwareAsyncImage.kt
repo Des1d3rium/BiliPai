@@ -25,6 +25,7 @@ import coil3.compose.asPainter
 import coil3.imageLoader
 import coil3.memory.MemoryCache
 import coil3.request.ImageRequest
+import com.android.purebilibili.core.util.withBiliImageQuality
 
 /** Defaults to normal loading outside the retained bottom-tab page scope. */
 internal val LocalPageImageLoadingAllowed = staticCompositionLocalOf { true }
@@ -47,7 +48,8 @@ internal fun PageAwareAsyncImage(
 ) {
     val context = LocalContext.current
     val resolvedImageLoader = imageLoader ?: context.imageLoader
-    val request = model as? ImageRequest
+    // 请求和暂停时的缓存回放使用同一质量身份，避免返回列表时丢失封面占位。
+    val request = (model as? ImageRequest)?.withBiliImageQuality()
     val imageKey = request?.data ?: model
     var retainedImage by remember(imageKey, request?.memoryCacheKey, request?.memoryCacheKeyExtras, resolvedImageLoader) {
         mutableStateOf<coil3.Image?>(null)
@@ -71,7 +73,7 @@ internal fun PageAwareAsyncImage(
     }
     if (loadingAllowed) {
         AsyncImage(
-            model = model,
+            model = request ?: model,
             imageLoader = resolvedImageLoader,
             contentDescription = contentDescription,
             modifier = modifier,

@@ -52,7 +52,7 @@ fun ViewPointSegmentBar(
     modifier: Modifier = Modifier,
     interactive: Boolean = true,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_SEEK)
     val latestPosition by rememberUpdatedState(currentPositionMs)
     val segments = remember(viewPoints, durationMs) {
         normalizeViewPointSegments(viewPoints, durationMs)

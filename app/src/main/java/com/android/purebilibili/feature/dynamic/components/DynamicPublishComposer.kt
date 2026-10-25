@@ -237,7 +237,7 @@ fun DynamicPublishComposer(
                             enabled = !submitting,
                         )
                     }
-                    Box {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showVisibilityMenu = true }, enabled = !submitting) {
                         AppTextButton(
                             onClick = { showVisibilityMenu = true },
                             enabled = !submitting,

@@ -1,6 +1,6 @@
 package com.android.purebilibili.feature.dynamic.components
 
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,7 +89,7 @@ internal fun DynamicMentionPickerDialog(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelected(DynamicPublishMention(user.uid, user.name)) },
+                            .appActionClickable { onSelected(DynamicPublishMention(user.uid, user.name)) },
                     )
                 }
             }
@@ -144,7 +144,7 @@ internal fun DynamicTopicPickerDialog(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelected(DynamicPublishTopic(topic.id, topic.name)) },
+                            .appActionClickable { onSelected(DynamicPublishTopic(topic.id, topic.name)) },
                     )
                 }
             }
@@ -176,7 +176,7 @@ internal fun DynamicEmotePickerDialog(
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable { onSelected(text) },
+                                    .appActionClickable { onSelected(text) },
                             ) {
                                 AsyncImage(
                                     model = url,

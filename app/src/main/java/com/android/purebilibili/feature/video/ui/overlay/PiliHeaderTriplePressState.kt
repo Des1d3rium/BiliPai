@@ -112,7 +112,7 @@ internal fun piliHeaderLikeGesture(
     val latestLike by rememberUpdatedState(onLike)
     val latestTriple by rememberUpdatedState(onTriple)
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     return Modifier.pointerInput(state, context, haptics) {
         detectTapGestures(onPress = {
             state.start(

@@ -9,7 +9,7 @@ import com.android.purebilibili.core.ui.components.AppText
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,7 +106,7 @@ fun SearchTrendingScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .clickable(onClick = viewModel::refresh),
+                    .appActionClickable(onClick = viewModel::refresh),
                 contentAlignment = Alignment.Center
             ) {
                 AppText(

@@ -20,7 +20,7 @@ fun ChapterListPanel(
     onSeek: (Long) -> Unit, onDismiss: () -> Unit,
     @Suppress("UNUSED_PARAMETER") modifier: Modifier = Modifier,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_SEEK)
     val currentIndex = remember(currentPositionMs, viewPoints) {
         viewPoints.indexOfLast { currentPositionMs >= it.fromMs }.coerceAtLeast(0)
     }

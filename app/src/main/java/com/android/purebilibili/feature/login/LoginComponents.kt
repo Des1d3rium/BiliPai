@@ -47,6 +47,7 @@ import com.android.purebilibili.core.ui.components.AppText
 import com.android.purebilibili.core.ui.components.AppTextButton
 import com.android.purebilibili.core.ui.components.AppDropdownMenu
 import com.android.purebilibili.core.ui.components.AppDropdownMenuItem
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -609,6 +610,7 @@ fun PhoneLoginContent(
     var selectedRegionCid by rememberSaveable { mutableIntStateOf(DEFAULT_PHONE_REGION_CID) }
     var captchaManager by remember { mutableStateOf<CaptchaManager?>(null) }
     var regionMenuExpanded by remember { mutableStateOf(false) }
+    val regionMenuSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
     val phoneRegions = remember { resolveSupportedPhoneRegions() }
     val selectedRegion = remember(selectedRegionCid, phoneRegions) {
         phoneRegions.firstOrNull { it.cid == selectedRegionCid } ?: phoneRegions.first()
@@ -706,7 +708,7 @@ fun PhoneLoginContent(
             CountryCodeSelector(
                 region = selectedRegion,
                 onClick = { regionMenuExpanded = true },
-                modifier = Modifier.width(152.dp)
+                modifier = Modifier.width(152.dp).appGlassMenuSource(regionMenuSource, onOpen = { regionMenuExpanded = true })
             )
             ModernTextField(
                 value = phoneNumber,
@@ -724,6 +726,7 @@ fun PhoneLoginContent(
 
         AppDropdownMenu(
             expanded = regionMenuExpanded,
+            glassSource = regionMenuSource,
             onDismissRequest = { regionMenuExpanded = false }
         ) {
             phoneRegions.forEach { region ->

@@ -109,7 +109,7 @@ fun SettingsScreen(
     rootEntranceEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
-    val hapticFeedback = LocalHapticFeedback.current
+    val hapticFeedback = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current

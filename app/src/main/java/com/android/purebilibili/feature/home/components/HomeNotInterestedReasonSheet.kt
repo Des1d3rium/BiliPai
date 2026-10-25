@@ -51,7 +51,11 @@ fun HomeNotInterestedReasonSheet(
                 modifier = Modifier.padding(horizontal = AppSpacingTokens.Large + AppSpacingTokens.ExtraSmall, vertical = AppSpacingTokens.Small)
             )
             AppText(
-                text = "选择原因后将移除视频并减少相关推荐，直接关闭可取消。",
+                text = if (video.recommendationFeedback?.supportsServerSync == true && reasons.any { (it.id ?: 0L) > 0L }) {
+                    "选择后移除视频并提交反馈，推荐调整可能需要时间。"
+                } else {
+                    "当前来源仅支持本地屏蔽，不会同步推荐偏好；关闭可取消。"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = AppContentColors.secondaryText(),
                 modifier = Modifier.padding(horizontal = AppSpacingTokens.Large + AppSpacingTokens.ExtraSmall, vertical = AppSpacingTokens.ExtraSmall)

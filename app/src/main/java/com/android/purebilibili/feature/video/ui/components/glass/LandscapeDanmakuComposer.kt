@@ -113,6 +113,9 @@ private fun GlassLandscapeDanmakuComposer(
         onDismissStarted = { nativeClosing = true },
         onDismissRequest = { if (latestVisible) latestDismiss() },
         modifier = modifier,
+        // The host owns the handle and IME padding outside the dark editor.
+        containerColor = LandscapeDanmakuSurfaceColor,
+        dragHandle = null,
         presentationOverride = com.android.purebilibili.core.ui.AppModalPresentation.BottomSheet,
         sheetSurfaceModifier = Modifier.imePadding(),
     ) {

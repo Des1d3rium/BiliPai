@@ -40,7 +40,7 @@ const val BILIPAI_TRANSFER_PAYLOAD_VERSION = 2
 data class BiliPaiTransferredJsPlugin(
     val manifest: com.android.purebilibili.core.plugin.js.BiliPaiJsPluginManifest,
     val script: String,
-    val grantedCapabilities: Set<com.android.purebilibili.core.plugin.PluginCapability> = emptySet(),
+    val grantedCapabilities: Set<com.android.purebilibili.plugin.sdk.PluginCapability> = emptySet(),
     val enabled: Boolean = false,
 )
 

@@ -268,7 +268,7 @@ private fun MiniPlayerSessionOverlay(
     var rawDragOffsetX by remember { mutableStateOf<Float?>(null) }
     var edgeStashSide by remember { mutableStateOf<MiniPlayerEdgeStashSide?>(null) }
     val edgeStashThresholdPx = with(density) { 28.dp.toPx() }
-    val stashHaptic = rememberHapticFeedback()
+    val stashHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_GESTURES)
     val stashProgress = animateFloatAsState(
         targetValue = if (isStashed) 1f else 0f,
         animationSpec = if (reduceMotion) snap() else tween(220, easing = FastOutSlowInEasing),
@@ -917,7 +917,7 @@ private fun MiniPlayerSessionOverlay(
                                     AppIcon(Icons.Outlined.OpenInNew, "返回播放详情", tint = Color.White, modifier = Modifier.size(20.dp))
                                 }
                             }
-                            Box {
+                            com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { moreExpanded = true }) {
                                 AppIconButton(onClick = { moreExpanded = true }, modifier = Modifier.size(48.dp)) {
                                     AppIcon(Icons.Outlined.MoreVert, "小窗更多操作", tint = Color.White, modifier = Modifier.size(20.dp))
                                 }

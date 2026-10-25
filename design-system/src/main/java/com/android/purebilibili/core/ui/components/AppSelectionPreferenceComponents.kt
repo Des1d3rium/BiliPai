@@ -1,7 +1,5 @@
 package com.android.purebilibili.core.ui.components
 
-import com.android.purebilibili.core.ui.AppContentColors
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +14,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
@@ -32,15 +31,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.android.purebilibili.core.ui.AppShapes
+import com.android.purebilibili.core.theme.AppUiStyle
+import com.android.purebilibili.core.theme.LocalAppUiStyle
+import com.android.purebilibili.core.ui.AppContentColors
 import com.android.purebilibili.core.ui.AppPopupSurface
 import com.android.purebilibili.core.ui.AppPopupSurfaceType
+import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.AppSurfaceTokens
 import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.core.ui.LocalAppPopupSurfaceRenderer
@@ -48,8 +54,6 @@ import com.android.purebilibili.core.ui.LocalAppThemeConfig
 import com.android.purebilibili.core.ui.appContentDialogWidth
 import com.android.purebilibili.core.ui.resolveAppContentDialogLayoutPolicy
 import com.android.purebilibili.core.ui.resolveAppContentDialogProperties
-import com.android.purebilibili.core.theme.AppUiStyle
-import com.android.purebilibili.core.theme.LocalAppUiStyle
 import kotlin.math.round
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
@@ -67,6 +71,45 @@ enum class AppSingleChoicePresentation(val storageValue: String) {
 val LocalAppSingleChoicePresentation = compositionLocalOf {
     AppSingleChoicePresentation.WINDOW_POPUP
 }
+
+/**
+ * 玻璃材质宿主渲染单选弹窗时的请求载荷。
+ *
+ * [options]/[selectedValue] 经类型擦除传入（值仍为调用点的原始对象，按 equals 比较），
+ * 宿主回传选中值后由调用点还原泛型分发。携带可组合的前导视觉 lambda，
+ * 不标记稳定注解；每次打开都以新实例下发。
+ */
+data class AppSingleChoicePopupRequest(
+    val title: String,
+    val options: List<AppChoiceOption<Any>>,
+    val selectedValue: Any?,
+    /** 触发行在窗口坐标系中的边界；居中弹窗模式可为 null。 */
+    val anchorBoundsInWindow: androidx.compose.ui.geometry.Rect?,
+    val centered: Boolean,
+    /** 每项前导视觉（如色彩风格小样）；提供时小样占 leading，选中勾固定在 trailing。 */
+    val optionLeading: (@Composable (Any?) -> Unit)? = null,
+    /** 玻璃分支中的真实行尾控件及其独立图层；原生弹窗不提供这些参数。 */
+    val controlBoundsInWindow: androidx.compose.ui.geometry.Rect? = null,
+    val sourceLayer: androidx.compose.ui.graphics.layer.GraphicsLayer? = null,
+    val onSourceVisibilityChange: (Boolean) -> Unit = {},
+    val carriedPress: AppSingleChoicePopupPress? = null,
+    val menu: AppGlassMenuRequest? = null,
+)
+
+/**
+ * 由玻璃材质宿主提供的单选弹窗呈现器。
+ *
+ * 仅在材质宿主（如设置的液态玻璃层）显式提供时生效；未提供（默认 null）时
+ * 单选条目保持 Miuix 滚轮 / MD3 菜单 / 居中弹窗的原生路径不变。
+ */
+fun interface AppSingleChoicePopupPresenter {
+    fun present(
+        request: AppSingleChoicePopupRequest,
+        onSelect: (Any?) -> Unit,
+    )
+}
+
+val LocalAppSingleChoicePopupPresenter = compositionLocalOf<AppSingleChoicePopupPresenter?> { null }
 
 @Immutable
 data class AppChoiceOption<T>(
@@ -90,53 +133,157 @@ fun <T> AppSingleChoicePreference(
     /**
      * 可选的每项前导视觉（例如色彩风格的三色小样）。
      * 提供后：下拉项把小样放在 leading 位置、选中勾移到 trailing 位置；
-     * 居中弹窗把小样排在名称之前；Miuix 滚轮只显示文字，忽略该参数。
+     * 居中弹窗把小样排在名称之前；Miuix 窗口菜单沿用原生图标槽显示小样。
      */
     optionLeading: (@Composable (T) -> Unit)? = null,
     presentation: AppSingleChoicePresentation = LocalAppSingleChoicePresentation.current,
 ) {
+    // 液态玻璃材质分支：玻璃宿主提供 presenter 时，行尾与弹窗整体交给宿主渲染；
+    // 未提供时以下 Miuix/MD3 原生路径保持不变。
+    val menuPresenter = LocalAppGlassMenuPresenter.current
+    val sameWindow = menuPresenter == null || menuPresenter.ownerView === androidx.compose.ui.platform.LocalView.current
+    val glassPresenter = LocalAppSingleChoicePopupPresenter.current.takeIf {
+        sameWindow && LocalAppThemeConfig.current.liquidGlassEnabled
+    }
+    if (glassPresenter != null) {
+        var anchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
+        var controlBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var sourceVisible by remember { mutableStateOf(true) }
+        val controlLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+        val selectWithFeedback = appValueChangeWithFeedback<Any?> { value ->
+            @Suppress("UNCHECKED_CAST")
+            if (value != null && shouldDispatchAppChoiceSelection(selectedValue, value as T)) {
+                onValueChange(value as T)
+            }
+        }
+        val presentChoice: (AppSingleChoicePopupPress?) -> Unit = { press ->
+            @Suppress("UNCHECKED_CAST")
+            glassPresenter.present(
+                request = AppSingleChoicePopupRequest(
+                    title = dialogTitle,
+                    carriedPress = press,
+                    options = options as List<AppChoiceOption<Any>>,
+                    selectedValue = selectedValue as Any?,
+                    anchorBoundsInWindow = anchorBounds,
+                    centered = presentation == AppSingleChoicePresentation.CENTERED_DIALOG,
+                    controlBoundsInWindow = controlBounds,
+                    sourceLayer = controlLayer,
+                    onSourceVisibilityChange = { visible -> sourceVisible = visible },
+                    optionLeading = if (optionLeading != null) {
+                        { value -> optionLeading(value as T) }
+                    } else {
+                        null
+                    },
+                ),
+                onSelect = selectWithFeedback,
+            )
+        }
+        val pressModifier = rememberChoicePopupPressModifier(
+            enabled = enabled && presentation == AppSingleChoicePresentation.WINDOW_POPUP,
+            toWindow = { local -> (controlBounds?.topLeft ?: androidx.compose.ui.geometry.Offset.Zero) + local },
+            onOpen = { presentChoice(it) },
+        )
+        Box(
+            modifier = modifier
+                .alpha(if (enabled) 1f else 0.6f)
+                .onGloballyPositioned { anchorBounds = it.boundsInWindow() },
+        ) {
+            AppPreference(
+                icon = icon,
+                title = title,
+                subtitle = subtitle,
+                value = null,
+                trailingContent = {
+                    Row(
+                        modifier = Modifier
+                            .widthIn(max = 160.dp)
+                            .heightIn(min = 32.dp)
+                            .then(pressModifier)
+                            .onGloballyPositioned { controlBounds = it.boundsInWindow() }
+                            .drawWithContent {
+                                controlLayer.record { this@drawWithContent.drawContent() }
+                                if (sourceVisible) drawLayer(controlLayer)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AppGlassChoiceValueText(
+                            text = selectedLabel.orEmpty(),
+                            style = if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+                                MaterialTheme.typography.bodySmall
+                            } else MaterialTheme.typography.bodyMedium,
+                            color = AppContentColors.secondaryText(),
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (enabled) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.UnfoldMore, contentDescription = null,
+                                tint = AppContentColors.secondaryText(), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                },
+                onClick = if (enabled) {
+                    {
+                        presentChoice(null)
+                    }
+                } else {
+                    null
+                },
+                iconTint = iconTint,
+                showChevron = false,
+            )
+        }
+        return
+    }
+
     if (presentation == AppSingleChoicePresentation.WINDOW_POPUP &&
         LocalAppUiStyle.current == AppUiStyle.MIUIX
     ) {
         val selectedIndex = options.indexOfFirst { it.value == selectedValue }.coerceAtLeast(0)
-        val dropdownItems = remember(options) {
+        val dropdownItems = remember(options, optionLeading) {
             options.map { option ->
                 DropdownItem(
                     text = option.label,
                     summary = option.description,
+                    icon = if (optionLeading != null) {
+                        { iconModifier -> Box(modifier = iconModifier) { optionLeading(option.value) } }
+                    } else null,
                 )
             }
         }
-        WindowSpinnerPreference(
-            items = dropdownItems,
-            selectedIndex = selectedIndex,
-            title = title,
-            summary = subtitle,
-            enabled = enabled,
-            modifier = modifier.alpha(if (enabled) 1f else 0.6f),
-            startAction = icon?.let { imageVector ->
-                {
-                    if (useColorfulPreferenceIcons() || com.android.purebilibili.core.ui.rememberResolvedAppIconStyle() == com.android.purebilibili.core.ui.AppIconStyle.THEME_CONTAINER) {
-                        AppPreferenceLeadingIcon(title = title, imageVector = imageVector)
-                    } else {
-                        // Keep the original spinner renderer outside Miuix settings.
-                        Icon(
-                            imageVector = imageVector,
-                            contentDescription = null,
-                            tint = rememberAdaptivePreferenceIconTint(iconTint),
-                            modifier = Modifier.size(24.dp),
-                        )
+        val menuHaptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalHapticFeedback provides menuHaptic) {
+            WindowSpinnerPreference(
+                items = dropdownItems,
+                selectedIndex = selectedIndex,
+                title = title,
+                summary = subtitle,
+                enabled = enabled,
+                modifier = modifier.alpha(if (enabled) 1f else 0.6f),
+                startAction = icon?.let { imageVector ->
+                    {
+                        if (useColorfulPreferenceIcons() || com.android.purebilibili.core.ui.rememberResolvedAppIconStyle() == com.android.purebilibili.core.ui.AppIconStyle.THEME_CONTAINER) {
+                            AppPreferenceLeadingIcon(title = title, imageVector = imageVector)
+                        } else {
+                            // Keep the original spinner renderer outside Miuix settings.
+                            Icon(
+                                imageVector = imageVector,
+                                contentDescription = null,
+                                tint = rememberAdaptivePreferenceIconTint(iconTint),
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                     }
-                }
-            },
-            onSelectedIndexChange = { index ->
-                options.getOrNull(index)?.value?.let { requestedValue ->
-                    if (shouldDispatchAppChoiceSelection(selectedValue, requestedValue)) {
-                        onValueChange(requestedValue)
+                },
+                onSelectedIndexChange = { index ->
+                    options.getOrNull(index)?.value?.let { requestedValue ->
+                        if (shouldDispatchAppChoiceSelection(selectedValue, requestedValue)) {
+                            onValueChange(requestedValue)
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+        }
         return
     }
 

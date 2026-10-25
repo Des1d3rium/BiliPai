@@ -98,8 +98,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
@@ -1060,20 +1058,8 @@ private fun ProfileSkinVideoBackground(
     }
 
     AndroidView(
-        factory = { viewContext ->
-            // TextureView 跟随头图的裁切和位移，避免独立输出面脱离资料头部布局。
-            (android.view.LayoutInflater.from(viewContext)
-                .inflate(com.android.purebilibili.R.layout.wallpaper_video, null, false) as PlayerView).apply {
-                useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                setKeepContentOnPlayerReset(true)
-                this.player = player
-            }
-        },
-        update = { playerView ->
-            playerView.player = player
-        },
+        factory = { viewContext -> ProfileSkinVideoView(viewContext).apply { this.player = player } },
+        update = { it.player = player },
         onRelease = { it.player = null },
         modifier = modifier.clipToBounds(),
     )
@@ -3072,7 +3058,7 @@ private fun ProfileDynamicCard(
                     )
                 }
             }
-            Box {
+            com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showMoreMenu = true }) {
                 AppIconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(40.dp)) {
                     AppIcon(
                         imageVector = moreIcon,
@@ -3084,7 +3070,8 @@ private fun ProfileDynamicCard(
                 AppDropdownMenu(
                     expanded = showMoreMenu,
                     onDismissRequest = { showMoreMenu = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                    modifier = if (com.android.purebilibili.core.ui.components.appGlassMenuAvailable()) Modifier
+                else Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
                 ) {
                     AppDropdownMenuItem(
                         text = { AppText("复制链接") },
@@ -5407,7 +5394,7 @@ fun ProfileTripleActionEntry(
     var showCelebration by remember { mutableStateOf(false) }
     val progressDuration = 1500 // 1.5 秒
 
-    val haptic = com.android.purebilibili.core.util.rememberHapticFeedback()
+    val haptic = com.android.purebilibili.core.util.rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
 
     // 进度动画
     val animatedProgress by androidx.compose.animation.core.animateFloatAsState(

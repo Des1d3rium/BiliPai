@@ -462,6 +462,10 @@ data class SearchUpItem(
     val vip: SearchUpVip? = null,
     @Serializable(with = FlexibleIntSerializer::class)
     val is_senior_member: Int = 0, // 是否硬核会员
+    @Serializable(with = FlexibleIntSerializer::class)
+    val is_live: Int? = null,
+    @Serializable(with = FlexibleLongSerializer::class)
+    val room_id: Long? = null,
     val res: List<SearchVideoItem>? = null
 ) {
     fun cleanupFields(): SearchUpItem {

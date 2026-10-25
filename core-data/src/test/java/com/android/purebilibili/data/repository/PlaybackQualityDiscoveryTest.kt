@@ -6,6 +6,8 @@ import com.android.purebilibili.data.model.response.DashVideo
 import com.android.purebilibili.data.model.response.FormatItem
 import com.android.purebilibili.data.model.response.PlayUrlData
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -69,6 +71,33 @@ class PlaybackQualityDiscoveryTest {
         assertEquals(data, supplementPlaybackQualities(data) { PlayUrlData() })
         assertFailsWith<CancellationException> {
             supplementPlaybackQualities(data) { throw CancellationException("account changed") }
+        }
+    }
+
+    @Test
+    fun `hung supplement returns the first playable response within its deadline`() = runTest {
+        val initial = PlayUrlData(
+            supportFormats = listOf(FormatItem(quality = 80)),
+            dash = Dash(video = listOf(track(120))),
+        )
+        var fetchCancelled = false
+        val result = supplementPlaybackQualities(initial, timeoutMs = 100L) {
+            try { awaitCancellation() } finally { fetchCancelled = true }
+        }
+        assertSame(initial, result)
+        assertTrue(fetchCancelled)
+    }
+
+    @Test
+    fun `parent timeout cancels discovery rather than returning stale playback`() = runTest {
+        val initial = PlayUrlData(
+            supportFormats = listOf(FormatItem(quality = 80)),
+            dash = Dash(video = listOf(track(120))),
+        )
+        assertFailsWith<CancellationException> {
+            withTimeout(50L) {
+                supplementPlaybackQualities(initial, timeoutMs = 100L) { awaitCancellation() }
+            }
         }
     }
 

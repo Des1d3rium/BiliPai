@@ -66,4 +66,15 @@ class SettingsItemSearchPolicyTest {
         assertEquals("second", SettingsSearchFocusController.request.value?.settingId)
         SettingsSearchFocusController.clear()
     }
+    @Test
+    fun partResumeSearchOpensTheSameSectionAsItsVisibleSwitch() {
+        listOf("定位分P", "上次看到", "显示继续播放分P提示").forEach { query ->
+            val result = resolveSettingsSearchResults(query, Int.MAX_VALUE)
+                .first { it.settingId == "playback.show_continue_part_notice" }
+            assertEquals(SettingsRootCategory.PLAYBACK_QUALITY, result.page)
+            assertEquals(SettingsSearchFocusIds.PLAYBACK_INTERACTION, result.focusId)
+            assertTrue(result.path.endsWith("字幕与连播"))
+        }
+    }
+
 }

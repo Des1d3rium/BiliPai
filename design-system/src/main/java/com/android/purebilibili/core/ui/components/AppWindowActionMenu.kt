@@ -58,6 +58,10 @@ fun AppWindowActionMenu(
     // Explicit anchor sizing is opt-in; existing menus retain native button geometry.
     anchorModifier: Modifier = Modifier,
     compact: Boolean = false,
+    onActionSource: ((AppGlassMenuSource) -> Unit)? = null,
+    // 独立玻璃胶囊由父层捕获完整材质；内部按钮只保留打开手势。
+    source: AppGlassMenuSource? = null,
+    sourceCapturedByParent: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     if (compact) {
@@ -67,19 +71,27 @@ fun AppWindowActionMenu(
             enabled = enabled,
             onExpandedChange = onExpandedChange,
             anchorModifier = anchorModifier,
+            onActionSource = onActionSource,
+            source = source,
+            sourceCapturedByParent = sourceCapturedByParent,
             content = content,
         )
         return
     }
 
-    if (LocalAppUiStyle.current != AppUiStyle.MIUIX || !LocalAppThemeConfig.current.nativeMiuixPopupsEnabled) {
+    val glassSource = source ?: rememberAppGlassMenuSource()
+    if (appGlassMenuAvailable() || LocalAppUiStyle.current != AppUiStyle.MIUIX || !LocalAppThemeConfig.current.nativeMiuixPopupsEnabled) {
         var expanded by remember { mutableStateOf(false) }
         var parentActions by remember { mutableStateOf(emptyList<AppWindowAction>()) }
         val visibleGroups = parentActions.lastOrNull()?.let { listOf(it.children) }
             ?: groups.filter { it.isNotEmpty() }
         Box(modifier = modifier) {
             AppIconButton(
-                modifier = anchorModifier,
+                modifier = anchorModifier.appGlassMenuSource(glassSource, enabled = enabled, captureSurface = !sourceCapturedByParent, onOpen = {
+                    parentActions = emptyList()
+                    expanded = true
+                    onExpandedChange?.invoke(true)
+                }),
                 onClick = {
                     parentActions = emptyList()
                     expanded = true
@@ -88,6 +100,7 @@ fun AppWindowActionMenu(
                 enabled = enabled,
             ) { content() }
             AppDropdownMenu(
+                glassSource = glassSource,
                 expanded = expanded,
                 onDismissRequest = {
                     parentActions = emptyList()
@@ -98,6 +111,7 @@ fun AppWindowActionMenu(
                 if (parentActions.isNotEmpty()) {
                     AppDropdownMenuItem(
                         text = { AppText("返回") },
+                        dismissOnClick = false,
                         onClick = { parentActions = parentActions.dropLast(1) },
                         modifier = Modifier.heightIn(min = 48.dp),
                     )
@@ -124,12 +138,15 @@ fun AppWindowActionMenu(
                                 else -> null
                             },
                             enabled = action.enabled,
+                            selected = action.selected,
+                            dismissOnClick = action.children.isEmpty(),
                             onClick = {
                                 if (action.children.isNotEmpty()) {
                                     parentActions = parentActions + action
                                 } else {
                                     expanded = false
                                     onExpandedChange?.invoke(false)
+                                    if (glassSource.isAvailable) onActionSource?.invoke(glassSource)
                                     action.onClick?.invoke()
                                 }
                             },
@@ -179,8 +196,12 @@ private fun AppCompactWindowActionMenu(
     enabled: Boolean,
     onExpandedChange: ((Boolean) -> Unit)?,
     anchorModifier: Modifier,
+    onActionSource: ((AppGlassMenuSource) -> Unit)?,
+    source: AppGlassMenuSource?,
+    sourceCapturedByParent: Boolean,
     content: @Composable () -> Unit,
 ) {
+    val glassSource = source ?: rememberAppGlassMenuSource()
     var expanded by remember { mutableStateOf(false) }
     var parentActions by remember { mutableStateOf(emptyList<AppWindowAction>()) }
     val visibleGroups = parentActions.lastOrNull()?.let { listOf(it.children) }
@@ -198,6 +219,7 @@ private fun AppCompactWindowActionMenu(
                 if (parentActions.isNotEmpty()) {
                     AppCompactMenuItem(
                         text = "返回",
+                        dismissOnClick = false,
                         onClick = { parentActions = parentActions.dropLast(1) },
                         leadingIcon = {
                             AppIcon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
@@ -215,6 +237,7 @@ private fun AppCompactWindowActionMenu(
                             text = action.label,
                             summary = action.summary,
                             selected = action.selected,
+                            dismissOnClick = action.children.isEmpty(),
                             enabled = action.enabled,
                             leadingIcon = action.icon?.let { icon ->
                                 {
@@ -239,6 +262,7 @@ private fun AppCompactWindowActionMenu(
                                         parentActions = parentActions + action
                                     } else {
                                         dismiss()
+                                        if (glassSource.isAvailable) onActionSource?.invoke(glassSource)
                                         action.onClick?.invoke()
                                     }
                                 }
@@ -251,7 +275,11 @@ private fun AppCompactWindowActionMenu(
     }
     Box(modifier = modifier) {
         AppIconButton(
-            modifier = anchorModifier,
+            modifier = anchorModifier.appGlassMenuSource(glassSource, enabled = enabled, captureSurface = !sourceCapturedByParent, onOpen = {
+                    parentActions = emptyList()
+                    expanded = true
+                    onExpandedChange?.invoke(true)
+                }),
             enabled = enabled && groups.any { it.isNotEmpty() },
             onClick = {
                 parentActions = emptyList()
@@ -260,7 +288,7 @@ private fun AppCompactWindowActionMenu(
             },
         ) { content() }
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX &&
-            LocalAppThemeConfig.current.nativeMiuixPopupsEnabled
+            LocalAppThemeConfig.current.nativeMiuixPopupsEnabled && !appGlassMenuAvailable()
         ) {
             WindowListPopup(
                 show = expanded,
@@ -270,6 +298,7 @@ private fun AppCompactWindowActionMenu(
             ) { menuContent(true) }
         } else {
             AppDropdownMenu(
+                glassSource = glassSource,
                 expanded = expanded,
                 onDismissRequest = ::dismiss,
             ) { menuContent(false) }

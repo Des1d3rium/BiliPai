@@ -34,6 +34,7 @@ import com.android.purebilibili.data.model.response.AiAudioItem
 import com.android.purebilibili.data.model.response.Page
 import com.android.purebilibili.data.model.response.ViewPoint
 import com.android.purebilibili.feature.plugin.Anime4KPlugin
+import com.android.purebilibili.plugin.sdk.VideoEnhancementPluginApi
 import com.android.purebilibili.feature.video.subtitle.SubtitleDisplayMode
 import com.android.purebilibili.feature.video.subtitle.SubtitleTrackOption
 import com.android.purebilibili.feature.video.ui.components.VideoAspectRatio
@@ -63,7 +64,7 @@ class PlayerParityTestActivity : ComponentActivity() {
         private set
     @Volatile var subtitleCue = ""
         private set
-    lateinit var enhancement: Anime4KPlugin
+    lateinit var enhancement: VideoEnhancementPluginApi
         private set
     private val pages = List(3) { index -> Page(cid = index + 1L, page = index + 1, part = "Local episode ${index + 1}", duration = 3) }
 

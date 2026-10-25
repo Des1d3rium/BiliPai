@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.list
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import android.app.Application
@@ -620,7 +622,7 @@ private fun FavoritePgcCard(
     AppSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(onClick = appActionWithFeedback(onClick), onLongClick = onLongClick),
         shape = AppShapes.container(ContainerLevel.Card),
         color = AppSurfaceTokens.cardContainer(),
     ) {

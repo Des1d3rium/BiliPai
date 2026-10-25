@@ -6,8 +6,6 @@ import java.util.Locale
 import java.util.TimeZone
 
 object FormatUtils {
-    private const val DEFAULT_IMAGE_WIDTH = 640
-    private const val DEFAULT_IMAGE_HEIGHT = 400
     private const val COVER_IMAGE_LOW_WIDTH = 240
     private const val COVER_IMAGE_LOW_HEIGHT = 150
     private val detailedCommentTimeFormatter =
@@ -51,12 +49,10 @@ object FormatUtils {
     }
 
     /**
-     * 修复图片 URL (核心修复)
-     * 1. 补全 https 前缀
-     * 2. 自动添加缩放后缀节省流量
+     * 补全协议并去掉旧缩放参数；显示尺寸和压缩质量由图片请求统一处理。
      */
     fun fixImageUrl(url: String?): String {
-        return buildSizedImageUrl(url, width = DEFAULT_IMAGE_WIDTH, height = DEFAULT_IMAGE_HEIGHT)
+        return normalizeImageUrl(url)
     }
 
     fun resolveVideoCoverUrl(

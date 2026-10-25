@@ -75,7 +75,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.unit.Density
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -114,6 +113,7 @@ import com.android.purebilibili.feature.settings.AppLanguage
 import com.android.purebilibili.feature.settings.applyAppLanguage
 import com.android.purebilibili.core.theme.resolveEffectiveDynamicColorEnabled
 import com.android.purebilibili.core.theme.buildDisplayMetricsSnapshot
+import com.android.purebilibili.core.theme.withDensityScale
 import com.android.purebilibili.core.ui.AppAlertDialog
 import com.android.purebilibili.core.ui.AppDialogAction
 import com.android.purebilibili.core.ui.AppThemeConfig
@@ -1395,6 +1395,8 @@ open class MainActivity : AppCompatActivity() {
                 .collectAsStateWithLifecycle(initialValue = true)
             val progressiveTopFadeEnabled by SettingsManager.getProgressiveTopFadeEnabled(context)
                 .collectAsStateWithLifecycle(initialValue = true)
+            val hapticSettings by remember(context) { SettingsManager.getHapticSettings(context) }
+                .collectAsStateWithLifecycle(initialValue = com.android.purebilibili.core.ui.AppHapticSettings())
             val hapticFeedbackEnabled by SettingsManager.getHapticFeedbackEnabled(context)
                 .collectAsStateWithLifecycle(initialValue = true)
             val globalTextTapCopyEnabled by SettingsManager
@@ -1431,6 +1433,7 @@ open class MainActivity : AppCompatActivity() {
                 progressiveTopBlurEnabled,
                 progressiveTopFadeEnabled,
                 hapticFeedbackEnabled,
+                hapticSettings,
                 globalTextTapCopyEnabled,
                 uiEntranceAnimationEnabled,
                 globalDragFeedbackEnabled,
@@ -1446,6 +1449,7 @@ open class MainActivity : AppCompatActivity() {
                     progressiveTopBlurEnabled = progressiveTopBlurEnabled,
                     progressiveTopFadeEnabled = progressiveTopFadeEnabled,
                     hapticFeedbackEnabled = hapticFeedbackEnabled,
+                    hapticSettings = hapticSettings,
                     globalTextTapCopyEnabled = globalTextTapCopyEnabled,
                     uiEntranceAnimationEnabled = uiEntranceAnimationEnabled,
                     globalDragFeedbackEnabled = globalDragFeedbackEnabled,
@@ -1529,11 +1533,9 @@ open class MainActivity : AppCompatActivity() {
                     dpiOverridePercent = appDpiOverridePercent.takeIf { it > 0 }
                 )
             }
+            // 仅叠加 UI 缩放系数；sp↔px 换算委托系统 Density，保留大字号下的非线性字体缩放曲线。
             val effectiveDensity = remember(systemDensity, displayMetricsSnapshot.effectiveDensityMultiplier) {
-                Density(
-                    density = systemDensity.density * displayMetricsSnapshot.effectiveDensityMultiplier,
-                    fontScale = systemDensity.fontScale
-                )
+                systemDensity.withDensityScale(displayMetricsSnapshot.effectiveDensityMultiplier)
             }
 
             //  📐 [平板适配] 计算窗口尺寸类

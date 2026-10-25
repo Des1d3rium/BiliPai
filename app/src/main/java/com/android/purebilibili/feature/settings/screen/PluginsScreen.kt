@@ -92,9 +92,8 @@ import com.android.purebilibili.core.ui.components.rememberAdaptiveSemanticIconT
 import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.core.util.rememberNotificationPermissionState
 import com.android.purebilibili.core.plugin.resolvePluginListActivityLabel
-import com.android.purebilibili.feature.plugin.EYE_PROTECTION_PLUGIN_ID
-import com.android.purebilibili.feature.plugin.EyeProtectionPlugin
-import com.android.purebilibili.feature.plugin.SPONSOR_BLOCK_PLUGIN_ID
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+import com.android.purebilibili.plugin.sdk.EyeProtectionPluginApi
 import com.android.purebilibili.feature.settings.buildUiSkinImagePreviewItems
 import com.android.purebilibili.feature.settings.buildUiSkinPackagePreview
 import kotlinx.coroutines.Dispatchers
@@ -106,19 +105,6 @@ import okhttp3.Request
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
-
-internal suspend fun dispatchBuiltInPluginToggle(
-    pluginId: String,
-    enabled: Boolean,
-    onSponsorBlockToggle: suspend (Boolean) -> Unit,
-    onGenericPluginToggle: suspend (String, Boolean) -> Unit
-) {
-    if (pluginId == SPONSOR_BLOCK_PLUGIN_ID) {
-        onSponsorBlockToggle(enabled)
-    } else {
-        onGenericPluginToggle(pluginId, enabled)
-    }
-}
 
 internal fun downloadUiSkinRemotePackage(url: String): ByteArray {
     val request = Request.Builder()
@@ -598,16 +584,7 @@ fun PluginsContent(
                                 iconTint = rememberPluginEntryIconTint(index),
                                 onToggle = { enabled ->
                                     scope.launch {
-                                        dispatchBuiltInPluginToggle(
-                                            pluginId = pluginInfo.plugin.id,
-                                            enabled = enabled,
-                                            onSponsorBlockToggle = { sponsorEnabled ->
-                                                SettingsManager.setSponsorBlockEnabled(context, sponsorEnabled)
-                                            },
-                                            onGenericPluginToggle = { pluginId, pluginEnabled ->
-                                                PluginManager.setEnabled(pluginId, pluginEnabled)
-                                            }
-                                        )
+                                        PluginManager.setEnabled(pluginInfo.plugin.id, enabled)
                                     }
                                 },
                                 onOpen = { onOpenBuiltInPlugin(pluginInfo.plugin.id) }
@@ -2265,14 +2242,14 @@ private fun PluginItem(
     val effectiveIconTint = rememberAdaptivePreferenceIconContainerColor(iconTint)
     val iconContentColor = rememberAdaptivePreferenceIconContentColor(effectiveIconTint)
     val eyeActivityFlow = remember(plugin.id) {
-        (plugin as? EyeProtectionPlugin)?.isNightModeActive
+        PluginManager.getPlugin(EyeProtectionPluginApi::class)?.isNightModeActive
             ?: kotlinx.coroutines.flow.MutableStateFlow(false)
     }
     val eyeActive by eyeActivityFlow.collectAsStateWithLifecycle()
     val activityLabel = resolvePluginListActivityLabel(
         enabled = pluginInfo.enabled,
         unavailable = plugin.unavailable,
-        effectActive = plugin.id == EYE_PROTECTION_PLUGIN_ID && eyeActive
+        effectActive = plugin.id == BuiltinPluginIds.EYE_PROTECTION && eyeActive
     )
 
     Column {
@@ -2289,7 +2266,7 @@ private fun PluginItem(
                 SettingsFunctionIcon(
                     title = plugin.name,
                     imageVector = when (plugin.id) {
-                        com.android.purebilibili.feature.plugin.SubscriptionFeedPlugin.PLUGIN_ID ->
+                        BuiltinPluginIds.SUBSCRIPTION_FEED ->
                             com.android.purebilibili.feature.settings.rememberMaterialSymbol(
                                 com.android.purebilibili.R.drawable.ms_rss_feed_24,
                             )
@@ -2306,7 +2283,7 @@ private fun PluginItem(
             ) {
                 AppIcon(
                     imageVector = when (plugin.id) {
-                        com.android.purebilibili.feature.plugin.SubscriptionFeedPlugin.PLUGIN_ID ->
+                        BuiltinPluginIds.SUBSCRIPTION_FEED ->
                             com.android.purebilibili.feature.settings.rememberMaterialSymbol(
                                 com.android.purebilibili.R.drawable.ms_rss_feed_24,
                             )
@@ -2435,7 +2412,7 @@ private fun PluginDetailScreen(
         bottomContentPadding = bottomContentPadding + 16.dp,
         scrollHost = SettingsPageScrollHost.LazyColumn,
         lazyListContent = {
-            if (plugin.id != com.android.purebilibili.feature.plugin.SubscriptionFeedPlugin.PLUGIN_ID) {
+            if (plugin.id != BuiltinPluginIds.SUBSCRIPTION_FEED) {
                 item {
                     AppSurface(
                         modifier = Modifier
@@ -2704,7 +2681,7 @@ private fun buildJsTestParamsJson(module: com.android.purebilibili.core.plugin.j
 
 @Composable
 private fun PluginCapabilityChips(
-    capabilities: Set<com.android.purebilibili.core.plugin.PluginCapability>,
+    capabilities: Set<com.android.purebilibili.plugin.sdk.PluginCapability>,
     showAuthorizationLabels: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -2758,7 +2735,7 @@ private fun PluginCapabilityChips(
 
 @Composable
 private fun PluginCapabilityDetailSection(
-    capabilities: Set<com.android.purebilibili.core.plugin.PluginCapability>,
+    capabilities: Set<com.android.purebilibili.plugin.sdk.PluginCapability>,
     showAuthorizationLabels: Boolean = true,
     modifier: Modifier = Modifier
 ) {

@@ -26,7 +26,7 @@ import com.android.purebilibili.feature.video.ui.components.resolveCommentThread
 import com.android.purebilibili.feature.video.ui.components.resolveCommentThreadPredictiveBackOffsetY
 import com.android.purebilibili.feature.video.ui.components.rememberCommentThreadDrag
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
@@ -750,7 +750,7 @@ fun DynamicInlineCommentHeader(
                     style = MaterialTheme.typography.labelMedium,
                     color = AppContentColors.accent(),
                     modifier = Modifier
-                        .clickable(onClick = onShowReactions)
+                        .appActionClickable(onClick = onShowReactions)
                         .padding(vertical = 6.dp),
                 )
             }

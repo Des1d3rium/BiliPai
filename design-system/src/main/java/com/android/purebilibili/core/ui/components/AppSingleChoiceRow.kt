@@ -33,8 +33,9 @@ fun AppSingleChoiceRow(
     shape: Shape = AppShapes.container(ContainerLevel.Chip),
     content: @Composable RowScope.() -> Unit,
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
     AppSurface(
-        onClick = onClick,
+        onClick = feedbackClick,
         enabled = enabled,
         modifier = modifier,
         shape = shape,

@@ -3,8 +3,7 @@ package com.android.purebilibili.feature.video.ui.components
 import com.android.purebilibili.core.util.rememberHapticFeedback
 import com.android.purebilibili.core.util.HapticType
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -21,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -41,6 +39,7 @@ import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.data.model.response.Page
 import com.android.purebilibili.data.model.response.UgcEpisode
 import com.android.purebilibili.data.model.response.UgcSeason
+import com.android.purebilibili.feature.home.components.cards.VideoCardCoverDurationText
 import kotlinx.coroutines.launch
 
 /** One bounded lazy viewport in the native page/detail region in every player mode. */
@@ -54,7 +53,7 @@ fun PlayerEpisodeMenu(
     isSubscribed: Boolean? = null, onSubscriptionChange: ((Boolean) -> Unit)? = null,
     onCoverLongPress: ((String) -> Unit)? = null,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     val content = remember(pages, currentPageIndex, ugcSeason, currentBvid, currentCid) {
         resolvePlayerEpisodeMenuContent(pages, currentPageIndex, ugcSeason, currentBvid, currentCid)
     }
@@ -79,7 +78,7 @@ fun PlayerEpisodeMenu(
         if (index in entries.indices) listState.animateScrollToItem(index)
     }
     PlayerDetailPanel(title = if (pages.size > 1) "分P" else "合集", isFullscreen = isFullscreen,
-        playerBounds = playerBounds, onDismiss = onDismiss, compactHeight = true) {
+        playerBounds = playerBounds, onDismiss = onDismiss, compactHeight = true) { requestPanelDismiss ->
         Row(Modifier.fillMaxWidth().height(45.dp).horizontalScroll(rememberScrollState())
             .padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (pages.size > 1) "分P" else "合集", fontSize = 16.sp)
@@ -101,12 +100,12 @@ fun PlayerEpisodeMenu(
             }
             Spacer(Modifier.weight(1f))
             PanelAction(Icons.Default.Sort, if (reversed) "顺序" else "倒序") { reverseSections[sectionIndex] = !reversed }
-            PanelAction(Icons.Default.Close, "关闭", onDismiss)
+            PanelAction(Icons.Default.Close, "关闭", requestPanelDismiss)
         }
         if (content.sections.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             content.sections.forEachIndexed { index, item ->
                 Text(item.title, color = if (index == sectionIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable { sectionIndex = index }.padding(horizontal = 16.dp, vertical = 12.dp))
+                    modifier = Modifier.appActionClickable { sectionIndex = index }.padding(horizontal = 16.dp, vertical = 12.dp))
             }
         }
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f), overscrollEffect = null,
@@ -120,7 +119,7 @@ fun PlayerEpisodeMenu(
                 fun select(part: PlayerEpisodeMenuEntry) {
                     if (part == current) return
                     selectionHaptic(HapticType.LIGHT)
-                    onDismiss()
+                    requestPanelDismiss()
                     when (val target = part.target) {
                         is PlayerEpisodeMenuTarget.Part -> onPageSelect(target.pageIndex)
                         is PlayerEpisodeMenuTarget.Episode -> onEpisodeSelect?.invoke(target.episode)
@@ -133,6 +132,7 @@ fun PlayerEpisodeMenu(
                         durationSeconds = if (group.size > 1) episode?.arc?.duration?.toLong() ?: entry.durationSeconds else entry.durationSeconds,
                         selected = selected,
                         indexLabel = entry.indexLabel.substringBefore(" · "),
+                        durationBesideIndex = entry.target is PlayerEpisodeMenuTarget.Part,
                         metadataText = buildPlayerEpisodeMetadataText(
                             pubdateSeconds = entry.pubdateSeconds,
                             viewCount = entry.viewCount,
@@ -149,7 +149,7 @@ fun PlayerEpisodeMenu(
                             Text(part.title.substringAfterLast(" · "),
                                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.playerPopupSelectedOption(active).height(45.dp).semantics { this.selected = active }
-                                    .clickable { select(part) }.padding(horizontal = 12.dp, vertical = 10.dp))
+                                    .appActionClickable { select(part) }.padding(horizontal = 12.dp, vertical = 10.dp))
                         }
                     }
                 }
@@ -188,13 +188,13 @@ internal fun PlayerDetailPanel(title: String, isFullscreen: Boolean, playerBound
     val dragEnabled = draggable && isFullscreen && landscape
     // 退出位移包含窗口右侧安全边距，画面和面板一直共用相同的可见边界。
     val dragDistancePx = (size.width - bounds.left).coerceAtLeast(bounds.width)
-    val closeProgress = remember(bounds) { mutableFloatStateOf(0f) }
+    val closeProgress = remember(bounds) { mutableFloatStateOf(1f) }
     val dismissAction = remember { mutableStateOf<(() -> Unit)?>(null) }
     ReservePlayerPanelViewport(
         bounds,
         enabled = isFullscreen && landscape,
         dragDistancePx = dragDistancePx,
-        closeProgressProvider = { if (dragEnabled) closeProgress.floatValue else 0f },
+        closeProgressProvider = { closeProgress.floatValue },
     )
     val provider = remember(bounds) { object : PopupPositionProvider {
         override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection,
@@ -228,23 +228,19 @@ internal fun PlayerDetailPanel(title: String, isFullscreen: Boolean, playerBound
     Popup(
         popupPositionProvider = provider,
         onDismissRequest = { dismissAction.value?.invoke() ?: onDismiss() },
-        properties = PopupProperties(focusable = true, clippingEnabled = false),
+        // 返回由 Popup 自己的窗口回调处理，保留手势进度与取消恢复。
+        properties = PopupProperties(focusable = true, clippingEnabled = false, dismissOnBackPress = false),
     ) {
-        if (dragEnabled) {
-            LandscapeSidePanel(
-                visible = true,
-                edge = LandscapeSidePanelEdge.End,
-                width = with(density) { bounds.width.toDp() },
+        com.android.purebilibili.core.ui.AppPopupWindowHost(enableWindowMaterial = false) {
+            PlayerDetailPanelMotion(
+                sidePanel = landscape,
+                dragEnabled = dragEnabled,
+                distancePx = if (landscape) dragDistancePx.toFloat() else (size.height - bounds.top).toFloat(),
                 closeProgress = closeProgress,
-                dragDistance = with(density) { dragDistancePx.toDp() },
                 onDismiss = onDismiss,
-            ) { requestDismiss ->
-                SideEffect { dismissAction.value = requestDismiss }
-                surfaceContent(requestDismiss)
-            }
-        } else {
-            SideEffect { dismissAction.value = null }
-            surfaceContent(onDismiss)
+                onDismissAction = { dismissAction.value = it },
+                content = surfaceContent,
+            )
         }
     }
 }
@@ -254,8 +250,16 @@ internal fun PlayerPanelMediaRow(title: String, cover: String, durationSeconds: 
     indexLabel: String = "", onCoverLongPress: ((String) -> Unit)? = null,
     accessLabel: String? = null, accessEpisode: com.android.purebilibili.data.model.response.UgcEpisode? = null,
     expandTitle: Boolean = false, metadataText: String? = null,
+    durationBesideIndex: Boolean = false,
     onClick: () -> Unit) {
     val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val durationText = if (durationSeconds > 0) {
+        FormatUtils.formatDuration(durationSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    } else ""
+    // 分 P 时长放在编号后；章节、合集等调用方保留原有封面时长位置。
+    val indexAndDuration = if (durationBesideIndex) {
+        listOf(indexLabel, durationText).filter { it.isNotBlank() }.joinToString("  ")
+    } else indexLabel
     // 章节列表按完整标题增高；其他媒体列表继续使用原有两行与固定行高。
     Row(Modifier.fillMaxWidth()
         .then(if (expandTitle) Modifier.heightIn(min = 110.dp) else Modifier.height(110.dp))
@@ -271,9 +275,10 @@ internal fun PlayerPanelMediaRow(title: String, cover: String, durationSeconds: 
             } else {
                 CollectionAccessBadge(label = accessLabel, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp))
             }
-            if (durationSeconds > 0) Text(FormatUtils.formatDuration(durationSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()),
-                fontSize = 12.sp, color = Color.White,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 3.dp))
+            if (!durationBesideIndex && durationText.isNotBlank()) VideoCardCoverDurationText(
+                text = durationText,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+            )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, fontSize = 14.sp, lineHeight = 20.sp, color = color,
@@ -284,10 +289,10 @@ internal fun PlayerPanelMediaRow(title: String, cover: String, durationSeconds: 
                 if (accessEpisode != null) CollectionAccessBadge(episode = accessEpisode)
                 else CollectionAccessBadge(label = accessLabel)
             }
-            if (indexLabel.isNotBlank()) Text(indexLabel, fontSize = 12.sp, color = color)
+            if (indexAndDuration.isNotBlank()) Text(indexAndDuration, fontSize = 12.sp, color = color)
             if (!metadataText.isNullOrBlank()) Text(metadataText, fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (cover.isBlank() && durationSeconds > 0) Text(FormatUtils.formatDuration(durationSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), fontSize = 12.sp)
+            if (!durationBesideIndex && cover.isBlank() && durationText.isNotBlank()) Text(durationText, fontSize = 12.sp)
             if (selected) Text("正在播放", fontSize = 12.sp, color = color)
         }
     }

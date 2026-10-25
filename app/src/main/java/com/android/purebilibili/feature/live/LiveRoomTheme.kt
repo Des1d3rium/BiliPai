@@ -12,9 +12,8 @@ import com.android.purebilibili.core.ui.LocalAppIconStyle
 import com.android.purebilibili.core.ui.LocalAppThemeConfig
 import com.android.purebilibili.core.ui.ProvideAppContentColors
 
-/** 直播间及其弹层使用固定原生播放控件，应用材质开关只作用于房间以外的页面。 */
+/** 直播间保留深色播放配色，菜单材质跟随用户液态玻璃开关。 */
 internal fun liveRoomThemeConfig(appConfig: AppThemeConfig): AppThemeConfig = appConfig.copy(
-    liquidGlassEnabled = false,
     liquidControlsUseThemeColor = false,
     nativeMiuixPopupsEnabled = false,
     headerBlurEnabled = false,

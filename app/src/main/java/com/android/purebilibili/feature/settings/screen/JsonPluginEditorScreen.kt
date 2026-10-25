@@ -310,7 +310,7 @@ private fun DropdownSelector(
             style = MaterialTheme.typography.labelSmall,
             color = AppContentColors.secondaryText()
         )
-        Box {
+        com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { expanded = true }) {
             AppOutlinedButton(
                 onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth()

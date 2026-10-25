@@ -1,6 +1,8 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.feature.settings.share
+
+import androidx.compose.foundation.clickable
 
 import com.android.purebilibili.core.ui.AppContentColors
 
@@ -263,17 +265,13 @@ fun SettingsShareScreen(
                                 modifier = Modifier.padding(16.dp),
                             )
                         }
-                        uiState.savedProfiles.forEachIndexed { index, profile ->
-                            androidx.compose.material3.SegmentedListItem(
-                                onClick = { viewModel.restoreSavedProfile(profile) },
-                                enabled = !uiState.isBusy,
-                                shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(
-                                    index = index,
-                                    count = uiState.savedProfiles.size,
-                                ),
+                        uiState.savedProfiles.forEach { profile ->
+                            androidx.compose.material3.ListItem(
+                                headlineContent = { com.android.purebilibili.core.ui.components.AppText(profile.name) },
                                 supportingContent = { com.android.purebilibili.core.ui.components.AppText("点击恢复此配置") },
-                                modifier = Modifier.padding(vertical = 2.dp),
-                            ) { com.android.purebilibili.core.ui.components.AppText(profile.name) }
+                                modifier = Modifier
+                                    .clickable(enabled = !uiState.isBusy) { viewModel.restoreSavedProfile(profile) },
+                            )
                         }
                     } else {
                         uiState.savedProfiles.forEach { profile ->

@@ -29,7 +29,7 @@ import com.android.purebilibili.feature.home.resolveHomeTopSearchRowMetrics
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -1552,7 +1552,7 @@ fun HomeHeader(
     val contentCardSurfaceSpec = rememberContentCardSurfaceSpec()
     val usesNativeContainerTreatment = semanticVisualPolicy.prefersNativeChrome
     val usesTonalContainerTreatment = contentCardSurfaceSpec.usesTonalContainerTreatment
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     val density = LocalDensity.current
     val topChromeLiquidGlassEnabled = resolveHomeTopChromeLiquidGlassEnabled(
         homeSettings = homeSettings,
@@ -2334,7 +2334,7 @@ fun HomeHeader(
                     modifier = Modifier
                         .size(48.dp)
                         .appElasticPress(visualSize = resolveHomeTopAvatarInnerSize())
-                        .clickable { performHomeTopBarTap(haptic = haptic, onClick = onAvatarClick) }
+                        .appActionClickable { performHomeTopBarTap(haptic = haptic, onClick = onAvatarClick) }
                         .semantics { contentDescription = "个人中心" },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2359,7 +2359,7 @@ fun HomeHeader(
                             state = topActionElasticState,
                             transformInBackdrop = topActionGlassActive,
                         )
-                        .clickable(
+                        .appActionClickable(
                             interactionSource = null,
                             indication = null,
                             role = Role.Button,
@@ -2650,7 +2650,7 @@ fun HomeHeader(
                                 modifier = Modifier
                                     .size(resolveHomeTopAvatarOuterSize())
                                     .appElasticPress(visualSize = resolveHomeTopAvatarInnerSize())
-                                    .clickable {
+                                    .appActionClickable {
                                         performHomeTopBarTap(haptic = haptic, onClick = onAvatarClick)
                                     },
                                 contentAlignment = Alignment.Center
@@ -2805,7 +2805,7 @@ fun HomeHeader(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .clickable(
+                                                .appActionClickable(
                                                     interactionSource = searchPillInteractionSource,
                                                     role = Role.Button,
                                                 ) {
@@ -2867,7 +2867,7 @@ fun HomeHeader(
                                             transformInBackdrop = topActionGlassActive,
                                         )
                                         .then(topActionSurfaceModifier)
-                                        .clickable(
+                                        .appActionClickable(
                                             interactionSource = null,
                                             indication = null,
                                             role = Role.Button,

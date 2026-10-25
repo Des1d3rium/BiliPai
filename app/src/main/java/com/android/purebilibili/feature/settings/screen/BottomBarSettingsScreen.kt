@@ -495,6 +495,7 @@ fun BottomBarSettingsContent(
                                 AppSegmentOption(2, "仅文字"),
                             ),
                             selectedValue = bottomBarLabelMode,
+                            optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Labels(value)) },
                             onSelectionChange = { mode ->
                                 scope.launch { SettingsManager.setBottomBarLabelMode(context, mode) }
                             },
@@ -537,6 +538,7 @@ fun BottomBarSettingsContent(
                                     AppSegmentOption(SettingsManager.TopTabLabelMode.TEXT_ONLY, "仅文字"),
                                 ),
                                 selectedValue = topTabLabelMode,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Labels(value, atTop = true)) },
                                 onSelectionChange = { mode ->
                                     scope.launch { SettingsManager.setTopTabLabelMode(context, mode) }
                                 },
@@ -569,6 +571,9 @@ fun BottomBarSettingsContent(
                                     AppSegmentOption(order, order.label)
                                 },
                                 selectedValue = homeTopLayoutOrder,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.HeaderOrder(
+                                    searchFirst = value == HomeTopLayoutOrder.SEARCH_THEN_TABS,
+                                )) },
                                 onSelectionChange = { order ->
                                     scope.launch { SettingsManager.setHomeTopLayoutOrder(context, order) }
                                 },
@@ -585,6 +590,9 @@ fun BottomBarSettingsContent(
                                     HomeHeaderCollapseMode.BOTH -> "首页离开顶部后收起搜索与标签栏，回顶后恢复；其他列表页由列表页顶栏折叠设置控制"
                                     HomeHeaderCollapseMode.TABS_ONLY -> "下滑时仅收起标签页，搜索框保持显示"
                                 },
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.HeaderCollapse(
+                                    searchVisible = !value.collapseSearch, tabsVisible = !value.collapseTabs,
+                                )) },
                                 options = listOf(
                                     AppSegmentOption(HomeHeaderCollapseMode.OFF, "始终显示"),
                                     AppSegmentOption(HomeHeaderCollapseMode.SEARCH_ONLY, "仅收起搜索"),
@@ -982,7 +990,7 @@ private fun BottomBarPreview(
     onDragEnd: () -> Unit
 ) {
     // 触感反馈
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.ADJUSTMENT)
 
     // 拖拽状态
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }

@@ -1,6 +1,8 @@
 // 文件路径: feature/plugin/BiliPaiFeedFilterPlugin.kt
 package com.android.purebilibili.feature.plugin
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import android.util.Log
@@ -25,8 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.android.purebilibili.core.plugin.FeedKind
-import com.android.purebilibili.core.plugin.FeedPlugin
+import com.android.purebilibili.core.plugin.BuiltinPlugin
+import com.android.purebilibili.plugin.sdk.FeedKind
+import com.android.purebilibili.plugin.sdk.FeedPlugin
 import com.android.purebilibili.core.plugin.PluginManager
 import com.android.purebilibili.core.plugin.PluginStore
 import com.android.purebilibili.core.ui.AppAlertDialog
@@ -43,9 +46,6 @@ import kotlinx.serialization.json.Json
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 
-/** 插件 ID: 供启动阶段等待启用态与配置回填, 避免冷启动首次展示漏过滤 */
-internal const val BILIPAI_FEED_FILTER_PLUGIN_ID = "bilipai_feed_filter"
-
 /**
  * 推荐流过滤插件(移植自 BiliPai 的「推荐流设置」RecommendFilter)。
  *
@@ -54,9 +54,9 @@ internal const val BILIPAI_FEED_FILTER_PLUGIN_ID = "bilipai_feed_filter"
  *
  * 默认关闭, 可在插件中心启用; 各规则阈值与 BiliPai 默认值一致(0 = 不过滤)。
  */
-class BiliPaiFeedFilterPlugin : FeedPlugin {
+class BiliPaiFeedFilterPlugin : BuiltinPlugin, FeedPlugin<VideoItem> {
 
-    override val id = BILIPAI_FEED_FILTER_PLUGIN_ID
+    override val id = BuiltinPluginIds.FEED_FILTER
     override val name = "推荐流过滤"
     override val description = "移植自 BiliPai 的推荐流过滤: 时长/播放量/点赞率/标题关键词/屏蔽用户/白名单"
     override val version = "1.0.0"
@@ -80,8 +80,6 @@ class BiliPaiFeedFilterPlugin : FeedPlugin {
     }
 
     // ==================== 过滤规则(还原 BiliPai RecommendFilter) ====================
-
-    override fun shouldShowItem(item: VideoItem): Boolean = shouldShowItem(item, FeedKind.HOME_RECOMMEND)
 
     override fun shouldShowItem(item: VideoItem, feedKind: FeedKind): Boolean {
         return shouldShowFeedItem(

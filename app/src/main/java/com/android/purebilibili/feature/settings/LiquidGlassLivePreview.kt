@@ -33,6 +33,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
+import com.android.purebilibili.core.store.home.GlassPopupPalette
+import com.android.purebilibili.core.store.home.LiquidGlassSettingsStore
+import com.android.purebilibili.core.ui.components.AppSingleChoicePreference
+import com.android.purebilibili.core.ui.components.AppChoiceOption
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -104,6 +111,9 @@ internal fun LiquidGlassAdjustmentPanel(
     alwaysShowAdvanced: Boolean = false,
 ) {
     val context = LocalContext.current
+    val paletteFlow = remember(context) { LiquidGlassSettingsStore.observePopupPalette(context) }
+    val popupPalette by paletteFlow.collectAsStateWithLifecycle(initialValue = GlassPopupPalette.DOCK)
+    val paletteScope = rememberCoroutineScope()
     val previewImagePicker = rememberLauncherForActivityResult(
         contract = PickGalleryVisualMedia(),
     ) { uri ->
@@ -217,6 +227,18 @@ internal fun LiquidGlassAdjustmentPanel(
             style = MaterialTheme.typography.bodySmall,
             color = AppContentColors.secondaryText(),
         )
+
+        SettingsItemAnchor("glass.popup_palette") {
+            AppSingleChoicePreference(
+                title = settingItemTitle("glass.popup_palette"),
+                subtitle = "原有底色保持当前效果；主题磨砂随主题切换深浅底色",
+                selectedValue = popupPalette,
+                options = remember { GlassPopupPalette.entries.map { AppChoiceOption(it, it.label) } },
+                onValueChange = { palette ->
+                    paletteScope.launch { LiquidGlassSettingsStore.setPopupPalette(context, palette) }
+                },
+            )
+        }
 
         if (previewImageUri == null) {
             val selectedArtwork = LiquidGlassPreviewArtwork.entries[

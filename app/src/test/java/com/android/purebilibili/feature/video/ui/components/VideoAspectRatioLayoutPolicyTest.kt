@@ -85,21 +85,6 @@ class VideoAspectRatioLayoutPolicyTest {
         assertFalse(shouldUseFillMaxPlayerViewport(VideoAspectRatio.RATIO_4_3))
     }
 
-    @Test
-    fun `forced resize mode pivot differs from target so same-mode layout can remeasure`() {
-        assertEquals(
-            AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-            resolveForcedPlayerResizeModePivot(AspectRatioFrameLayout.RESIZE_MODE_FIT),
-        )
-        assertEquals(
-            AspectRatioFrameLayout.RESIZE_MODE_FIT,
-            resolveForcedPlayerResizeModePivot(AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
-        )
-        assertEquals(
-            AspectRatioFrameLayout.RESIZE_MODE_FIT,
-            resolveForcedPlayerResizeModePivot(AspectRatioFrameLayout.RESIZE_MODE_FILL),
-        )
-    }
 
     @Test
     fun `measured viewport refreshes until Android view matches Compose size`() {

@@ -7,9 +7,9 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.util.Log
 import android.view.Surface
-import com.android.purebilibili.feature.anime4k.Anime4KConfig
-import com.android.purebilibili.feature.anime4k.Anime4KPreset
-import com.android.purebilibili.feature.anime4k.VideoEnhancementAlgorithm
+import com.android.purebilibili.plugin.sdk.Anime4KConfig
+import com.android.purebilibili.plugin.sdk.Anime4KPreset
+import com.android.purebilibili.plugin.sdk.VideoEnhancementAlgorithm
 import com.android.purebilibili.feature.anime4k.resolveAnime4KInputSize
 import com.android.purebilibili.feature.anime4k.resolveAnime4KRenderProfile
 import com.android.purebilibili.feature.anime4k.resolveFsr1TargetSize

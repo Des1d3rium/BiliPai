@@ -169,6 +169,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private const val TAG = "LivePlayerScreen"
@@ -186,7 +187,13 @@ fun LivePlayerScreen(
     siteId: String = "bilibili"
 ) {
     LiveRoomTheme {
-        LiveRoomScreen(roomId, title, uname, onBack, onUserClick, viewModel, siteId)
+        com.android.purebilibili.core.ui.popup.AppGlassPopupHost(
+            glassAvailable = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
+                com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass(android.os.Build.VERSION.SDK_INT),
+            tuning = com.android.purebilibili.feature.home.components.LocalLiquidGlassRenderConfig.current.tuning,
+        ) {
+            LiveRoomScreen(roomId, title, uname, onBack, onUserClick, viewModel, siteId)
+        }
     }
 }
 
@@ -380,25 +387,13 @@ private fun LiveRoomScreen(
         onBack()
     }
 
+    val captureAndShareScreenshot = com.android.purebilibili.feature.video.ui.components.rememberVideoScreenshotAction()
     fun captureLiveScreenshot() {
         val playerView = playerViewRef
         if (playerView == null) {
             Toast.makeText(context, "截图失败：播放器未就绪", Toast.LENGTH_SHORT).show()
         } else {
-            coroutineScope.launch {
-                val success = com.android.purebilibili.feature.video.util.captureAndSaveVideoScreenshot(
-                    context = context,
-                    playerView = playerView,
-                    videoWidth = 0,
-                    videoHeight = 0,
-                    videoTitle = liveRoomTitle,
-                )
-                Toast.makeText(
-                    context,
-                    if (success) "截图已保存到相册（PNG）" else "截图失败，请稍后重试",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            captureAndShareScreenshot(playerView, 0, 0, liveRoomTitle)
         }
     }
 
@@ -561,11 +556,46 @@ private fun LiveRoomScreen(
             .setHandleAudioBecomingNoisy(true)
             .build().apply { playWhenReady = true }
     }
+    com.android.purebilibili.feature.video.screen.VideoDetailKeepScreenOnEffect(
+        window = activity?.window,
+        player = exoPlayer,
+    )
     val liveHdrSurfaceRequired = com.android.purebilibili.feature.video.ui.components.rememberVideoSurfaceHdrRequired(exoPlayer)
-    val useTextureSurfaceForLivePlayer = shouldUseTextureSurfaceForLivePlayer(
-        hasSharedTransitionScope = sharedTransitionScope != null,
-        hasAnimatedVisibilityScope = animatedVisibilityScope != null,
-        requiresHdrSurfaceOutput = liveHdrSurfaceRequired,
+    val livePlayerBackdrop = com.android.purebilibili.feature.video.ui.section.rememberPlayerPageBackdrop()
+    // 横竖屏播放器共用玻璃采样与纹理请求；关闭玻璃后不改变原生控件布局。
+    val livePageGlassSupported =
+        com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
+            com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass(android.os.Build.VERSION.SDK_INT) &&
+            !liveHdrSurfaceRequired && !isLiveAudioOnly && !isPipRequested &&
+            activity?.isInPictureInPictureMode != true
+    var retainedLiveGlassTexture by remember(roomId, siteId) { mutableStateOf(false) }
+    LaunchedEffect(livePageGlassSupported) {
+        if (livePageGlassSupported) retainedLiveGlassTexture = true
+    }
+    val liveHostLifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
+    var liveBackdropRequired by remember(roomId, siteId) { mutableStateOf(true) }
+    // 录制覆盖控件淡出，隐藏后停止；避免不可见控制层持续录制视频。
+    val liveCaptureVisibility = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (liveBackdropRequired) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween<Float>(
+            com.android.purebilibili.feature.video.ui.overlay.PLAYER_GLASS_VISIBILITY_DURATION_MS,
+        ),
+        label = "livePlayerGlassCapture",
+    )
+    val liveCaptureExiting by remember(liveCaptureVisibility) {
+        derivedStateOf { liveCaptureVisibility.value > 0f }
+    }
+    val captureLivePlayerPage = livePageGlassSupported && (liveBackdropRequired || liveCaptureExiting) &&
+        liveHostLifecycleState.isAtLeast(Lifecycle.State.STARTED) && !miniPlayerManager.isMiniMode
+    val useTextureSurfaceForLivePlayer = com.android.purebilibili.feature.video.ui.section.shouldUsePlayerPageTexture(
+        glassSupported = livePageGlassSupported,
+        retainedGlassTexture = retainedLiveGlassTexture,
+        hdr = liveHdrSurfaceRequired,
+        existingTextureRequest = shouldUseTextureSurfaceForLivePlayer(
+            hasSharedTransitionScope = sharedTransitionScope != null,
+            hasAnimatedVisibilityScope = animatedVisibilityScope != null,
+            requiresHdrSurfaceOutput = liveHdrSurfaceRequired,
+        ),
     )
 
     LaunchedEffect(exoPlayer, isLiveAudioOnly) {
@@ -826,7 +856,6 @@ private fun LiveRoomScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -942,7 +971,8 @@ private fun LiveRoomScreen(
         ) {
             // Video View
             BoxWithConstraints(
-                modifier = Modifier.fillMaxSize().clipToBounds(),
+                modifier = Modifier.fillMaxSize().clipToBounds()
+                    .then(if (captureLivePlayerPage) livePlayerBackdrop.video.modifier else Modifier),
                 contentAlignment = if (liveLayoutMode == LiveRoomLayoutMode.PortraitVerticalOverlay && !isFullscreen) Alignment.TopCenter else Alignment.Center
             ) {
                 val density = LocalDensity.current
@@ -1017,14 +1047,22 @@ private fun LiveRoomScreen(
                     isFullscreen = isFullscreen,
                     displayArea = liveDanmakuDisplayArea,
                     danmakuSettings = liveDanmakuSettings,
-                    modifier = Modifier.fillMaxSize().graphicsLayer {
-                        alpha = if (showLiveDanmakuOverlay) 1f else 0f
-                    },
+                    modifier = Modifier.fillMaxSize()
+                        .then(if (captureLivePlayerPage) livePlayerBackdrop.danmaku.modifier else Modifier)
+                        .graphicsLayer {
+                            alpha = if (showLiveDanmakuOverlay) 1f else 0f
+                        },
                 )
             }
 
-            // Custom Controls
+            // 玻璃控件与菜单只消费同级视频、弹幕源，不将自身录入背景。
+            CompositionLocalProvider(
+                com.android.purebilibili.feature.video.ui.overlay.LocalPlayerPageBackdrop provides
+                    livePlayerBackdrop.backdrop.takeIf { captureLivePlayerPage && livePlayerBackdrop.video.isReady },
+            ) {
                 LivePlayerControls(
+                    glassEnabled = livePageGlassSupported,
+                    onBackdropRequiredChange = { liveBackdropRequired = it },
                     isPlaying = exoPlayer.playWhenReady,
                     isFullscreen = isFullscreen,
                     gesturePolicy = playerGesturePolicy,
@@ -1087,6 +1125,7 @@ private fun LiveRoomScreen(
                     ),
                     bottomControlsBottomPadding = 0.dp,
                 )
+            }
 
             if (successState?.isAudioOnly == true) {
                 Box(
@@ -1537,6 +1576,9 @@ private fun LiveRoomScreen(
         LiveShareToMessageSheet(
             roomId = bilibiliRoomId,
             roomTitle = liveRoomTitle,
+            cover = liveCoverForUi,
+            author = anchorInfo.uname,
+            authorId = anchorInfo.uid,
             onDismiss = { showShareMessageSheet = false },
             onResult = { success, message ->
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -1675,6 +1717,8 @@ private fun LivePortraitOverlayAppBar(
             }
         }
         AppWindowActionMenu(
+            compact = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
+            anchorModifier = Modifier.size(30.dp),
             modifier = Modifier.size(30.dp),
             groups = listOf(
                 listOf(

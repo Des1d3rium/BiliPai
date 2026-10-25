@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.personal
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.components.wallpaperMediaCardSurface
 import com.android.purebilibili.core.ui.AppContentColors
 
@@ -92,7 +94,7 @@ internal fun PersonalMediaCardFrame(
             .then(cardSurface.modifier)
             .combinedClickable(
                 enabled = enabled,
-                onClick = onClick,
+                onClick = appActionWithFeedback(onClick),
                 onLongClick = onLongClick,
             ),
         shape = cardShape,

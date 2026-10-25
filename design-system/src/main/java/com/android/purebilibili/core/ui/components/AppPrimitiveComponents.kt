@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.core.ui.components
 
@@ -499,9 +499,12 @@ fun AppButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
-    ProvideAppElasticFeedback(enabled = enabled) {
+    val feedbackClick = appActionWithFeedback(onClick)
+    // 普通 MD3 按钮的形状、内边距与涟漪不随玻璃开关变化；Miuix 保留既有反馈。
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
-        val interactionModifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape)
+        val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
             .appDesktopInteractionVisuals(resolvedInteractionSource, enabled)
         val readableContentColor = resolveButtonContentColor(containerColor, contentColor, MaterialTheme.colorScheme)
         val miuixColors = MiuixButtonColors(
@@ -512,7 +515,7 @@ fun AppButton(
         )
         when (LocalAppUiStyle.current) {
             AppUiStyle.MIUIX -> AppMiuixButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
                 colors = miuixColors,
@@ -522,10 +525,10 @@ fun AppButton(
                 content = content,
             )
             AppUiStyle.MATERIAL3 -> Button(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
-                shapes = ButtonDefaults.shapes(shape = shape),
+                shape = shape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = containerColor,
                     contentColor = readableContentColor,
@@ -567,9 +570,12 @@ fun AppButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
-    ProvideAppElasticFeedback(enabled = enabled) {
+    val feedbackClick = appActionWithFeedback(onClick)
+    // 普通 MD3 按钮的形状、内边距与涟漪不随玻璃开关变化；Miuix 保留既有反馈。
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
-        val interactionModifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape)
+        val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
             .appDesktopInteractionVisuals(resolvedInteractionSource, enabled)
         val miuixColors = colors?.let {
             MiuixButtonColors(
@@ -594,7 +600,7 @@ fun AppButton(
         )
         when (LocalAppUiStyle.current) {
             AppUiStyle.MIUIX -> AppMiuixButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
                 colors = readableMiuixColors,
@@ -604,10 +610,10 @@ fun AppButton(
                 content = content,
             )
             AppUiStyle.MATERIAL3 -> Button(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
-                shapes = ButtonDefaults.shapes(shape = shape),
+                shape = shape,
                 colors = readableMaterialColors,
                 elevation = elevation,
                 border = border,
@@ -650,12 +656,14 @@ fun AppTextButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
-    ProvideAppElasticFeedback(enabled = enabled) {
+    val feedbackClick = appActionWithFeedback(onClick)
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val readableColors = colors.copy(
             contentColor = resolveButtonContentColor(colors.containerColor, colors.contentColor, MaterialTheme.colorScheme),
         )
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
-        val interactionModifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape)
+        val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
             .appDesktopInteractionVisuals(resolvedInteractionSource, enabled)
         val miuixColors = MiuixButtonColors(
             color = readableColors.containerColor,
@@ -665,7 +673,7 @@ fun AppTextButton(
         )
         when (LocalAppUiStyle.current) {
             AppUiStyle.MIUIX -> AppMiuixButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
                 colors = miuixColors,
@@ -674,7 +682,7 @@ fun AppTextButton(
                 content = content,
             )
             AppUiStyle.MATERIAL3 -> TextButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
                 shape = shape,
@@ -811,8 +819,24 @@ fun AppDropdownMenu(
     scrollState: ScrollState = rememberScrollState(),
     properties: PopupProperties = PopupProperties(focusable = true),
     shape: androidx.compose.ui.graphics.Shape? = null,
+    glassSource: AppGlassMenuSource? = LocalAppGlassMenuSource.current,
+    /**
+     * 仅液态玻璃同窗菜单使用：真实触发控件在窗口坐标中的边界，弹窗按其右缘对齐并向上
+     * 覆盖控件；长按等以按点为锚的调用保持默认 null，继续用局部小锚点。原生路径不读取。
+     */
+    glassAnchorBounds: androidx.compose.ui.geometry.Rect? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (properties.focusable && AppGlassMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            offset = offset,
+            anchorBounds = glassAnchorBounds,
+            scrollState = scrollState,
+            source = glassSource,
+            content = { Column(content = content) },
+        )) return
     if (LocalAppUiStyle.current == AppUiStyle.MIUIX && LocalAppThemeConfig.current.nativeMiuixPopupsEnabled) {
         WindowListPopup(
             show = expanded,
@@ -848,14 +872,20 @@ fun AppDropdownMenuItem(
     colors: MenuItemColors = MenuDefaults.itemColors(),
     contentPadding: PaddingValues = MenuDefaults.DropdownMenuItemContentPadding,
     interactionSource: MutableInteractionSource? = null,
+    dismissOnClick: Boolean = true,
+    selected: Boolean? = null,
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
+    val glassScope = LocalAppGlassMenuScope.current
+    val menuModifier = modifier.glassMenuItem(enabled, dismissOnClick, feedbackClick).glassMenuSelectedItem(selected == true)
+    val menuClick = { if (glassScope != null) glassScope.dispatch(feedbackClick, dismissOnClick) else feedbackClick() }
     val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
-    if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+    if (glassScope == null && LocalAppUiStyle.current == AppUiStyle.MIUIX) {
         AppSurface(
-            onClick = onClick,
+            onClick = menuClick,
             enabled = enabled,
             interactionSource = resolvedInteractionSource,
-            modifier = modifier.fillMaxWidth(),
+            modifier = menuModifier.fillMaxWidth(),
             color = Color.Transparent,
             contentColor = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.disabledOnSurface,
         ) {
@@ -875,8 +905,8 @@ fun AppDropdownMenuItem(
     }
     DropdownMenuItem(
         text = text,
-        onClick = onClick,
-        modifier = modifier.appDesktopInteractionVisuals(resolvedInteractionSource, enabled),
+        onClick = menuClick,
+        modifier = menuModifier.appDesktopInteractionVisuals(resolvedInteractionSource, enabled),
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         enabled = enabled,
@@ -914,12 +944,13 @@ fun AppNavigationDrawerItem(
     colors: NavigationDrawerItemColors = NavigationDrawerItemDefaults.colors(),
     interactionSource: MutableInteractionSource? = null,
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION, onClick)
     val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
         AppMiuixNavigationDrawerItem(
             label = label,
             selected = selected,
-            onClick = onClick,
+            onClick = feedbackClick,
             modifier = modifier,
             icon = icon,
             badge = badge,
@@ -930,7 +961,7 @@ fun AppNavigationDrawerItem(
     NavigationDrawerItem(
         label = label,
         selected = selected,
-        onClick = onClick,
+        onClick = feedbackClick,
         modifier = modifier.appDesktopInteractionVisuals(resolvedInteractionSource),
         icon = icon,
         badge = badge,
@@ -954,16 +985,18 @@ fun AppOutlinedButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
-    ProvideAppElasticFeedback(enabled = enabled) {
+    val feedbackClick = appActionWithFeedback(onClick)
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val readableColors = colors.copy(
             contentColor = resolveButtonContentColor(colors.containerColor, colors.contentColor, MaterialTheme.colorScheme),
         )
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
-        val interactionModifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape)
+        val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
             .appDesktopInteractionVisuals(resolvedInteractionSource, enabled)
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = interactionModifier,
                 enabled = enabled,
                 colors = MiuixButtonColors(
@@ -980,7 +1013,7 @@ fun AppOutlinedButton(
             return@ProvideAppElasticFeedback
         }
         OutlinedButton(
-            onClick = onClick,
+            onClick = feedbackClick,
             modifier = interactionModifier,
             enabled = enabled,
             shape = shape,
@@ -1015,10 +1048,11 @@ fun AppAssistChip(
     contentPadding: PaddingValues = AssistChipDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     ProvideAppElasticFeedback(enabled = enabled) {
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixChip(
-                onClick = onClick,
+                onClick = feedbackClick,
                 selected = false,
                 enabled = enabled,
                 modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
@@ -1030,7 +1064,7 @@ fun AppAssistChip(
             return@ProvideAppElasticFeedback
         }
         AssistChip(
-            onClick = onClick,
+            onClick = feedbackClick,
             label = label,
             modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
             enabled = enabled,
@@ -1064,10 +1098,11 @@ fun AppFilterChip(
     contentPadding: PaddingValues = FilterChipDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
     ProvideAppElasticFeedback(enabled = enabled) {
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixChip(
-                onClick = onClick,
+                onClick = feedbackClick,
                 selected = selected,
                 enabled = enabled,
                 modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
@@ -1080,7 +1115,7 @@ fun AppFilterChip(
         }
         FilterChip(
             selected = selected,
-            onClick = onClick,
+            onClick = feedbackClick,
             label = label,
             modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
             enabled = enabled,
@@ -1107,10 +1142,11 @@ fun AppInputChip(
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     ProvideAppElasticFeedback(enabled = enabled) {
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixChip(
-                onClick = onClick,
+                onClick = feedbackClick,
                 selected = selected,
                 enabled = enabled,
                 modifier = modifier.appElasticPress(enabled = enabled),
@@ -1123,7 +1159,7 @@ fun AppInputChip(
         }
         InputChip(
             selected = selected,
-            onClick = onClick,
+            onClick = feedbackClick,
             label = label,
             modifier = modifier.appElasticPress(enabled = enabled),
             enabled = enabled,
@@ -1177,6 +1213,7 @@ fun AppFloatingActionButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable () -> Unit,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     ProvideAppElasticFeedback(enabled = true) {
         val (resolvedContainerColor, resolvedContentColor) = resolveReadableFloatingActionButtonColors(
             requestedContainerColor = containerColor,
@@ -1184,7 +1221,7 @@ fun AppFloatingActionButton(
         )
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixFloatingActionButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = modifier.appElasticPress(highlightShape = shape),
                 containerColor = resolvedContainerColor,
                 contentColor = resolvedContentColor,
@@ -1194,7 +1231,7 @@ fun AppFloatingActionButton(
             return@ProvideAppElasticFeedback
         }
         FloatingActionButton(
-            onClick = onClick,
+            onClick = feedbackClick,
             modifier = modifier.appElasticPress(highlightShape = shape),
             shape = shape,
             containerColor = resolvedContainerColor,
@@ -1217,6 +1254,7 @@ fun AppSmallFloatingActionButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable () -> Unit,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     ProvideAppElasticFeedback(enabled = true) {
         val (resolvedContainerColor, resolvedContentColor) = resolveReadableFloatingActionButtonColors(
             requestedContainerColor = containerColor,
@@ -1224,7 +1262,7 @@ fun AppSmallFloatingActionButton(
         )
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixFloatingActionButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = modifier.appElasticPress(highlightShape = shape),
                 containerColor = resolvedContainerColor,
                 contentColor = resolvedContentColor,
@@ -1234,7 +1272,7 @@ fun AppSmallFloatingActionButton(
             return@ProvideAppElasticFeedback
         }
         SmallFloatingActionButton(
-            onClick = onClick,
+            onClick = feedbackClick,
             modifier = modifier.appElasticPress(highlightShape = shape),
             shape = shape,
             containerColor = resolvedContainerColor,
@@ -1259,7 +1297,7 @@ fun AppTab(
     interactionSource: MutableInteractionSource? = null,
 ) = Tab(
     selected = selected,
-    onClick = onClick,
+    onClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION, onClick),
     modifier = modifier,
     enabled = enabled,
     text = text,
@@ -1281,7 +1319,7 @@ fun AppTab(
     content: @Composable ColumnScope.() -> Unit,
 ) = Tab(
     selected = selected,
-    onClick = onClick,
+    onClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION, onClick),
     modifier = modifier,
     enabled = enabled,
     selectedContentColor = selectedContentColor,
@@ -1372,10 +1410,11 @@ fun AppSuggestionChip(
     contentPadding: PaddingValues = SuggestionChipDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     ProvideAppElasticFeedback(enabled = enabled) {
         if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
             AppMiuixChip(
-                onClick = onClick,
+                onClick = feedbackClick,
                 selected = false,
                 enabled = enabled,
                 modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
@@ -1387,7 +1426,7 @@ fun AppSuggestionChip(
             return@ProvideAppElasticFeedback
         }
         SuggestionChip(
-            onClick = onClick,
+            onClick = feedbackClick,
             label = label,
             modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
             enabled = enabled,

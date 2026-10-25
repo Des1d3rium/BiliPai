@@ -5,8 +5,8 @@ import com.android.purebilibili.core.network.buildAppDns
 import android.content.Context
 import android.net.Uri
 import com.android.purebilibili.core.network.NetworkModule
-import com.android.purebilibili.core.plugin.DanmakuItem
-import com.android.purebilibili.core.plugin.DanmakuStyle
+import com.android.purebilibili.plugin.sdk.DanmakuItem
+import com.android.purebilibili.plugin.sdk.DanmakuStyle
 import com.android.purebilibili.core.plugin.PLUGIN_EFFECT_HINT_DANMAKU_COOLDOWN_MS
 import com.android.purebilibili.core.plugin.PLUGIN_EFFECT_HINT_ENABLED_COOLDOWN_MS
 import com.android.purebilibili.core.plugin.PLUGIN_EFFECT_HINT_FEED_COOLDOWN_MS

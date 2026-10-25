@@ -2609,7 +2609,9 @@ class DynamicViewModel(application: Application) : AndroidViewModel(application)
         dynamicId: String,
         content: String = "",
         alsoComment: Boolean = false,
-        onResult: (Boolean, String) -> Unit
+        richContents: List<com.android.purebilibili.core.network.DynamicRepostContentItem> = emptyList(),
+        topic: com.android.purebilibili.data.model.response.DynamicCreateTopic? = null,
+        onResult: (Boolean, String) -> Unit,
     ) {
         launchAccount {
             try {
@@ -2627,7 +2629,9 @@ class DynamicViewModel(application: Application) : AndroidViewModel(application)
                         csrf = csrf,
                         body = buildDynamicRepostRequest(
                             dynamicId = dynamicId,
-                            content = content
+                            content = content,
+                            richContents = richContents,
+                            topic = topic,
                         )
                     )
                 if (response.code == 0) {
@@ -2649,6 +2653,8 @@ class DynamicViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     onResult(false, response.message.ifBlank { "转发失败" })
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 onResult(false, e.message ?: "网络错误")
             }

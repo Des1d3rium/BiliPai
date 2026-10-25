@@ -30,6 +30,8 @@ import com.android.purebilibili.feature.home.components.LocalLiquidGlassRenderCo
 import com.android.purebilibili.feature.home.components.resolveBiliPaiBottomBarContainerColor
 import top.yukonga.miuix.kmp.blur.Backdrop
 
+private val LocalPlayerGlassGroupSurface = compositionLocalOf { false }
+
 private val LocalPlayerControlBackdrop = compositionLocalOf<Backdrop?> { null }
 internal val LocalPlayerControlGlassEnabled = compositionLocalOf { false }
 internal val LocalPlayerLevelGestureActive = compositionLocalOf { false }
@@ -48,6 +50,10 @@ internal fun PlayerControlsBackdropHost(
     Box(modifier = modifier) {
         CompositionLocalProvider(
             LocalPlayerControlBackdrop provides backdrop.takeIf { glass },
+            com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop provides backdrop.takeIf { glass },
+            // 菜单跟随应用明暗主题，播放器按钮本身仍使用深色媒体材质。
+            com.android.purebilibili.core.ui.components.LocalAppGlassMenuDarkTheme provides
+                com.android.purebilibili.core.ui.isAppInDarkTheme().takeIf { glass },
             LocalPlayerControlGlassEnabled provides glass,
         ) { content() }
     }
@@ -92,7 +98,7 @@ internal fun PlayerControlGlassDock(
     minimumReadabilityScrimAlpha: Float = 0f,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val glass = enabled && LocalAppThemeConfig.current.liquidGlassEnabled
+    val glass = enabled && LocalAppThemeConfig.current.liquidGlassEnabled && !LocalPlayerGlassGroupSurface.current
     val tuning = LocalLiquidGlassRenderConfig.current.tuning
     val feedbackEnabled = enabled && LocalComponentMotionEnabled.current && LocalElasticPressEnabled.current
     val elastic = rememberAppElasticPressState(feedbackStrength = if (shape == CircleShape) 1f else 0.6f)
@@ -191,4 +197,17 @@ internal fun Modifier.playerControlGlassSurface(
 internal fun Modifier.playerControlGlassCircularButton(): Modifier {
     if (!LocalPlayerControlGlassEnabled.current) return this
     return playerControlGlassSurface(LocalPlayerControlBackdrop.current, shape = CircleShape)
+}
+
+/** 竖屏相邻操作共用玻璃外壳；关闭分组时不增加布局或改变子控件参数。 */
+@Composable
+internal fun PlayerControlGlassGroup(
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    if (enabled && LocalAppThemeConfig.current.liquidGlassEnabled) {
+        PlayerControlGlassDock(enabled = true, shape = RoundedCornerShape(50)) {
+            CompositionLocalProvider(LocalPlayerGlassGroupSurface provides true) { content() }
+        }
+    } else content()
 }

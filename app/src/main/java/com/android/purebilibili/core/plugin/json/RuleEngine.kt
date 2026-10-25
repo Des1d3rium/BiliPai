@@ -1,11 +1,10 @@
 // 文件路径: core/plugin/json/RuleEngine.kt
 package com.android.purebilibili.core.plugin.json
 
-import com.android.purebilibili.core.plugin.DanmakuItem
-import com.android.purebilibili.core.plugin.DanmakuStyle
+import com.android.purebilibili.plugin.sdk.DanmakuItem
+import com.android.purebilibili.plugin.sdk.DanmakuStyle
 import com.android.purebilibili.core.util.Logger
 import com.android.purebilibili.data.model.response.VideoItem
-import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.json.*
 
 private const val TAG = "RuleEngine"
@@ -207,7 +206,7 @@ object RuleEngine {
     private fun HighlightStyle.toDanmakuStyle(): DanmakuStyle {
         val textColor = color?.let { 
             try {
-                Color(android.graphics.Color.parseColor(it))
+                android.graphics.Color.parseColor(it)
             } catch (e: Exception) { null }
         }
         return DanmakuStyle(

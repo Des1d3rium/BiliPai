@@ -67,7 +67,7 @@ fun AppLiquidGlassBackToTopButton(
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
 
     val glassActive = LocalAppThemeConfig.current.liquidGlassEnabled && !isLowBlurBudgetForced()
     // Glass may only sample a caller-owned source outside this button's subtree. The app
@@ -174,7 +174,7 @@ fun AppLiquidGlassBackToTopButton(
                     .clip(CircleShape)
                     .then(
                         if (draggable) {
-                            Modifier.pointerInput(minOffsetX, maxOffsetX, minOffsetY, maxOffsetY) {
+                            Modifier.pointerInput(minOffsetX, maxOffsetX, minOffsetY, maxOffsetY, haptic) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
                                         isDragging = true
@@ -226,6 +226,7 @@ fun AppLiquidGlassBackToTopButton(
                         indication = if (elasticEnabled) null else ripple(),
                         onClick = {
                             if (!isDragging && !dragJustFinished) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onClick()
                             }
                         },

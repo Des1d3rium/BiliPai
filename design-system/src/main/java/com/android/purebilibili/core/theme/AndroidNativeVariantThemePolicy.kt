@@ -72,7 +72,8 @@ fun resolveMaterialTypography(
 fun resolveMaterialMotionScheme(
     uiStyle: AppUiStyle
 ): MotionScheme = when (uiStyle) {
-    AppUiStyle.MATERIAL3 -> MotionScheme.expressive()
+    // 普通 MD3 组件在两种玻璃状态下共用标准动效；玻璃 dock 自行管理材质反馈。
+    AppUiStyle.MATERIAL3 -> MotionScheme.standard()
     AppUiStyle.MIUIX -> MotionScheme.standard()
 }
 

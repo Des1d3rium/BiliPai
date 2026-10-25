@@ -128,7 +128,7 @@ private fun ThemeTimeWheelColumn(
     val reduceMotion = rememberSystemReduceMotion()
     val latestChange by rememberUpdatedState(onValueChange)
     val latestScrolling by rememberUpdatedState(onScrolling)
-    val haptic = LocalHapticFeedback.current
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.ADJUSTMENT)
     val hapticEnabled by rememberUpdatedState(LocalAppThemeConfig.current.hapticFeedbackEnabled)
     val accent = AppContentColors.selectionAccent(LocalAppThemeConfig.current.liquidGlassEnabled)
     val neutral = AppContentColors.secondaryText()

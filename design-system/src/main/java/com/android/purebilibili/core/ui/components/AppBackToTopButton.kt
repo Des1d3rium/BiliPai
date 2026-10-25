@@ -12,6 +12,8 @@ import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.ui.motion.AppMotionTokens
 import com.android.purebilibili.core.ui.rememberAppChevronUpIcon
@@ -29,6 +31,7 @@ fun AppBackToTopButton(
     containerColor: Color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
     contentDescription: String = "回到顶部",
 ) {
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
@@ -38,7 +41,10 @@ fun AppBackToTopButton(
             scaleOut(animationSpec = AppMotionTokens.expressiveSpec(), targetScale = 0.92f),
     ) {
         AppSmallFloatingActionButton(
-            onClick = onClick,
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
             modifier = buttonModifier,
             containerColor = containerColor,
             contentColor = AppContentColors.accent(),

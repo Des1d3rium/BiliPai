@@ -605,6 +605,15 @@ internal fun VideoDetailScreenStateHolder(
         initialPipMode = isInPipMode,
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val shareInfo = (uiState as? VideoPlaybackUiState.Success)?.info
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.android.purebilibili.feature.share.LocalReplyShareContext provides shareInfo?.let {
+            com.android.purebilibili.feature.share.ReplyShareContext(
+                url = "https://www.bilibili.com/video/${it.bvid}", title = it.title, cover = it.pic,
+                page = it.pages.indexOfFirst { page -> page.cid == it.cid }.coerceAtLeast(0) + 1,
+            )
+        },
+    ) {
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     // Keep the handle here; only the mounted info/content scopes read the progress value.
     // Download ticks must not invalidate the transition/player state-holder scope.
@@ -3356,7 +3365,7 @@ internal fun VideoDetailScreenStateHolder(
     // 避免在此处重复消耗 InputStream
 
     // 辅助函数：切换全屏状态
-    val toggleFullscreen = {
+    fun changeFullscreen(event: ContinuousPlayerTransitionEvent) {
         val activity = context.findActivity()
         com.android.purebilibili.core.util.Logger.d("VideoInputTrace") {
             "fullscreen_toggle fullscreen=$isFullscreenMode portraitFs=$isPortraitFullscreen " +
@@ -3377,7 +3386,7 @@ internal fun VideoDetailScreenStateHolder(
             applyContinuousPlayerDecision(
                 reduceContinuousPlayerTransition(
                     phase = continuousPlayerPhase,
-                    event = ContinuousPlayerTransitionEvent.Toggle,
+                    event = event,
                 )
             )
         } else toggleVideoDetailFullscreen(
@@ -3396,6 +3405,7 @@ internal fun VideoDetailScreenStateHolder(
             onManualPortraitHoldActiveChange = { active -> manualPortraitHoldActive = active }
         )
     }
+    val toggleFullscreen = { changeFullscreen(ContinuousPlayerTransitionEvent.Toggle) }
 
     // Fullscreen removes the inline scrollable nodes while retaining their states. A scroll
     // mutation from the old attachment must not suppress clicks/scrolls after reattachment.
@@ -3426,11 +3436,29 @@ internal fun VideoDetailScreenStateHolder(
         }
     }
 
-    val localBackTarget = resolveVideoDetailLocalBackTarget(
+    fun currentLocalBackTarget() = resolveVideoDetailLocalBackTarget(
         isLandscapeFullscreen = isFullscreenMode,
         isPortraitFullscreen = isPortraitFullscreen,
         directPortraitEntry = directPortraitEntryFromRoute,
+        continuousPlayerPhase = continuousPlayerPhase.takeIf { continuousFullscreenTransitionEnabled },
     )
+    fun consumeLocalBack(): Boolean {
+        return when (currentLocalBackTarget()) {
+            VideoDetailLocalBackTarget.EXIT_PORTRAIT_FULLSCREEN -> {
+                presentationState.setPortraitFullscreen(false)
+                true
+            }
+            VideoDetailLocalBackTarget.EXIT_LANDSCAPE_FULLSCREEN -> {
+                changeFullscreen(ContinuousPlayerTransitionEvent.ExitFullscreen)
+                true
+            }
+            VideoDetailLocalBackTarget.NAVIGATE_BACK -> false
+        }
+    }
+    val handlePlayerBack = {
+        if (!consumeLocalBack()) handleBack()
+    }
+    val localBackTarget = currentLocalBackTarget()
     val localBackEventState = rememberNavigationEventState(NavigationEventInfo.None)
     NavigationBackHandler(
         state = localBackEventState,
@@ -3439,11 +3467,7 @@ internal fun VideoDetailScreenStateHolder(
             com.android.purebilibili.core.util.Logger.d("VideoInputTrace") {
                 "local_back_completed target=$localBackTarget fullscreen=$isFullscreenMode portraitFs=$isPortraitFullscreen"
             }
-            when (localBackTarget) {
-                VideoDetailLocalBackTarget.EXIT_PORTRAIT_FULLSCREEN -> presentationState.setPortraitFullscreen(false)
-                VideoDetailLocalBackTarget.EXIT_LANDSCAPE_FULLSCREEN -> toggleFullscreen()
-                VideoDetailLocalBackTarget.NAVIGATE_BACK -> Unit
-            }
+            consumeLocalBack()
         },
     )
 
@@ -3618,7 +3642,7 @@ internal fun VideoDetailScreenStateHolder(
             onToggleFullscreen = { toggleFullscreen() },
             playbackActions = playbackActions,
             onDoubleTapLike = engagementViewModel::toggleLike,
-            onBack = if (layout.isFullscreen) ({ toggleFullscreen() }) else handleBack,
+            onBack = handlePlayerBack,
             onHomeClick = {
                 handleTopBarAction(resolveVideoDetailTopBarAction(isHomeButton = true))
             },
@@ -3963,7 +3987,7 @@ internal fun VideoDetailScreenStateHolder(
                                 bvid = bvid,
                                 danmakuManager = sharedDanmakuManager,
                                 coverUrl = coverUrl,
-                                onBack = { handleBack() },
+                                onBack = handlePlayerBack,
                                 onUpClick = navigateToUserSpaceFromVideo,
                                 onNavigateToAudioMode = {
                                     presentationState.markNavigatingToAudioMode()
@@ -4036,13 +4060,7 @@ internal fun VideoDetailScreenStateHolder(
                             bvid = bvid,
                             danmakuManager = sharedDanmakuManager,
                             coverUrl = coverUrl,
-                            onBack = {
-                                com.android.purebilibili.core.util.Logger.d(
-                                    "VideoDetailScreen",
-                                    "📱 Calling handleBack()"
-                                )
-                                handleBack()
-                            },
+                            onBack = handlePlayerBack,
                             onUpClick = navigateToUserSpaceFromVideo,
                             onBgmClick = onBgmClick,
                             onNavigateToAudioMode = {
@@ -5147,7 +5165,7 @@ internal fun VideoDetailScreenStateHolder(
                                 CollapsedPlayerNavigationBar(
                                     scrollRatio = layoutCollapseProgress,
                                     topInset = collapsedSystemBarInset,
-                                    onBack = handleBack,
+                                    onBack = handlePlayerBack,
                                     onHomeClick = {
                                         handleTopBarAction(resolveVideoDetailTopBarAction(isHomeButton = true))
                                     },
@@ -5594,13 +5612,7 @@ internal fun VideoDetailScreenStateHolder(
             sharedPlayer = if (useSharedPortraitPlayer) playerState.player else null,
             useTextureSurfaceForNavigation = useTextureSurfaceForNavigation,
             isPlayerSurfaceReady = isPlayerSurfaceReady,
-            onBack = {
-                if (directPortraitEntryFromRoute) {
-                    handleBack()
-                } else {
-                    presentationState.setPortraitFullscreen(false)
-                }
-            },
+            onBack = handlePlayerBack,
             onHomeClick = {
                 presentationState.setPortraitFullscreen(false)
                 handleTopBarAction(resolveVideoDetailTopBarAction(isHomeButton = true))
@@ -5883,5 +5895,6 @@ internal fun VideoDetailScreenStateHolder(
         mainContent = { VideoDetailRouteSheetMainContent() },
         overlayContent = { VideoDetailRouteSheetOverlayContent() }
     )
+    }
     }
 }

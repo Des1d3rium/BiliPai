@@ -49,6 +49,7 @@ import com.android.purebilibili.core.ui.rememberAppCoinIcon
 import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.core.util.HapticType
 import com.android.purebilibili.core.util.rememberHapticFeedback
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 
 import com.android.purebilibili.feature.video.ui.feedback.VideoActionCountRequests
 import com.android.purebilibili.feature.video.ui.feedback.VideoActionCountText
@@ -97,7 +98,7 @@ fun PortraitInteractionBar(
         )
     }
     val coinIcon = rememberAppCoinIcon()
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val countRequests = remember { VideoActionCountRequests() }
     val triplePress = rememberVideoTriplePressState(Unit, likeStatusKnown) {
         countRequests.requestTriple()
@@ -131,6 +132,7 @@ fun PortraitInteractionBar(
             countAnimationRequest = countRequests.like,
             countValue = likeCount,
             onClick = {
+                haptic(HapticType.LIGHT)
                 countRequests.requestLike()
                 onLikeClick()
             },
@@ -160,6 +162,7 @@ fun PortraitInteractionBar(
             countAnimationRequest = countRequests.coin,
             countValue = coinCount,
             onClick = {
+                haptic(HapticType.LIGHT)
                 countRequests.requestCoin()
                 onCoinClick()
             }
@@ -184,6 +187,7 @@ fun PortraitInteractionBar(
             countAnimationRequest = countRequests.favorite,
             countValue = favoriteCount,
             onClick = {
+                haptic(HapticType.LIGHT)
                 countRequests.requestFavorite()
                 onFavoriteClick()
             },
@@ -224,7 +228,8 @@ private fun InteractionButton(
     onPressRelease: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val latestOnClick by rememberUpdatedState(onClick)
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
+    val latestOnClick by rememberUpdatedState(feedbackClick)
     val latestOnLongClick by rememberUpdatedState(onLongClick)
     val latestOnPressRelease by rememberUpdatedState(onPressRelease)
     Column(
@@ -251,7 +256,7 @@ private fun InteractionButton(
                         enabled = enabled,
                         indication = null,
                         interactionSource = interactionSource,
-                    ) { onClick() }
+                    ) { feedbackClick() }
                 }
             )
     ) {

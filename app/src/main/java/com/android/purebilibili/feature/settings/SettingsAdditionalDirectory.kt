@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
 internal val additionalSettingsDirectory = listOf(
+    PlaybackSettingItem(HAPTIC_SCENES_SETTING_ID, HAPTIC_SCENES_TITLE, SettingsRootCategory.APPEARANCE_THEME, "animation_page", null, target = SettingsSearchTarget.ANIMATION, readState = { if (it.hapticFeedbackEnabled) "按场景控制" else "需先开启触感反馈" }),
+    PlaybackSettingItem("glass.popup_palette", "玻璃弹窗配色", SettingsRootCategory.GLASS_ADVANCED, "animation_glass", { context -> com.android.purebilibili.core.store.home.LiquidGlassSettingsStore.observePopupPalette(context).map { it.label } }, target = SettingsSearchTarget.ANIMATION),
     // 设备接力未开发完成：搜索目录条目暂不下发，入口由 NearbyHandoffFeatureGate 统一隐藏。
     PlaybackSettingItem("animation.app_navigation_settings.liquid_indicator_wobble_enabled", "液态玻璃指示器甩尾", SettingsRootCategory.APPEARANCE_THEME, "animation_glass", { context -> com.android.purebilibili.core.store.SettingsManager.getAppNavigationSettings(context).map { if (it.liquidIndicatorWobbleEnabled) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
     PlaybackSettingItem("appearance.theme_role_overrides.enabled", "高级配色", SettingsRootCategory.APPEARANCE_THEME, "appearance_theme_color", { context -> com.android.purebilibili.core.store.SettingsManager.getThemeRoleOverrides(context).map { if (it.enabled) "开启" else "关闭" } }, target = SettingsSearchTarget.APPEARANCE),
@@ -38,6 +40,7 @@ internal val additionalSettingsDirectory = listOf(
     PlaybackSettingItem("animation.app_navigation_settings.video_return_content_follow_progress_enabled", "返回时渐变为卡片", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getAppNavigationSettings(context).map { if (it.videoReturnContentFollowProgressEnabled) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
     PlaybackSettingItem("animation.app_navigation_settings.video_shared_return_gesture_follow_enabled", "返回时倾斜", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getAppNavigationSettings(context).map { if (it.videoSharedReturnGestureFollowEnabled) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
     PlaybackSettingItem("animation.app_navigation_settings.video_shared_return_gesture_translation_enabled", "返回时跟手", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getAppNavigationSettings(context).map { if (it.videoSharedReturnGestureTranslationEnabled) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
+    PlaybackSettingItem("animation.app_navigation_settings.settings_container_realtime_blur_enabled", "容器转场实时模糊", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getSettingsContainerRealtimeBlurEnabled(context).map { if (it) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION, aliases = listOf("设置背景模糊", "容器形变模糊", "实时背景")),
     PlaybackSettingItem("animation.video_transition_realtime_blur_enabled", "转场时模糊背景", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getVideoTransitionRealtimeBlurEnabled(context).map { if (it) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
     PlaybackSettingItem("animation.app_navigation_settings.miuix_transition_blur_enabled", "返回时模糊背景", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getAppNavigationSettings(context).map { if (it.miuixTransitionBlurEnabled) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
     PlaybackSettingItem("animation.full_screen_swipe_back_enabled", "页面内右滑返回", SettingsRootCategory.APPEARANCE_THEME, "animation_card", { context -> com.android.purebilibili.core.store.SettingsManager.getFullScreenSwipeBackEnabled(context).map { if (it) "开启" else "关闭" } }, target = SettingsSearchTarget.ANIMATION),
@@ -137,4 +140,11 @@ internal val additionalSettingsDirectory = listOf(
     PlaybackSettingItem("navigation.visibility_mode", "显示模式", SettingsRootCategory.NAVIGATION_INTERACTION, "navigation_display", { context -> com.android.purebilibili.core.store.SettingsManager.getBottomBarVisibilityMode(context).map { it.toString() } }, target = SettingsSearchTarget.BOTTOM_BAR),
     PlaybackSettingItem("playback.playback_cdn_preference", "CDN", SettingsRootCategory.PLAYBACK_QUALITY, SettingsSearchFocusIds.PLAYBACK_NETWORK, { context -> com.android.purebilibili.core.store.SettingsManager.getPlaybackCdnPreference(context).map { com.android.purebilibili.feature.plugin.PlaybackCdnPreference.fromStorageValue(it).displayName } }, aliases = listOf("播放线路")),
     PlaybackSettingItem("playback.default_audio_quality", "默认音质", SettingsRootCategory.PLAYBACK_QUALITY, SettingsSearchFocusIds.PLAYBACK_NETWORK, { context -> com.android.purebilibili.core.store.player.PlayerSettingsStore.getDefaultAudioQuality(context).map { resolveSelectionLabel(resolveDefaultAudioQualityOptions(it), normalizeDefaultAudioQualityOption(it), "跟随上次") } }),
-)
+) + com.android.purebilibili.core.ui.AppHapticScene.entries.map { scene ->
+    PlaybackSettingItem(scene.settingId, scene.title, SettingsRootCategory.APPEARANCE_THEME, "animation_page",
+        { context -> kotlinx.coroutines.flow.combine(
+            com.android.purebilibili.core.store.SettingsManager.getHapticFeedbackEnabled(context),
+            com.android.purebilibili.core.store.SettingsManager.getHapticSettings(context),
+        ) { master, settings -> if (!master) "总开关已关闭" else if (settings.isEnabled(scene)) "开启" else "关闭" } },
+        aliases = listOf("振动", "震动", "触感", scene.description), target = SettingsSearchTarget.ANIMATION)
+}

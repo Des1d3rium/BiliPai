@@ -79,15 +79,15 @@ import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
 import com.android.purebilibili.core.ui.AdaptiveLoadingIndicator
 import com.android.purebilibili.core.ui.AdaptivePullToRefreshBox
-import com.android.purebilibili.core.ui.AppAlertDialog
 import com.android.purebilibili.core.ui.AppChromeSizeTokens
-import com.android.purebilibili.core.ui.AppDialogAction
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.AppSurfaceTokens
 import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.core.ui.components.AppCheckbox
 import com.android.purebilibili.core.ui.components.AppContentStateAction
 import com.android.purebilibili.core.ui.components.AppContentStatePresentation
+import com.android.purebilibili.core.ui.components.AppDropdownMenu
+import com.android.purebilibili.core.ui.components.AppDropdownMenuItem
 import com.android.purebilibili.core.ui.components.AppEmptyState
 import com.android.purebilibili.core.ui.components.AppErrorState
 import com.android.purebilibili.core.ui.components.AppIcon
@@ -269,7 +269,6 @@ internal fun BangumiHubContent(
 
         BangumiHubPage.FOLLOW -> BangumiFollowContent(
             channel = state.channel,
-            accountGeneration = state.accountGeneration,
             status = state.followStatus,
             state = state.followStates[state.channel to state.followStatus] ?: BangumiFollowManagerState(),
             gridState = followGridStates.getOrPut("${state.channel.name}:${state.followStatus.name}") { LazyGridState() },
@@ -768,7 +767,6 @@ private fun IndexFilterRow(
 @Composable
 private fun BangumiFollowContent(
     channel: BangumiChannel,
-    accountGeneration: Long,
     status: BangumiFollowStatus,
     state: BangumiFollowManagerState,
     gridState: LazyGridState,
@@ -788,7 +786,6 @@ private fun BangumiFollowContent(
     showStatusTabs: Boolean,
 ) {
     val selectionMode = state.selectedIds.isNotEmpty()
-    var menuItem by remember(accountGeneration) { mutableStateOf<FollowBangumiItem?>(null) }
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize().then(
@@ -858,12 +855,15 @@ private fun BangumiFollowContent(
                                 item = item,
                                 selected = item.seasonId in state.selectedIds,
                                 selectionMode = selectionMode,
+                                currentStatus = status,
+                                channel = channel,
                                 onClick = {
                                     if (selectionMode) onToggleSelection(item.seasonId)
                                     else onBangumiClick(item.seasonId)
                                 },
                                 onLongClick = { onToggleSelection(item.seasonId) },
-                                onMore = { menuItem = item },
+                                onMove = { onMoveSingle(item.seasonId, it) },
+                                onUnfollow = { onUnfollowSingle(item.seasonId) },
                             )
                             if (index == state.content.items.lastIndex && state.content.hasMore) {
                                 LaunchedEffect(item.seasonId, state.content.page) { onLoadMore() }
@@ -888,23 +888,6 @@ private fun BangumiFollowContent(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
-    }
-
-    menuItem?.let { item ->
-        FollowItemActionDialog(
-            item = item,
-            currentStatus = status,
-            channel = channel,
-            onDismiss = { menuItem = null },
-            onMove = {
-                menuItem = null
-                onMoveSingle(item.seasonId, it)
-            },
-            onUnfollow = {
-                menuItem = null
-                onUnfollowSingle(item.seasonId)
-            },
-        )
     }
 }
 
@@ -953,36 +936,6 @@ private fun FollowBatchBar(
             }
         }
     }
-}
-
-@Composable
-private fun FollowItemActionDialog(
-    item: FollowBangumiItem,
-    currentStatus: BangumiFollowStatus,
-    channel: BangumiChannel,
-    onDismiss: () -> Unit,
-    onMove: (BangumiFollowStatus) -> Unit,
-    onUnfollow: () -> Unit,
-) {
-    AppAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { AppText(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                BangumiFollowStatus.entries.filter { it != currentStatus }.forEach { target ->
-                    AppTextButton(
-                        onClick = { onMove(target) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { AppText("移到${target.label}") }
-                }
-                AppTextButton(
-                    onClick = onUnfollow,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) { AppText(if (channel == BangumiChannel.BANGUMI) "取消追番" else "取消追剧") }
-            }
-        },
-        dismissButton = { AppDialogAction(onClick = onDismiss) { AppText("关闭") } },
-    )
 }
 
 @Composable
@@ -1283,9 +1236,12 @@ private fun FollowInfoCard(
     item: FollowBangumiItem,
     selected: Boolean,
     selectionMode: Boolean,
+    currentStatus: BangumiFollowStatus,
+    channel: BangumiChannel,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onMore: () -> Unit,
+    onMove: (BangumiFollowStatus) -> Unit,
+    onUnfollow: () -> Unit,
 ) {
     val transition = rememberBangumiCardTransition(onClick)
     val cardSurface = wallpaperMediaCardSurface(
@@ -1355,9 +1311,28 @@ private fun FollowInfoCard(
                 }
             }
             if (!selectionMode) {
-                AppIconButton(
-                    onClick = onMore,
-                ) { AppIcon(rememberAppMoreIcon(), contentDescription = "更多") }
+                // ⋮ 走锚点菜单：玻璃开启时从按钮源图层形变展开，关闭后为原生下拉，与列表页一致。
+                var menuExpanded by remember { mutableStateOf(false) }
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { menuExpanded = true }) {
+                    AppIconButton(onClick = { menuExpanded = true }) {
+                        AppIcon(rememberAppMoreIcon(), contentDescription = "更多")
+                    }
+                    AppDropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        BangumiFollowStatus.entries.filter { it != currentStatus }.forEach { target ->
+                            AppDropdownMenuItem(
+                                text = { AppText("移到${target.label}") },
+                                onClick = { menuExpanded = false; onMove(target) },
+                            )
+                        }
+                        AppDropdownMenuItem(
+                            text = { AppText(if (channel == BangumiChannel.BANGUMI) "取消追番" else "取消追剧") },
+                            onClick = { menuExpanded = false; onUnfollow() },
+                        )
+                    }
+                }
             }
         }
     }

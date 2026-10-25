@@ -37,8 +37,9 @@ internal fun BiliTvAnimatedBufferingIndicator(
     val active = com.android.purebilibili.core.ui.rememberVisualWorkActive() && !reduceMotion
     var failed by remember { mutableStateOf(false) }
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || reduceMotion || failed) {
+        // 静态回退使用独立首帧，避免 painterResource 将动画 WebP 强转为 BitmapDrawable。
         androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(R.raw.bili_tv_buffering),
+            painter = androidx.compose.ui.res.painterResource(R.drawable.bili_tv_buffering_static),
             contentDescription = "加载中",
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.tint(tint),

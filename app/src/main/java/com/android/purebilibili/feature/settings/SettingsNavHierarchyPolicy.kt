@@ -73,6 +73,8 @@ internal fun resolveSettingsCategoryDirectTargetKey(
     SettingsRootCategory.NAVIGATION_INTERACTION -> BiliPaiNavKey.BottomBarSettings
     SettingsRootCategory.HOME_RECOMMENDATION -> BiliPaiNavKey.HomeSettings
     SettingsRootCategory.MESSAGE_NOTIFICATION -> BiliPaiNavKey.MessageNotificationSettings
+    // 播放设置页同时承载画质与互动评论分组，分类页不再提供二选一入口。
+    SettingsRootCategory.PLAYBACK_QUALITY -> BiliPaiNavKey.PlaybackSettings
     else -> null
 }
 

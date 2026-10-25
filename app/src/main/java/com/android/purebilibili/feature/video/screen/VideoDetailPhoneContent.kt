@@ -353,6 +353,9 @@ internal fun VideoDetailPhoneSuccessContentLayer(
                                         pendingVideoShare = buildVideoSharePayload(
                                             title = success.info.title,
                                             bvid = success.info.bvid,
+                                            page = success.info.pages.indexOfFirst { it.cid == success.info.cid }.coerceAtLeast(0) + 1,
+                                            positionMs = playerState.player.currentPosition.coerceAtLeast(0L),
+                                            authorId = success.info.owner.mid,
                                             coverUrl = success.info.pic,
                                             upName = success.info.owner.name,
                                             playCountText = FormatUtils.formatStat(success.info.stat.view.toLong()),
@@ -463,6 +466,9 @@ internal fun VideoDetailPhoneSuccessContentLayer(
                                     pendingVideoShare = buildVideoSharePayload(
                                         title = success.info.title,
                                         bvid = success.info.bvid,
+                                        page = success.info.pages.indexOfFirst { it.cid == success.info.cid }.coerceAtLeast(0) + 1,
+                                        positionMs = playerState.player.currentPosition.coerceAtLeast(0L),
+                                        authorId = success.info.owner.mid,
                                         coverUrl = success.info.pic,
                                         upName = success.info.owner.name,
                                         playCountText = FormatUtils.formatStat(success.info.stat.view.toLong()),

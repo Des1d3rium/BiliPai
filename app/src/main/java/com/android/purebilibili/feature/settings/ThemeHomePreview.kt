@@ -1,6 +1,7 @@
 package com.android.purebilibili.feature.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,10 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -42,7 +46,7 @@ private val THEME_PREVIEW_BOTTOM_ITEMS = listOf(
 )
 
 /** 预览里的示意文案：写成真实内容而不是占位色条，观感接近渲染完成的首页。 */
-private const val THEME_PREVIEW_TITLE = "示例视频标题"
+private val THEME_PREVIEW_TITLES = listOf("城市的另一面", "听见生活的节奏")
 private const val THEME_PREVIEW_META = "UP主 · 12.3万播放"
 private const val THEME_PREVIEW_SEARCH_HINT = "搜索感兴趣的视频"
 
@@ -66,8 +70,8 @@ internal fun ThemeHomePreview(modifier: Modifier = Modifier) {
     ) {
         ThemePreviewTopBar()
         Row(horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium)) {
-            ThemePreviewCard(modifier = Modifier.weight(1f))
-            ThemePreviewCard(modifier = Modifier.weight(1f))
+            ThemePreviewCard(coverVariant = 0, modifier = Modifier.weight(1f))
+            ThemePreviewCard(coverVariant = 1, modifier = Modifier.weight(1f))
         }
         ThemePreviewBottomBar()
     }
@@ -124,22 +128,26 @@ private fun ThemePreviewTopBar(modifier: Modifier = Modifier) {
 
 /** 卡片：封面取主色容器并加一圈描边，标题与信息行用文字层级色。 */
 @Composable
-private fun ThemePreviewCard(modifier: Modifier = Modifier) {
+private fun ThemePreviewCard(coverVariant: Int, modifier: Modifier = Modifier) {
     val coverShape = AppShapes.container(ContainerLevel.Field)
+    val highlight = AppSurfaceTokens.primary()
+    val ridge = MaterialTheme.colorScheme.tertiary
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.ExtraSmall),
     ) {
-        Box(
+        Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 10f)
                 .clip(coverShape)
                 .background(AppSurfaceTokens.primaryContainer())
                 .border(AppSurfaceTokens.OutlineWidth, AppSurfaceTokens.divider(), coverShape),
-        )
+        ) {
+            drawThemePreviewCoverArt(Rect(Offset.Zero, size), coverVariant, highlight, ridge)
+        }
         AppText(
-            text = THEME_PREVIEW_TITLE,
+            text = THEME_PREVIEW_TITLES[coverVariant.mod(THEME_PREVIEW_TITLES.size)],
             color = AppContentColors.primaryText(),
             fontSize = 12.sp,
             maxLines = 1,

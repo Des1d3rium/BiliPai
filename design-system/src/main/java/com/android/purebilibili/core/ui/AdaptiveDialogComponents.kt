@@ -6,6 +6,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -104,6 +109,78 @@ internal fun AdaptiveAlertDialog(
         else baseActionBackground
     val confirmContentColor = resolveButtonContentColor(actionBackground, AppSurfaceTokens.primary(), MaterialTheme.colorScheme)
     val dismissContentColor = resolveButtonContentColor(actionBackground, AppSurfaceTokens.onSurface(), MaterialTheme.colorScheme)
+    // 玻璃菜单需要完整的同窗坐标空间；关闭玻璃时继续下方原生 Dialog 路径。
+    // 对话框自身保留既有表面，内部下拉的背景只采样本窗口，不跨窗口读取页面。
+    if (themeConfig.liquidGlassEnabled && LocalAppPopupWindowHostRenderer.current != null) {
+        val retainedWindow: @Composable (AppDialogExitState) -> Unit = { exit ->
+            androidx.compose.runtime.CompositionLocalProvider(LocalAppDialogExitRunning provides exit.isClosing) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { if (!exit.isClosing) onDismissRequest() },
+                    properties = DialogProperties(
+                        dismissOnBackPress = properties.dismissOnBackPress,
+                        dismissOnClickOutside = properties.dismissOnClickOutside,
+                        securePolicy = properties.securePolicy,
+                        usePlatformDefaultWidth = false,
+                        decorFitsSystemWindows = false,
+                    ),
+                ) {
+                    AppDialogWindowExitEffect(exit.progress)
+                    ModalWindowBlurBehindEffect(progress = { 1f - exit.progress.value })
+                    AppPopupWindowHost {
+                        Box(Modifier.fillMaxSize().blockAppDialogExitInput(exit.isClosing)) {
+                            val surface: @Composable () -> Unit = {
+                                BoxWithConstraints {
+                                    AppPopupSurface(
+                                        type = AppPopupSurfaceType.DIALOG,
+                                        modifier = modifier
+                                            .graphicsLayer {
+                                                val fraction = exit.progress.value.coerceIn(0f, 1f)
+                                                scaleX = 1f - 0.2f * fraction
+                                                scaleY = scaleX
+                                                alpha = 1f - fraction
+                                            }
+                                            .widthIn(min = contentLayout.minWidthDp.dp, max = contentLayout.maxWidthDp.dp)
+                                            .heightIn(max = maxHeight)
+                                            .fillMaxWidth()
+                                            .pointerInput(Unit) { detectTapGestures { } },
+                                        shape = shape ?: if (renderer == AppAlertDialogRenderer.LOCAL_DIALOG) {
+                                            AppShapes.resolveContainerShape(ContainerLevel.Dialog, uiStyle, liquidGlassEnabled = false)
+                                        } else MaterialTheme.shapes.extraLarge,
+                                        containerColor = baseActionBackground,
+                                        tonalElevation = tonalElevation ?: if (renderer == AppAlertDialogRenderer.LOCAL_DIALOG) {
+                                            0.dp
+                                        } else AlertDialogDefaults.TonalElevation,
+                                    ) {
+                                        MiuixAlertDialogBody(icon, title, text, confirmButton, dismissButton,
+                                            confirmContentColor, dismissContentColor, constrainText = true)
+                                    }
+                                }
+                            }
+                            val regions = LocalHingeSafeOverlayRegions.current.dialog
+                            val outsideDismiss = if (properties.dismissOnClickOutside && !exit.isClosing) onDismissRequest else null
+                            if (regions != null) {
+                                HingeSafeOverlayHost(
+                                    regionProvider = regions,
+                                    modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding(),
+                                    onDismissRequest = outsideDismiss,
+                                ) { surface() }
+                            } else {
+                                Box(
+                                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()
+                                        .pointerInput(outsideDismiss) { detectTapGestures { outsideDismiss?.invoke() } },
+                                    contentAlignment = Alignment.Center,
+                                ) { surface() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (!RetainAppGlassDialog(retainedWindow)) {
+            retainedWindow(AppDialogExitState(rememberUpdatedState(0f)))
+        }
+        return
+    }
     // 半开折叠屏：弹窗整体收进铰链安全侧，避免横跨折缝。
     val hingeSafeRegions = LocalHingeSafeOverlayRegions.current.dialog
     if (hingeSafeRegions != null) {

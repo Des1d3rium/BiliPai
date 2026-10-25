@@ -8,11 +8,11 @@ import kotlin.test.assertTrue
 
 class DanmakuControlCenterMotionPolicyTest {
     @Test
-    fun playerMenusNeverInheritGlassOrCenteredMiuixPopups() {
+    fun playerMenusFollowGlassWithoutEnablingCenteredMiuixPopups() {
         for (glass in listOf(false, true)) {
             val original = AppThemeConfig(liquidGlassEnabled = glass, nativeMiuixPopupsEnabled = true)
             val menu = playerNativeMenuConfig(original)
-            assertFalse(menu.liquidGlassEnabled)
+            assertEquals(glass, menu.liquidGlassEnabled)
             assertFalse(menu.nativeMiuixPopupsEnabled)
             assertEquals(glass, original.liquidGlassEnabled)
             assertTrue(original.nativeMiuixPopupsEnabled)

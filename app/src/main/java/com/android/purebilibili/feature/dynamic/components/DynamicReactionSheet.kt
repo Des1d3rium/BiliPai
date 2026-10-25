@@ -2,7 +2,7 @@ package com.android.purebilibili.feature.dynamic.components
 
 import com.android.purebilibili.core.ui.AppContentColors
 
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -84,7 +84,7 @@ fun DynamicReactionSheet(item: DynamicItem, onDismiss: () -> Unit, onUserClick: 
         ) {
             itemsIndexed(users) { _, user ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { onDismiss(); onUserClick(user.mid) }.padding(vertical = 12.dp),
+                    Modifier.fillMaxWidth().appActionClickable { onDismiss(); onUserClick(user.mid) }.padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     AsyncImage(model = user.face, contentDescription = null, modifier = Modifier.size(44.dp).clip(CircleShape))

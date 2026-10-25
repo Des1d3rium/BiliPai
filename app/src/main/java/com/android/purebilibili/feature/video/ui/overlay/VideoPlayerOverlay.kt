@@ -93,13 +93,13 @@ import com.android.purebilibili.data.repository.VideoRepository
 import com.android.purebilibili.data.repository.isCastDashManifestAvailable
 import com.android.purebilibili.data.repository.selectCastDashAudio
 import com.android.purebilibili.data.repository.selectCastDashVideo
-import com.android.purebilibili.feature.plugin.CdnLineDiagnostic
+import com.android.purebilibili.plugin.sdk.CdnLineDiagnostic
 import com.android.purebilibili.core.player.dash.buildLocalDashManifest
 import com.android.purebilibili.feature.video.playback.audio.AudioQualityOption
 import com.android.purebilibili.feature.video.playback.audio.resolveAudioQualityControlPresentation
 import com.android.purebilibili.feature.common.resolveIndexedVideoLazyKey
 import com.android.purebilibili.feature.video.progress.PbpRidgeSample
-import com.android.purebilibili.feature.anime4k.VideoEnhancementAlgorithm
+import com.android.purebilibili.plugin.sdk.VideoEnhancementAlgorithm
 import com.android.purebilibili.core.ui.components.AppButton
 import com.android.purebilibili.core.ui.components.AppIconButton
 import com.android.purebilibili.core.ui.components.AppSegmentOption
@@ -133,8 +133,8 @@ import com.android.purebilibili.core.util.WindowWidthSizeClass
 import com.android.purebilibili.core.util.Logger
 import com.android.purebilibili.core.util.NetworkUtils
 import com.android.purebilibili.feature.anime4k.Anime4KBypassReason
-import com.android.purebilibili.feature.anime4k.Anime4KPreset
-import com.android.purebilibili.feature.anime4k.DEFAULT_FSR_SHARPNESS
+import com.android.purebilibili.plugin.sdk.Anime4KPreset
+import com.android.purebilibili.plugin.sdk.DEFAULT_FSR_SHARPNESS
 
 import androidx.compose.foundation.lazy.LazyListState
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
@@ -158,10 +158,10 @@ import com.android.purebilibili.feature.video.usecase.applyPlaybackButtonUserAct
 import com.android.purebilibili.feature.video.usecase.playPlayerFromUserAction
 import com.android.purebilibili.feature.video.usecase.seekPlayerFromUserAction
 import com.android.purebilibili.feature.cast.DeviceListDialog
-import com.android.purebilibili.core.plugin.CastPluginApi
-import com.android.purebilibili.core.plugin.CastPluginMediaRequest
-import com.android.purebilibili.core.plugin.CastPluginRoute
-import com.android.purebilibili.core.plugin.CastPluginPlaybackState
+import com.android.purebilibili.plugin.sdk.CastPluginApi
+import com.android.purebilibili.plugin.sdk.CastPluginMediaRequest
+import com.android.purebilibili.plugin.sdk.CastPluginRoute
+import com.android.purebilibili.plugin.sdk.CastPluginPlaybackState
 import com.android.purebilibili.feature.cast.LocalProxyServer
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -383,7 +383,7 @@ internal fun resolveFullscreenLockButtonVisualState(
     }
 }
 
-/** 非玻璃播放器的侧边锁定入口；玻璃布局使用自己的独立实现。 */
+/** 横屏锁定入口沿用共用功能布局，侧键材质按玻璃开关选择。 */
 @Composable
 internal fun FullscreenLockButton(
     visualState: FullscreenLockButtonVisualState,
@@ -392,7 +392,7 @@ internal fun FullscreenLockButton(
     iconSizeDp: Int,
     modifier: Modifier = Modifier,
 ) {
-    NativePlayerSideButton(
+    PlayerSideButton(
         icon = when (visualState.icon) {
             FullscreenLockButtonIcon.LOCKED -> Icons.Outlined.Lock
             FullscreenLockButtonIcon.UNLOCKED -> Icons.Outlined.LockOpen
@@ -461,11 +461,7 @@ fun VideoPlayerOverlay(
     state: VideoPlayerOverlayState,
     actions: VideoPlayerOverlayActions,
 ) {
-    // 液态玻璃保留独立控制栏与布局；关闭后沿用统一的原生控制栏及默认参数。
-    if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
-        com.android.purebilibili.feature.video.ui.overlay.glass.VideoPlayerOverlay(state, actions)
-        return
-    }
+    // 横竖屏共用原生功能布局；玻璃材质在共享控件入口显式分支。
     // Keep the non-inline backdrop slot small. Capturing this screen's locals
     // here exceeds DEX's 255 argument-register limit in synthetic constructors.
     PlayerControlsBackdropHost(
@@ -498,7 +494,6 @@ private fun VideoPlayerOverlayContent(
     val onLandscapeCommentClick = actions.onLandscapeCommentClick
     val landscapeCommentPanelVisible = state.landscapeCommentPanelVisible
     val landscapeCommentPanelOnLeft = state.landscapeCommentPanelOnLeft
-    val onHomeClick = actions.onHomeClick
     val onToggleFullscreen = actions.onToggleFullscreen
     val bvid = state.bvid
     val cid = state.cid
@@ -718,6 +713,11 @@ private fun VideoPlayerOverlayContent(
     val actionAnchorBounds = remember(bvid, cid, isFullscreen) {
         mutableStateMapOf<PlayerControlAnchor, IntRect>()
     }
+    val actionSources = remember(bvid, cid, isFullscreen) {
+        mutableStateMapOf<PlayerControlAnchor, com.android.purebilibili.core.ui.components.AppGlassMenuSource>()
+    }
+    val moreSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    val danmakuSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
     var playerBoundsInWindow by remember(bvid, cid) { mutableStateOf<IntRect?>(null) }
     var showHeatmap by remember(bvid, cid) { mutableStateOf(true) }
     var showSponsorSegments by remember(bvid, cid) { mutableStateOf(false) }
@@ -734,6 +734,8 @@ private fun VideoPlayerOverlayContent(
         pendingVideoShare = buildVideoSharePayload(
             title = title,
             bvid = bvid,
+            page = currentPageIndex + 1,
+            positionMs = player.currentPosition.coerceAtLeast(0L),
             coverUrl = coverUrl,
             upName = videoOwnerName,
             playCountText = videoSharePlayCountText,
@@ -809,6 +811,13 @@ private fun VideoPlayerOverlayContent(
         ugcSeason, bvid, cid, loadSubscription = showEpisodeMenu && isLoggedIn, isParts = pages.size > 1,
     )
     val sponsorSession = rememberPiliSponsorMenuSession(bvid)
+    val registeredPlugins by com.android.purebilibili.core.plugin.PluginManager.pluginsFlow.collectAsStateWithLifecycle()
+    val sponsorPluginInfo = registeredPlugins.firstOrNull {
+        it.plugin.id == com.android.purebilibili.core.plugin.BuiltinPluginIds.SPONSOR_BLOCK
+    }
+    var showEnableSponsorPlugin by remember(bvid, cid) { mutableStateOf(false) }
+    var enablingSponsorPlugin by remember { mutableStateOf(false) }
+
     val navigationPages = remember(pages, bvid) {
         if (pages.size > 1) pages.mapIndexed { index, page ->
             PiliEpisodeNavigationEntry(bvid, page.cid, index)
@@ -1265,7 +1274,7 @@ private fun VideoPlayerOverlayContent(
     val playerMenuVisible = bottomControlFloatingPanelVisible || showQualityMenu ||
         showSpeedMenu || showRatioMenu || showEpisodeMenu ||
         showChapterList || showDanmakuSettings || showVideoSettings || showCastDialog ||
-        showSponsorSegments || showPlayerInformation || danmakuComposerVisible ||
+        showSponsorSegments || showEnableSponsorPlugin || showPlayerInformation || danmakuComposerVisible ||
         endDrawerVisible || landscapeCommentPanelVisible
     val latestPanelVisibility by rememberUpdatedState(actions.onFloatingPanelVisibilityChange)
     LaunchedEffect(playerMenuVisible) { latestPanelVisibility(playerMenuVisible) }
@@ -1565,7 +1574,8 @@ private fun VideoPlayerOverlayContent(
                     showCurrentTime = showFullscreenTime,
                     showInteractiveActions = showFullscreenActionItems,
                     onBack = onBack,
-                    onHomeClick = onHomeClick,
+                    moreMenuSource = moreSource,
+                    danmakuMenuSource = danmakuSource,
                     onAudioClick = onAudioOnlyToggle,
                     onSendDanmakuClick = onDanmakuInputClick,
                     danmakuEnabled = danmakuEnabled,
@@ -1605,8 +1615,13 @@ private fun VideoPlayerOverlayContent(
                         showEpisodeMenu = false
                         showVideoSettings = true
                     },
-                    showSponsorSubmitButton = sponsorContributionAvailable,
-                    onSponsorSubmitClick = onSponsorContributionMarkBoundary,
+                    showSponsorSubmitButton = sponsorContributionAvailable ||
+                        (isFullscreen && bvid.isNotBlank() && sponsorPluginInfo?.enabled == false),
+                    sponsorSubmitDescription = if (sponsorPluginInfo?.enabled == false) "开启空降助手" else "提交片段",
+                    onSponsorSubmitClick = {
+                        if (sponsorPluginInfo?.enabled == false) showEnableSponsorPlugin = true
+                        else onSponsorContributionMarkBoundary()
+                    },
                     showSponsorSegmentsButton = sponsorMarkers.isNotEmpty(),
                     onSponsorSegmentsClick = { showSponsorSegments = true },
                     modifier = Modifier.align(Alignment.TopCenter),
@@ -1621,6 +1636,7 @@ private fun VideoPlayerOverlayContent(
                     key(player, bvid, cid) {
                         BottomControlBar(
                             onActionBoundsChanged = { action, bounds -> actionAnchorBounds[action] = bounds },
+                            onActionSourceChanged = { action, source -> actionSources[action] = source },
                             viewportWidthDpOverride = viewportWidthDpOverride,
                             viewportIsLandscape = playerBoundsInWindow?.let { it.width > it.height }
                                 ?: (configuration.screenWidthDp > configuration.screenHeightDp),
@@ -1731,7 +1747,7 @@ private fun VideoPlayerOverlayContent(
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
                     .padding(end = 4.dp)
             ) {
-                NativePlayerSideButton(
+                PlayerSideButton(
                     icon = Icons.Outlined.Camera,
                     contentDescription = "截图",
                     onClick = onCaptureScreenshot,
@@ -1918,6 +1934,20 @@ private fun VideoPlayerOverlayContent(
             }
         }
 
+        // 玻璃横竖屏保留中央播放/暂停，原生继续使用底栏播放按钮。
+        if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
+            CenterPlaybackControl(
+                visible = showPlayerChrome &&
+                    (pluginPlaybackStatus.first || player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_ENDED) &&
+                    centerLoadingUiState == null && !isSeekScrubbing &&
+                    !endDrawerVisible && !landscapeCommentPanelVisible && !showInsightDetails,
+                isPlaying = effectiveIsPlaying,
+                onPlayPause = { togglePlayPause() },
+                diameter = if (isFullscreen) 72.dp else 56.dp,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
         // --- 5.4  缓冲加载指示器 ---
         AnimatedVisibility(
             visible = shouldShowBufferingIndicator(
@@ -2011,139 +2041,147 @@ private fun VideoPlayerOverlayContent(
 
         // --- 6. 清晰度菜单 ---
         if (showQualityMenu) {
-            QualitySelectionMenu(
-                qualities = qualityLabels,
-                qualityIds = qualityIds,
-                switchableQualityIds = switchableQualityIds,
-                currentQuality = currentQualityLabel,
-                isLoggedIn = isLoggedIn,
-                isVip = isVip,
-                onQualitySelected = { index ->
-                    onQualitySelected(index)
-                    showQualityMenu = false
-                },
-                onDismiss = { showQualityMenu = false },
-                useDialog = true,
-                placement = PlayerListPopupPlacement.ANCHOR_END,
-                anchorBounds = actionAnchorBounds[PlayerControlAnchor.QUALITY],
-            )
+            CompositionLocalProvider(com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides actionSources[PlayerControlAnchor.QUALITY]) {
+                QualitySelectionMenu(
+                    qualities = qualityLabels,
+                    qualityIds = qualityIds,
+                    switchableQualityIds = switchableQualityIds,
+                    currentQuality = currentQualityLabel,
+                    isLoggedIn = isLoggedIn,
+                    isVip = isVip,
+                    onQualitySelected = { index ->
+                        onQualitySelected(index)
+                        showQualityMenu = false
+                    },
+                    onDismiss = { showQualityMenu = false },
+                    useDialog = true,
+                    placement = PlayerListPopupPlacement.ANCHOR_END,
+                    anchorBounds = actionAnchorBounds[PlayerControlAnchor.QUALITY],
+                )
+            }
         }
 
 
         // --- 7.  [新增] 倍速选择菜单 ---
         if (showSpeedMenu) {
-            SpeedSelectionMenuDialog(
-                currentSpeed = currentSpeed,
-                onSpeedSelected = { speed ->
-                    currentSpeed = speed
-                    onPlaybackSpeedChange(speed)
-                    scope.launch {
-                        SettingsManager.setLastPlaybackSpeed(context, speed)
-                    }
-                    showSpeedMenu = false
-                },
-                onDismiss = { showSpeedMenu = false },
-                placement = SpeedSelectionMenuPlacement.ANCHOR_END,
-                anchorBounds = actionAnchorBounds[PlayerControlAnchor.SPEED],
-            )
+            CompositionLocalProvider(com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides actionSources[PlayerControlAnchor.SPEED]) {
+                SpeedSelectionMenuDialog(
+                    currentSpeed = currentSpeed,
+                    onSpeedSelected = { speed ->
+                        currentSpeed = speed
+                        onPlaybackSpeedChange(speed)
+                        scope.launch {
+                            SettingsManager.setLastPlaybackSpeed(context, speed)
+                        }
+                        showSpeedMenu = false
+                    },
+                    onDismiss = { showSpeedMenu = false },
+                    placement = SpeedSelectionMenuPlacement.ANCHOR_END,
+                    anchorBounds = actionAnchorBounds[PlayerControlAnchor.SPEED],
+                )
+            }
         }
 
         // --- 7.5  [新增] 视频比例选择菜单 ---
         if (showRatioMenu) {
-            AspectRatioMenu(
-                currentRatio = currentAspectRatio,
-                onRatioSelected = { ratio ->
-                    onAspectRatioChange(ratio)
-                    showRatioMenu = false
-                },
-                onDismiss = { showRatioMenu = false },
-                placement = PlayerListPopupPlacement.ANCHOR_END,
-                anchorBounds = actionAnchorBounds[PlayerControlAnchor.RATIO],
-            )
+            CompositionLocalProvider(com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides actionSources[PlayerControlAnchor.RATIO]) {
+                AspectRatioMenu(
+                    currentRatio = currentAspectRatio,
+                    onRatioSelected = { ratio ->
+                        onAspectRatioChange(ratio)
+                        showRatioMenu = false
+                    },
+                    onDismiss = { showRatioMenu = false },
+                    placement = PlayerListPopupPlacement.ANCHOR_END,
+                    anchorBounds = actionAnchorBounds[PlayerControlAnchor.RATIO],
+                )
+            }
         }
 
         // --- 8.  [新增] 弹幕设置面板 ---
         if (showDanmakuSettings) {
-            DanmakuSettingsPanel(
-                isFullscreen = isFullscreen,
-                settingsScope = danmakuSettingsScope,
-                opacity = danmakuOpacity,
-                fontScale = danmakuFontScale,
-                inlineFontScale = inlineDanmakuFontScale,
-                fullscreenFontScale = fullscreenDanmakuFontScale,
-                onInlineFontScaleChange = { value ->
-                    scope.launch { SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.PORTRAIT) }
-                },
-                onFullscreenFontScaleChange = { value ->
-                    scope.launch { SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.LANDSCAPE) }
-                },
-                showAdvancedSection = true,
-                fontWeight = danmakuFontWeight,
-                speed = danmakuSpeed,
-                displayArea = danmakuDisplayArea,
-                strokeWidth = danmakuStrokeWidth,
-                lineHeight = danmakuLineHeight,
-                scrollDurationSeconds = danmakuScrollDurationSeconds,
-                staticDurationSeconds = danmakuStaticDurationSeconds,
-                scrollFixedVelocity = danmakuScrollFixedVelocity,
-                staticDanmakuToScroll = danmakuStaticToScroll,
-                massiveMode = danmakuMassiveMode,
-                mergeDuplicates = danmakuMergeDuplicates,
-                duplicateMergeWindowMs = danmakuDuplicateMergeWindowMs,
-                duplicateMergeCountThreshold = danmakuDuplicateMergeCountThreshold,
-                allowScroll = danmakuAllowScroll,
-                allowTop = danmakuAllowTop,
-                allowBottom = danmakuAllowBottom,
-                allowColorful = danmakuAllowColorful,
-                allowSpecial = danmakuAllowSpecial,
-                weightFilterLevel = danmakuWeightFilterLevel,
-                hideInteractiveCommands = danmakuHideInteractiveCommands,
-                showBlockRuleEditor = true,
-                showSmartOcclusionSection = true,
-                blockRulesRaw = danmakuBlockRulesRaw,
-                smartOcclusion = danmakuSmartOcclusion,
-                fullscreenWidthMode = danmakuFullscreenPanelWidthMode,
-                portraitDisplayAreaMode = portraitDanmakuDisplayAreaMode,
-                showSyncSection = showDanmakuSyncSection,
-                cloudSyncEnabled = danmakuCloudSyncEnabled,
-                syncUiState = danmakuSyncUiState,
-                onSliderPreview = actions.onDanmakuSliderPreview,
-                onOpacityChange = onDanmakuOpacityChange,
-                onFontScaleChange = onDanmakuFontScaleChange,
-                onFontWeightChange = onDanmakuFontWeightChange,
-                onSpeedChange = onDanmakuSpeedChange,
-                onDisplayAreaChange = onDanmakuDisplayAreaChange,
-                onStrokeWidthChange = onDanmakuStrokeWidthChange,
-                onLineHeightChange = onDanmakuLineHeightChange,
-                onScrollDurationSecondsChange = onDanmakuScrollDurationSecondsChange,
-                onStaticDurationSecondsChange = onDanmakuStaticDurationSecondsChange,
-                onScrollFixedVelocityChange = onDanmakuScrollFixedVelocityChange,
-                onStaticDanmakuToScrollChange = onDanmakuStaticToScrollChange,
-                onMassiveModeChange = onDanmakuMassiveModeChange,
-                onMergeDuplicatesChange = onDanmakuMergeDuplicatesChange,
-                onDuplicateMergeWindowMsChange = onDanmakuDuplicateMergeWindowMsChange,
-                onDuplicateMergeCountThresholdChange = onDanmakuDuplicateMergeCountThresholdChange,
-                onAllowScrollChange = onDanmakuAllowScrollChange,
-                onAllowTopChange = onDanmakuAllowTopChange,
-                onAllowBottomChange = onDanmakuAllowBottomChange,
-                onAllowColorfulChange = onDanmakuAllowColorfulChange,
-                onAllowSpecialChange = onDanmakuAllowSpecialChange,
-                onWeightFilterLevelChange = onDanmakuWeightFilterLevelChange,
-                onHideInteractiveCommandsChange = onDanmakuHideInteractiveCommandsChange,
-                onBlockRulesRawChange = onDanmakuBlockRulesRawChange,
-                onSmartOcclusionChange = onDanmakuSmartOcclusionChange,
-                onFullscreenWidthModeChange = onDanmakuFullscreenPanelWidthModeChange,
-                onPortraitDisplayAreaModeChange = onPortraitDanmakuDisplayAreaModeChange,
-                onCloudSyncEnabledChange = onDanmakuCloudSyncEnabledChange,
-                onSyncNowClick = onDanmakuSyncNowClick,
-                onShowDanmakuPool = onShowDanmakuPool?.let { action ->
-                    {
-                        showDanmakuSettings = false
-                        action()
-                    }
-                },
-                onDismiss = { showDanmakuSettings = false }
-            )
+            CompositionLocalProvider(com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides danmakuSource) {
+                DanmakuSettingsPanel(
+                    isFullscreen = isFullscreen,
+                    settingsScope = danmakuSettingsScope,
+                    opacity = danmakuOpacity,
+                    fontScale = danmakuFontScale,
+                    inlineFontScale = inlineDanmakuFontScale,
+                    fullscreenFontScale = fullscreenDanmakuFontScale,
+                    onInlineFontScaleChange = { value ->
+                        scope.launch { SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.PORTRAIT) }
+                    },
+                    onFullscreenFontScaleChange = { value ->
+                        scope.launch { SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.LANDSCAPE) }
+                    },
+                    showAdvancedSection = true,
+                    fontWeight = danmakuFontWeight,
+                    speed = danmakuSpeed,
+                    displayArea = danmakuDisplayArea,
+                    strokeWidth = danmakuStrokeWidth,
+                    lineHeight = danmakuLineHeight,
+                    scrollDurationSeconds = danmakuScrollDurationSeconds,
+                    staticDurationSeconds = danmakuStaticDurationSeconds,
+                    scrollFixedVelocity = danmakuScrollFixedVelocity,
+                    staticDanmakuToScroll = danmakuStaticToScroll,
+                    massiveMode = danmakuMassiveMode,
+                    mergeDuplicates = danmakuMergeDuplicates,
+                    duplicateMergeWindowMs = danmakuDuplicateMergeWindowMs,
+                    duplicateMergeCountThreshold = danmakuDuplicateMergeCountThreshold,
+                    allowScroll = danmakuAllowScroll,
+                    allowTop = danmakuAllowTop,
+                    allowBottom = danmakuAllowBottom,
+                    allowColorful = danmakuAllowColorful,
+                    allowSpecial = danmakuAllowSpecial,
+                    weightFilterLevel = danmakuWeightFilterLevel,
+                    hideInteractiveCommands = danmakuHideInteractiveCommands,
+                    showBlockRuleEditor = true,
+                    showSmartOcclusionSection = true,
+                    blockRulesRaw = danmakuBlockRulesRaw,
+                    smartOcclusion = danmakuSmartOcclusion,
+                    fullscreenWidthMode = danmakuFullscreenPanelWidthMode,
+                    portraitDisplayAreaMode = portraitDanmakuDisplayAreaMode,
+                    showSyncSection = showDanmakuSyncSection,
+                    cloudSyncEnabled = danmakuCloudSyncEnabled,
+                    syncUiState = danmakuSyncUiState,
+                    onSliderPreview = actions.onDanmakuSliderPreview,
+                    onOpacityChange = onDanmakuOpacityChange,
+                    onFontScaleChange = onDanmakuFontScaleChange,
+                    onFontWeightChange = onDanmakuFontWeightChange,
+                    onSpeedChange = onDanmakuSpeedChange,
+                    onDisplayAreaChange = onDanmakuDisplayAreaChange,
+                    onStrokeWidthChange = onDanmakuStrokeWidthChange,
+                    onLineHeightChange = onDanmakuLineHeightChange,
+                    onScrollDurationSecondsChange = onDanmakuScrollDurationSecondsChange,
+                    onStaticDurationSecondsChange = onDanmakuStaticDurationSecondsChange,
+                    onScrollFixedVelocityChange = onDanmakuScrollFixedVelocityChange,
+                    onStaticDanmakuToScrollChange = onDanmakuStaticToScrollChange,
+                    onMassiveModeChange = onDanmakuMassiveModeChange,
+                    onMergeDuplicatesChange = onDanmakuMergeDuplicatesChange,
+                    onDuplicateMergeWindowMsChange = onDanmakuDuplicateMergeWindowMsChange,
+                    onDuplicateMergeCountThresholdChange = onDanmakuDuplicateMergeCountThresholdChange,
+                    onAllowScrollChange = onDanmakuAllowScrollChange,
+                    onAllowTopChange = onDanmakuAllowTopChange,
+                    onAllowBottomChange = onDanmakuAllowBottomChange,
+                    onAllowColorfulChange = onDanmakuAllowColorfulChange,
+                    onAllowSpecialChange = onDanmakuAllowSpecialChange,
+                    onWeightFilterLevelChange = onDanmakuWeightFilterLevelChange,
+                    onHideInteractiveCommandsChange = onDanmakuHideInteractiveCommandsChange,
+                    onBlockRulesRawChange = onDanmakuBlockRulesRawChange,
+                    onSmartOcclusionChange = onDanmakuSmartOcclusionChange,
+                    onFullscreenWidthModeChange = onDanmakuFullscreenPanelWidthModeChange,
+                    onPortraitDisplayAreaModeChange = onPortraitDanmakuDisplayAreaModeChange,
+                    onCloudSyncEnabledChange = onDanmakuCloudSyncEnabledChange,
+                    onSyncNowClick = onDanmakuSyncNowClick,
+                    onShowDanmakuPool = onShowDanmakuPool?.let { action ->
+                        {
+                            showDanmakuSettings = false
+                            action()
+                        }
+                    },
+                    onDismiss = { showDanmakuSettings = false }
+                )
+            }
         }
 
         // --- 9.  [新增] 视频设置面板 ---
@@ -2179,144 +2217,146 @@ private fun VideoPlayerOverlayContent(
         }
 
         if (showVideoSettings) {
-            VideoSettingsPanel(
-                chapterDisplayMode = chapterDisplayMode,
-                onChapterDisplayModeChange = { mode ->
-                    scope.launch { SettingsManager.setChapterDisplayMode(context, mode) }
-                },
-                isFullscreen = isFullscreen,
-                playerBounds = playerBoundsInWindow,
-                sleepTimerMinutes = menuSession.sleepTimerMinutes,
-                onSleepTimerChange = menuSession.onSleepTimerChange,
-                sleepWaitForVideoEnd = menuSession.sleepWaitForVideoEnd,
-                onSleepWaitForVideoEndChange = menuSession.onSleepWaitForVideoEndChange,
-                sleepExitApp = menuSession.sleepExitApp,
-                onSleepExitAppChange = menuSession.onSleepExitAppChange,
-                onReload = onReloadVideo,
-                onDanmakuSettingsClick = {
-                    showVideoSettings = false
-                    showDanmakuSettings = true
-                },
-                onShowDanmakuPool = onShowDanmakuPool?.let { action ->
-                    {
+            CompositionLocalProvider(com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides moreSource) {
+                VideoSettingsPanel(
+                    chapterDisplayMode = chapterDisplayMode,
+                    onChapterDisplayModeChange = { mode ->
+                        scope.launch { SettingsManager.setChapterDisplayMode(context, mode) }
+                    },
+                    isFullscreen = isFullscreen,
+                    playerBounds = playerBoundsInWindow,
+                    sleepTimerMinutes = menuSession.sleepTimerMinutes,
+                    onSleepTimerChange = menuSession.onSleepTimerChange,
+                    sleepWaitForVideoEnd = menuSession.sleepWaitForVideoEnd,
+                    onSleepWaitForVideoEndChange = menuSession.onSleepWaitForVideoEndChange,
+                    sleepExitApp = menuSession.sleepExitApp,
+                    onSleepExitAppChange = menuSession.onSleepExitAppChange,
+                    onReload = onReloadVideo,
+                    onDanmakuSettingsClick = {
                         showVideoSettings = false
-                        action()
-                    }
-                },
-                currentQualityLabel = currentQualityLabel,
-                qualityLabels = qualityLabels,
-                qualityIds = qualityIds,
-                switchableQualityIds = switchableQualityIds,
-                isLoggedIn = isLoggedIn,
-                isVip = isVip,
-                onQualitySelected = { index ->
-                    onQualitySelected(index)
-                    showVideoSettings = false
-                },
-                currentSpeed = currentSpeed,
-                onSpeedChange = { speed ->
-                    currentSpeed = speed
-                    onPlaybackSpeedChange(speed)
-                    scope.launch {
-                        SettingsManager.setLastPlaybackSpeed(context, speed)
-                    }
-                },
-                isFlippedHorizontal = isFlippedHorizontal,
-                isFlippedVertical = isFlippedVertical,
-                onFlipHorizontal = onFlipHorizontal,
-                onFlipVertical = onFlipVertical,
-                isAudioOnly = isAudioOnly,
-                onAudioOnlyToggle = onAudioOnlyToggle,
-                //  CDN 线路切换
-                currentCdnIndex = currentCdnIndex,
-                cdnCount = cdnCount,
-                cdnLineDiagnostics = cdnLineDiagnostics,
-                isCdnProbing = isCdnProbing,
-                onSwitchCdn = onSwitchCdn,
-                onSwitchCdnTo = { index ->
-                    onSwitchCdnTo(index)
-                    showVideoSettings = false
-                },
-                onProbeCdnCandidates = onProbeCdnCandidates,
-                cdnServiceLabels = menuSession.cdnServiceLabels,
-                currentCdnServiceIndex = menuSession.currentCdnServiceIndex,
-                onCdnServiceSelected = menuSession.onCdnServiceSelected,
-                // [New] Codec & Audio
-                currentCodec = currentCodec,
-                playingVideoCodec = menuSession.playingVideoCodec,
-                availableCodecIds = state.availableCodecIds,
-                onCodecChange = { codec ->
-                    onCodecChange(codec)
-                    showVideoSettings = false
-                },
-                currentSecondCodec = currentSecondCodec,
-                onSecondCodecChange = { codec ->
-                    onSecondCodecChange(codec)
-                    showVideoSettings = false
-                },
-                currentAudioQuality = currentAudioQuality,
-                selectedAudioQuality = selectedAudioQuality,
-                availableAudioQualities = availableAudioQualities,
-                onAudioQualityChange = { quality ->
-                    onAudioQualityChange(quality)
-                    showVideoSettings = false
-                },
-                anime4kEnabled = anime4kEnabled,
-                anime4kAvailable = anime4kAvailable,
-                anime4kBypassReason = anime4kBypassReason,
-                videoEnhancementAlgorithm = videoEnhancementAlgorithm,
-                anime4kPreset = anime4kPreset,
-                fsrSharpness = fsrSharpness,
-                onAnime4kToggle = onAnime4kToggle,
-                onVideoEnhancementAlgorithmChange = onVideoEnhancementAlgorithmChange,
-                onAnime4kPresetChange = onAnime4kPresetChange,
-                onFsrSharpnessChange = onFsrSharpnessChange,
-                // [New] AI Audio
-                aiAudioInfo = aiAudioInfo,
-                currentAudioLang = currentAudioLang,
-                onAudioLangChange = { lang ->
-                    onAudioLangChange(lang)
-                    showVideoSettings = false
-                },
+                        showDanmakuSettings = true
+                    },
+                    onShowDanmakuPool = onShowDanmakuPool?.let { action ->
+                        {
+                            showVideoSettings = false
+                            action()
+                        }
+                    },
+                    currentQualityLabel = currentQualityLabel,
+                    qualityLabels = qualityLabels,
+                    qualityIds = qualityIds,
+                    switchableQualityIds = switchableQualityIds,
+                    isLoggedIn = isLoggedIn,
+                    isVip = isVip,
+                    onQualitySelected = { index ->
+                        onQualitySelected(index)
+                        showVideoSettings = false
+                    },
+                    currentSpeed = currentSpeed,
+                    onSpeedChange = { speed ->
+                        currentSpeed = speed
+                        onPlaybackSpeedChange(speed)
+                        scope.launch {
+                            SettingsManager.setLastPlaybackSpeed(context, speed)
+                        }
+                    },
+                    isFlippedHorizontal = isFlippedHorizontal,
+                    isFlippedVertical = isFlippedVertical,
+                    onFlipHorizontal = onFlipHorizontal,
+                    onFlipVertical = onFlipVertical,
+                    isAudioOnly = isAudioOnly,
+                    onAudioOnlyToggle = onAudioOnlyToggle,
+                    //  CDN 线路切换
+                    currentCdnIndex = currentCdnIndex,
+                    cdnCount = cdnCount,
+                    cdnLineDiagnostics = cdnLineDiagnostics,
+                    isCdnProbing = isCdnProbing,
+                    onSwitchCdn = onSwitchCdn,
+                    onSwitchCdnTo = { index ->
+                        onSwitchCdnTo(index)
+                        showVideoSettings = false
+                    },
+                    onProbeCdnCandidates = onProbeCdnCandidates,
+                    cdnServiceLabels = menuSession.cdnServiceLabels,
+                    currentCdnServiceIndex = menuSession.currentCdnServiceIndex,
+                    onCdnServiceSelected = menuSession.onCdnServiceSelected,
+                    // [New] Codec & Audio
+                    currentCodec = currentCodec,
+                    playingVideoCodec = menuSession.playingVideoCodec,
+                    availableCodecIds = state.availableCodecIds,
+                    onCodecChange = { codec ->
+                        onCodecChange(codec)
+                        showVideoSettings = false
+                    },
+                    currentSecondCodec = currentSecondCodec,
+                    onSecondCodecChange = { codec ->
+                        onSecondCodecChange(codec)
+                        showVideoSettings = false
+                    },
+                    currentAudioQuality = currentAudioQuality,
+                    selectedAudioQuality = selectedAudioQuality,
+                    availableAudioQualities = availableAudioQualities,
+                    onAudioQualityChange = { quality ->
+                        onAudioQualityChange(quality)
+                        showVideoSettings = false
+                    },
+                    anime4kEnabled = anime4kEnabled,
+                    anime4kAvailable = anime4kAvailable,
+                    anime4kBypassReason = anime4kBypassReason,
+                    videoEnhancementAlgorithm = videoEnhancementAlgorithm,
+                    anime4kPreset = anime4kPreset,
+                    fsrSharpness = fsrSharpness,
+                    onAnime4kToggle = onAnime4kToggle,
+                    onVideoEnhancementAlgorithmChange = onVideoEnhancementAlgorithmChange,
+                    onAnime4kPresetChange = onAnime4kPresetChange,
+                    onFsrSharpnessChange = onFsrSharpnessChange,
+                    // [New] AI Audio
+                    aiAudioInfo = aiAudioInfo,
+                    currentAudioLang = currentAudioLang,
+                    onAudioLangChange = { lang ->
+                        onAudioLangChange(lang)
+                        showVideoSettings = false
+                    },
 
-                onSaveCover = {
-                    onSaveCover()
-                    // Disimss moved to VideoSettingsPanel internal or caller responsibility?
-                    // VideoSettingsPanel calls onSaveCover then onDismiss.
-                    // We just invoke the callback.
-                },
-                onCaptureScreenshot = {
-                    onCaptureScreenshot()
-                },
-                onDownloadAudio = {
-                    onDownloadAudio()
-                },
-                onWatchLater = menuSession.onWatchLater,
-                onShowNotes = menuSession.onShowNotes,
-                onDownloadVideo = menuSession.onDownloadVideo,
-                onEditPlayUrl = menuSession.onEditPlayUrl,
-                onReport = menuSession.onReport,
-                onSubtitleSettings = subtitleTools.onSubtitleSettings,
-                onLoadSubtitle = subtitleTools.onLoadSubtitle,
-                onSaveSubtitle = subtitleTools.onSaveSubtitle.takeIf { subtitleControlState.trackAvailable },
-                onShowPlaybackInfo = { showPlayerInformation = true },
-                onCast = onCastClickAction,
-                onEnterPip = onPipClick,
-                onShare = { onShare?.invoke() ?: openVideoShareSheet() },
-                playerVolume = menuSession.playerVolume,
-                onPlayerVolumeChange = menuSession.onPlayerVolumeChange,
-                playerVolumeUnavailableReason = menuSession.playerVolumeUnavailableReason,
-                isBackgroundPlaybackEnabled = menuSession.isBackgroundPlaybackEnabled,
-                onBackgroundPlaybackChange = menuSession.onBackgroundPlaybackChange,
-                playbackOrderLabel = playbackCompletionBehavior.label,
-                playbackOrderOptions = completionLabels,
-                onPlaybackOrderChange = { index ->
-                    completionOptions.getOrNull(index)?.let { behavior ->
-                        scope.launch { SettingsManager.setPlaybackCompletionBehavior(context, behavior) }
-                    }
-                },
-                onDismiss = { showVideoSettings = false }
-            )
+                    onSaveCover = {
+                        onSaveCover()
+                        // Disimss moved to VideoSettingsPanel internal or caller responsibility?
+                        // VideoSettingsPanel calls onSaveCover then onDismiss.
+                        // We just invoke the callback.
+                    },
+                    onCaptureScreenshot = {
+                        onCaptureScreenshot()
+                    },
+                    onDownloadAudio = {
+                        onDownloadAudio()
+                    },
+                    onWatchLater = menuSession.onWatchLater,
+                    onShowNotes = menuSession.onShowNotes,
+                    onDownloadVideo = menuSession.onDownloadVideo,
+                    onEditPlayUrl = menuSession.onEditPlayUrl,
+                    onReport = menuSession.onReport,
+                    onSubtitleSettings = subtitleTools.onSubtitleSettings,
+                    onLoadSubtitle = subtitleTools.onLoadSubtitle,
+                    onSaveSubtitle = subtitleTools.onSaveSubtitle.takeIf { subtitleControlState.trackAvailable },
+                    onShowPlaybackInfo = { showPlayerInformation = true },
+                    onCast = onCastClickAction,
+                    onEnterPip = onPipClick,
+                    onShare = { onShare?.invoke() ?: openVideoShareSheet() },
+                    playerVolume = menuSession.playerVolume,
+                    onPlayerVolumeChange = menuSession.onPlayerVolumeChange,
+                    playerVolumeUnavailableReason = menuSession.playerVolumeUnavailableReason,
+                    isBackgroundPlaybackEnabled = menuSession.isBackgroundPlaybackEnabled,
+                    onBackgroundPlaybackChange = menuSession.onBackgroundPlaybackChange,
+                    playbackOrderLabel = playbackCompletionBehavior.label,
+                    playbackOrderOptions = completionLabels,
+                    onPlaybackOrderChange = { index ->
+                        completionOptions.getOrNull(index)?.let { behavior ->
+                            scope.launch { SettingsManager.setPlaybackCompletionBehavior(context, behavior) }
+                        }
+                    },
+                    onDismiss = { showVideoSettings = false }
+                )
+            }
         }
 
 
@@ -2368,6 +2408,43 @@ private fun VideoPlayerOverlayContent(
                             targetCid = episode.cid,
                         ),
                     )
+                },
+            )
+        }
+
+        if (showEnableSponsorPlugin) {
+            com.android.purebilibili.core.ui.AppAlertDialog(
+                onDismissRequest = { if (!enablingSponsorPlugin) showEnableSponsorPlugin = false },
+                title = { AppText("开启空降助手？") },
+                text = { AppText("开启后可根据社区标记自动跳过广告、赞助等片段。社区片段投稿仍按原有设置启用。") },
+                confirmButton = {
+                    AppTextButton(
+                        enabled = !enablingSponsorPlugin,
+                        onClick = {
+                            enablingSponsorPlugin = true
+                            scope.launch {
+                                try {
+                                    val pluginId = com.android.purebilibili.core.plugin.BuiltinPluginIds.SPONSOR_BLOCK
+                                    com.android.purebilibili.core.plugin.PluginManager.setEnabled(pluginId, true)
+                                    val enabled = com.android.purebilibili.core.plugin.PluginManager.plugins
+                                        .any { it.plugin.id == pluginId && it.enabled }
+                                    if (enabled) {
+                                        showEnableSponsorPlugin = false
+                                        android.widget.Toast.makeText(context, "已开启空降助手", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "开启失败，请重试或前往插件设置检查", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                } finally {
+                                    enablingSponsorPlugin = false
+                                }
+                            }
+                        },
+                    ) { AppText(if (enablingSponsorPlugin) "正在开启…" else "开启") }
+                },
+                dismissButton = {
+                    AppTextButton(enabled = !enablingSponsorPlugin, onClick = { showEnableSponsorPlugin = false }) {
+                        AppText("暂不开启")
+                    }
                 },
             )
         }
@@ -3019,7 +3096,7 @@ private fun TripleLikeInteractionButton(
     layoutPolicy: VideoPlayerOverlayVisualPolicy,
     modifier: Modifier = Modifier
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val favoriteIcon = rememberAppBookmarkIcon()
     val coinIcon = rememberAppCoinIcon()
     val likeIcon = rememberAppLikeIcon()
@@ -3068,10 +3145,13 @@ private fun TripleLikeInteractionButton(
             progress = longPressProgress,
             progressColor = AppContentColors.accent(),
             isActive = isLiked,
-            onClick = onLikeClick,
+            onClick = { haptic(HapticType.LIGHT); onLikeClick() },
             onLongPress = { isLongPressing = true },
             onRelease = {
-                if (longPressProgress < 0.1f) onLikeClick()
+                if (longPressProgress < 0.1f) {
+                    haptic(HapticType.LIGHT)
+                    onLikeClick()
+                }
                 isLongPressing = false
             },
             layoutPolicy = layoutPolicy
@@ -3084,7 +3164,7 @@ private fun TripleLikeInteractionButton(
             progress = longPressProgress,
             progressColor = AppContentColors.accent(),
             isActive = isCoined,
-            onClick = onCoinClick,
+            onClick = { haptic(HapticType.LIGHT); onCoinClick() },
             showProgress = longPressProgress > 0.05f,
             layoutPolicy = layoutPolicy
         )
@@ -3096,7 +3176,7 @@ private fun TripleLikeInteractionButton(
             progress = longPressProgress,
             progressColor = AppContentColors.accent(),
             isActive = isFavorited,
-            onClick = onFavoriteClick,
+            onClick = { haptic(HapticType.LIGHT); onFavoriteClick() },
             showProgress = longPressProgress > 0.05f,
             layoutPolicy = layoutPolicy
         )

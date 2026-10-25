@@ -1,25 +1,24 @@
 // 文件路径: feature/home/HomeViewModel.kt
 package com.android.purebilibili.feature.home
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.android.purebilibili.core.coroutines.AccountScopedRequests
 import com.android.purebilibili.core.store.AccountSessionIdentity
 import com.android.purebilibili.core.store.TokenManager
-import com.android.purebilibili.core.plugin.FeedKind
+import com.android.purebilibili.plugin.sdk.FeedKind
 import com.android.purebilibili.core.plugin.PluginManager
-import com.android.purebilibili.core.plugin.RecommendationCreatorSignal
-import com.android.purebilibili.core.plugin.RecommendationFeedbackSignals
-import com.android.purebilibili.core.plugin.RecommendationGroup
-import com.android.purebilibili.core.plugin.RecommendationMode
-import com.android.purebilibili.core.plugin.RecommendationPluginApi
-import com.android.purebilibili.core.plugin.RecommendationRequest
-import com.android.purebilibili.core.plugin.RecommendationResult
-import com.android.purebilibili.core.plugin.RecommendationSceneSignals
-import com.android.purebilibili.core.plugin.RecommendationStrategy
-import com.android.purebilibili.feature.plugin.ADFILTER_PLUGIN_ID
-import com.android.purebilibili.feature.plugin.BILIPAI_FEED_FILTER_PLUGIN_ID
+import com.android.purebilibili.plugin.sdk.RecommendationCreatorSignal
+import com.android.purebilibili.plugin.sdk.RecommendationFeedbackSignals
+import com.android.purebilibili.plugin.sdk.RecommendationGroup
+import com.android.purebilibili.plugin.sdk.RecommendationMode
+import com.android.purebilibili.plugin.sdk.RecommendationRequest
+import com.android.purebilibili.plugin.sdk.RecommendationResult
+import com.android.purebilibili.plugin.sdk.RecommendationSceneSignals
+import com.android.purebilibili.plugin.sdk.RecommendationStrategy
 import com.android.purebilibili.core.store.SettingsManager
 import com.android.purebilibili.core.store.TodayWatchDislikedVideoSnapshot
 import com.android.purebilibili.core.store.TodayWatchFeedbackStore
@@ -38,8 +37,8 @@ import com.android.purebilibili.data.repository.MessageRepository
 import com.android.purebilibili.data.repository.VideoRepository
 import com.android.purebilibili.data.repository.LiveRepository
 import com.android.purebilibili.feature.message.totalMessageUnreadCount
-import com.android.purebilibili.feature.plugin.EyeProtectionPlugin
-import com.android.purebilibili.feature.plugin.TodayWatchPlugin
+import com.android.purebilibili.plugin.sdk.EyeProtectionPluginApi
+import com.android.purebilibili.feature.plugin.TodayWatchControls
 import com.android.purebilibili.feature.plugin.TodayWatchPluginConfig
 import com.android.purebilibili.feature.plugin.TodayWatchCandidatePoolMode
 import com.android.purebilibili.feature.plugin.TodayWatchPluginMode
@@ -290,7 +289,7 @@ private fun RecommendationMode.toTodayWatchMode(): TodayWatchMode {
     }
 }
 
-private fun RecommendationResult.toTodayWatchPlan(): TodayWatchPlan {
+private fun RecommendationResult<VideoItem>.toTodayWatchPlan(): TodayWatchPlan {
     val creatorGroup = groups.firstOrNull { it.id == "preferred_creators" }
     return TodayWatchPlan(
         mode = mode.toTodayWatchMode(),
@@ -440,7 +439,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _feedbackEvents = Channel<String>(capacity = Channel.BUFFERED)
     val feedbackEvents = _feedbackEvents.receiveAsFlow()
     private var todayWatchPluginObserverJob: Job? = null
-    private var observedTodayWatchPlugin: TodayWatchPlugin? = null
+    private var observedTodayWatchPlugin: TodayWatchControls? = null
 
     private suspend fun ensureAccountCurrent(identity: AccountSessionIdentity) {
         currentCoroutineContext().ensureActive()
@@ -508,16 +507,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         syncTodayWatchFeedbackFromStore()
         viewModelScope.launch {
-            PluginManager.awaitPluginReady(ADFILTER_PLUGIN_ID)
+            PluginManager.awaitPluginReady(BuiltinPluginIds.AD_FILTER)
             //  推荐流过滤插件的「启用态 + 配置」是在注册协程里异步回填的(DataStore)。
             //  若不等待就重过滤, 冷启动的首个请求会在“无规则”状态下被过滤, 表现为
             //  首次展示漏过滤、必须手动刷新一次才生效。
-            PluginManager.awaitPluginReady(BILIPAI_FEED_FILTER_PLUGIN_ID)
+            PluginManager.awaitPluginReady(BuiltinPluginIds.FEED_FILTER)
             reFilterAllContent()
         }
         viewModelScope.launch {
-            PluginManager.pluginsFlow.collect { plugins ->
-                val plugin = plugins.find { it.plugin.id == TodayWatchPlugin.PLUGIN_ID }?.plugin as? TodayWatchPlugin
+            PluginManager.pluginsFlow.collect {
+                val plugin = PluginManager.getPlugin(TodayWatchControls::class)
                 if (plugin !== observedTodayWatchPlugin) {
                     todayWatchPluginObserverJob?.cancel()
                     observedTodayWatchPlugin = plugin
@@ -623,9 +622,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun syncTodayWatchPluginState(clearWhenDisabled: Boolean): TodayWatchRuntimeConfig {
-        val info = PluginManager.plugins.find { it.plugin.id == TodayWatchPlugin.PLUGIN_ID }
-        val pluginEnabled = info?.enabled == true
-        val plugin = info?.plugin as? TodayWatchPlugin
+        val pluginEnabled = PluginManager.isEnabled(BuiltinPluginIds.TODAY_WATCH)
+        val plugin = PluginManager.getPlugin(TodayWatchControls::class)
         val config = plugin?.configState?.value ?: TodayWatchPluginConfig()
         val runtime = resolveTodayWatchRuntimeConfig(pluginEnabled = pluginEnabled, config = config)
 
@@ -658,10 +656,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun switchTodayWatchMode(mode: TodayWatchMode) {
-        val info = PluginManager.plugins.find { it.plugin.id == TodayWatchPlugin.PLUGIN_ID }
-        if (info?.enabled != true) return
+        if (!PluginManager.isEnabled(BuiltinPluginIds.TODAY_WATCH)) return
 
-        val plugin = info.plugin as? TodayWatchPlugin
+        val plugin = PluginManager.getPlugin(TodayWatchControls::class)
         plugin?.setCurrentMode(mode.toPluginMode())
         _uiState.value = _uiState.value.copy(todayWatchMode = mode)
         accountRequests.launch {
@@ -670,9 +667,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setTodayWatchCollapsed(collapsed: Boolean) {
-        val info = PluginManager.plugins.find { it.plugin.id == TodayWatchPlugin.PLUGIN_ID }
-        val plugin = info?.plugin as? TodayWatchPlugin
-        plugin?.updateConfig { current -> current.copy(collapsed = collapsed) }
+        val plugin = PluginManager.getPlugin(TodayWatchControls::class)
+        plugin?.setCollapsed(collapsed)
 
         val current = _uiState.value
         if (current.todayWatchCollapsed == collapsed) return
@@ -771,11 +767,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         val eyeCareNightActive = runtime.linkEyeCareSignal &&
-            EyeProtectionPlugin.getInstance()?.isNightModeActive?.value == true
+            PluginManager.getPlugin(EyeProtectionPluginApi::class)?.isNightModeActive?.value == true
 
-        val recommendationPlugin = PluginManager.plugins
-            .firstOrNull { it.enabled && it.plugin.id == TodayWatchPlugin.PLUGIN_ID }
-            ?.plugin as? RecommendationPluginApi
+        val recommendationPlugin = PluginManager.getEnabledRecommendationPlugins().firstOrNull()
         if (recommendationPlugin == null) {
             _uiState.value = _uiState.value.copy(
                 todayWatchPlan = null,
@@ -785,7 +779,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        fun buildResult(candidates: List<VideoItem>): RecommendationResult {
+        fun buildResult(candidates: List<VideoItem>): RecommendationResult<VideoItem> {
             return recommendationPlugin.buildRecommendations(
                 RecommendationRequest(
                     historyVideos = historySample,
@@ -793,7 +787,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     mode = runtime.mode.toRecommendationMode(),
                     strategy = runtime.recommendationStrategy,
                     sceneSignals = RecommendationSceneSignals(
-                        eyeCareNightActive = eyeCareNightActive
+                        eyeCareNightActive = eyeCareNightActive,
+                        nowEpochSec = System.currentTimeMillis() / 1000L
                     ),
                     groupLimit = runtime.upRankLimit,
                     queueLimit = runtime.queueBuildLimit,
@@ -1194,7 +1189,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val metadata = video.recommendationFeedback
-            val supportsServerSync = metadata?.supportsServerSync == true && reason.id != null
+            val supportsServerSync = metadata?.supportsServerSync == true && (reason.id ?: 0L) > 0L
             if (supportsServerSync) {
                 accountRequests.launch {
                     val identity = accountRequests.identity
@@ -1202,7 +1197,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     ensureAccountCurrent(identity)
                     result.onSuccess {
                             _feedbackEvents.send(
-                                reason.toast.ifBlank { "已减少相关内容推荐" }
+                                reason.toast.ifBlank { "已提交推荐反馈" }
                             )
                         }
                         .onFailure {
@@ -1210,7 +1205,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         }
                 }
             } else {
-                _feedbackEvents.send(reason.toast.ifBlank { "已减少相关内容推荐" })
+                _feedbackEvents.send("已在本地屏蔽所选内容，未同步推荐偏好")
             }
             Logger.d("HomeVM", "已记录不感兴趣: ${video.bvid}, reason=${reason.name}")
         }

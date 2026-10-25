@@ -57,17 +57,23 @@ internal fun rememberVideoDetailWholeCardReturn(
     gestureProvider: () -> Boolean,
     followProgressProvider: () -> Boolean,
 ): VideoDetailWholeCardReturn {
-    var retained by remember(bvid, sourceRoute) { mutableStateOf<ImageBitmap?>(null) }
     val expectedKey = normalizeSharedElementSourceRoute(sourceRoute)?.let { "$it:${bvid.trim()}" }
-    val bitmap: ImageBitmap? = CardPositionManager.lastClickedWholeCardReturnBitmap
+    // Bind once per entry, before an asynchronous capture is ready. Mutable navigation keys
+    // cannot grant an already retained parent ownership of a later child's pixels.
+    val pixelOwner = remember(bvid, sourceRoute) {
+        CardPositionManager.videoCardPixelOwnerFor(expectedKey)
+    }
+    var retained by remember(bvid, sourceRoute) { mutableStateOf<ImageBitmap?>(null) }
+    val captured = CardPositionManager.lastClickedWholeCardReturnSnapshot
+    val bitmap = captured?.bitmap
     val candidate: ImageBitmap? = if (ownsTransition && !isNowPlayingBar &&
-        sourceLayout != VideoCardSourceLayout.COVER_ONLY && expectedKey != null &&
-        expectedKey == CardPositionManager.lastClickedVideoSourceKey &&
+        sourceLayout != VideoCardSourceLayout.COVER_ONLY && pixelOwner != null &&
+        captured?.owner === pixelOwner &&
         bitmap != null && bitmap.width > 1 && bitmap.height > 1 &&
         sourceBounds != null && sourceBounds.width > 1f && sourceBounds.height > 1f
     ) bitmap else null
-    SideEffect { if (candidate != null && retained != candidate) retained = candidate }
-    val snapshot: ImageBitmap? = candidate ?: retained
+    SideEffect { if (retained == null && candidate != null) retained = candidate }
+    val snapshot: ImageBitmap? = retained ?: candidate
     val active: () -> Boolean = {
         snapshot != null && !keepLoadedContentForBackPreview &&
             (ownsTransition || committedReturn) &&

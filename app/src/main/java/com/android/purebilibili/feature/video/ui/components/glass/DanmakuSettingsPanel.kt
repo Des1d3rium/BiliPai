@@ -405,7 +405,14 @@ fun DanmakuSettingsPanel(
     }
     val configuration = LocalConfiguration.current
     val colorScheme = MaterialTheme.colorScheme
-    val panelColors = rememberDanmakuPanelColors(colorScheme)
+    val useGlassPopup = com.android.purebilibili.core.ui.components.appGlassMenuAvailable()
+    val panelScrollState = rememberScrollState()
+    val panelColors = rememberDanmakuPanelColors(colorScheme).let { colors ->
+        if (useGlassPopup) colors.copy(
+            panelColor = Color.Transparent,
+            itemColor = colors.itemColor.copy(alpha = 0.22f),
+        ) else colors
+    }
     val isFullscreenStyle = isFullscreen
     val glass = LocalAppThemeConfig.current.liquidGlassEnabled
     val syncShape = if (glass) AppShapes.container(ContainerLevel.Chip) else AppShapes.container(ContainerLevel.Field)
@@ -431,11 +438,14 @@ fun DanmakuSettingsPanel(
         isFullscreen = isFullscreenStyle,
         layoutPolicy = layoutPolicy,
         onDismiss = onDismiss,
+        scrollState = panelScrollState,
     ) { requestPanelDismiss ->
             AppSurface(
                 modifier = Modifier
                     .then(
-                        if (
+                        if (useGlassPopup) {
+                            Modifier.fillMaxWidth()
+                        } else if (
                             isFullscreenStyle &&
                             layoutPolicy.anchor == DanmakuSettingsPanelAnchor.End
                         ) {
@@ -451,9 +461,9 @@ fun DanmakuSettingsPanel(
                         }
                     )
                     .padding(
-                        start = layoutPolicy.horizontalPaddingDp.dp,
-                        end = layoutPolicy.horizontalPaddingDp.dp,
-                        bottom = layoutPolicy.bottomPaddingDp.dp
+                        start = if (useGlassPopup) 0.dp else layoutPolicy.horizontalPaddingDp.dp,
+                        end = if (useGlassPopup) 0.dp else layoutPolicy.horizontalPaddingDp.dp,
+                        bottom = if (useGlassPopup) 0.dp else layoutPolicy.bottomPaddingDp.dp
                     )
                     .heightIn(max = layoutPolicy.maxHeightDp.dp)
                     .clickable(
@@ -462,12 +472,12 @@ fun DanmakuSettingsPanel(
                     ) { },
                 color = panelColors.panelColor,
                 shape = AppShapes.container(ContainerLevel.Dialog),
-                tonalElevation = if (isFullscreenStyle) 6.dp else 16.dp,
-                shadowElevation = if (isFullscreenStyle) 8.dp else 24.dp
+                tonalElevation = if (useGlassPopup) 0.dp else if (isFullscreenStyle) 6.dp else 16.dp,
+                shadowElevation = if (useGlassPopup) 0.dp else if (isFullscreenStyle) 8.dp else 24.dp
             ) {
                 Column(
                     modifier = Modifier
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(panelScrollState)
                         .padding(if (isFullscreenStyle) 20.dp else 24.dp)
                 ) {
                     // Header：窄侧栏只放标题+徽章+关闭，长副标题不挤进横排（避免竖字）
@@ -533,6 +543,10 @@ fun DanmakuSettingsPanel(
                     if (isFullscreenStyle) {
                         // 横屏分区 Tab：基础 / 高级 / 屏蔽，避免窄侧栏长滚动。
                         AppThemeAdaptiveTabRow(
+                            // 仅同窗玻璃路径采样播放器背景；原生标签栏保留默认材质。
+                            miuixBackdrop = if (useGlassPopup) {
+                                com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop.current
+                            } else null,
                             // Glass indicator fills the measured slot; native geometry keeps its defaults.
                             liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
                             role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,

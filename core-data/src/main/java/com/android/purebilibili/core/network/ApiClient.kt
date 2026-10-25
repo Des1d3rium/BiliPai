@@ -1652,7 +1652,8 @@ data class DynamicRepostRequest(
 data class DynamicRepostDynReq(
     val content: DynamicRepostContent,
     val scene: Int,
-    val attach_card: kotlinx.serialization.json.JsonObject?
+    val attach_card: kotlinx.serialization.json.JsonObject?,
+    val topic: com.android.purebilibili.data.model.response.DynamicCreateTopic? = null,
 )
 
 @kotlinx.serialization.Serializable
@@ -1701,9 +1702,11 @@ data class DynamicVisibilityRequest(
 
 fun buildDynamicRepostRequest(
     dynamicId: String,
-    content: String
+    content: String,
+    richContents: List<DynamicRepostContentItem> = emptyList(),
+    topic: com.android.purebilibili.data.model.response.DynamicCreateTopic? = null,
 ): DynamicRepostRequest {
-    val contents = if (content.isBlank()) {
+    val contents = if (richContents.isNotEmpty()) richContents else if (content.isBlank()) {
         emptyList()
     } else {
         listOf(
@@ -1718,7 +1721,8 @@ fun buildDynamicRepostRequest(
         dyn_req = DynamicRepostDynReq(
             content = DynamicRepostContent(contents = contents),
             scene = 4,
-            attach_card = null
+            attach_card = null,
+            topic = topic
         ),
         web_repost_src = DynamicWebRepostSource(dyn_id_str = dynamicId)
     )

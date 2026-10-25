@@ -131,7 +131,7 @@ fun FrostedSideBar(
             !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
             uiSkinDecoration == null && itemColorIndices.isEmpty()
         ) {
-            MaterialExpressiveSideBar(
+            MaterialSideBar(
                 currentItem = currentItem,
                 onItemClick = onItemClick,
                 visibleItems = visibleItems,
@@ -181,7 +181,7 @@ private fun MiuixSideBar(
     onToggleSidebar: (() -> Unit)?,
     onAccountSwitchClick: (() -> Unit)?,
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     val expandable = shouldUseExpandableMiuixSideBar(
         shouldUseExpandedNavigationRailForLayout(
             windowSizeClass = LocalWindowSizeClass.current,
@@ -402,7 +402,7 @@ private fun FrostedSideBarContent(
     onToggleSidebar: (() -> Unit)?,
     onAccountSwitchClick: (() -> Unit)?,
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     var lastHomeClickMs by remember { mutableLongStateOf(0L) }
     var lastDynamicClickMs by remember { mutableLongStateOf(0L) }
     val blurIntensity = com.android.purebilibili.core.ui.blur.currentUnifiedBlurIntensity()
@@ -616,7 +616,7 @@ private fun SideBarAccountSwitchButton(
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     Box(
         modifier = modifier
             .size(AppChromeSizeTokens.MinimumTouchTarget)

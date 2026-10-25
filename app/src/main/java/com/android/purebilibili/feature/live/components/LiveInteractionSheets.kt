@@ -247,54 +247,56 @@ fun LiveDmBlockSheet(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        com.android.purebilibili.core.ui.ImmersiveAppScaffold(
-            topBar = {
-                com.android.purebilibili.core.ui.AppTopBar(
-                    title = "弹幕屏蔽",
-                    navigationIcon = {
-                        AppIconButton(onClick = onDismiss) { AppIcon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
-                    },
-                    actions = {
-                        AppTextButton(enabled = isLoggedIn, onClick = { value = ""; showAdd = true }) { AppText("添加") }
-                    },
-                )
-            },
-        ) { padding ->
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
-                val landscape = maxWidth > maxHeight
-                val rules: @Composable () -> Unit = {
-                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                        if (!isLoggedIn) AppText("登录后可同步屏蔽设置", color = AppContentColors.secondaryText())
-                        LiveRuleSection(shieldInfo, isLoggedIn, onSetRule)
+        com.android.purebilibili.core.ui.AppPopupWindowHost(enableWindowMaterial = false) {
+            com.android.purebilibili.core.ui.ImmersiveAppScaffold(
+                topBar = {
+                    com.android.purebilibili.core.ui.AppTopBar(
+                        title = "弹幕屏蔽",
+                        navigationIcon = {
+                            AppIconButton(onClick = onDismiss) { AppIcon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
+                        },
+                        actions = {
+                            AppTextButton(enabled = isLoggedIn, onClick = { value = ""; showAdd = true }) { AppText("添加") }
+                        },
+                    )
+                },
+            ) { padding ->
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+                    val landscape = maxWidth > maxHeight
+                    val rules: @Composable () -> Unit = {
+                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                            if (!isLoggedIn) AppText("登录后可同步屏蔽设置", color = AppContentColors.secondaryText())
+                            LiveRuleSection(shieldInfo, isLoggedIn, onSetRule)
+                        }
                     }
-                }
-                val lists: @Composable () -> Unit = {
-                    Column(Modifier.fillMaxSize()) {
-                        AppThemeAdaptiveTabRow(
-                            // Glass indicator fills the measured slot; native geometry keeps its defaults.
-                            liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
-                            role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
-                            options = listOf(AppSegmentOption(0, "关键词"), AppSegmentOption(1, "用户")),
-                            selectedValue = pager.currentPage,
-                            onSelectionChange = { scope.launch { com.android.purebilibili.navigation.animatePagerSelection(pager, it) } },
-                            indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
-                            isScrollInProgressProvider = { pager.isScrollInProgress },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        com.android.purebilibili.core.ui.components.AppHorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
-                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                                if (page == 0) LiveKeywordSection(shieldInfo, isLoggedIn) { pendingKeyword = it }
-                                else LiveShieldUserSection(shieldInfo, isLoggedIn) { pendingUser = it }
+                    val lists: @Composable () -> Unit = {
+                        Column(Modifier.fillMaxSize()) {
+                            AppThemeAdaptiveTabRow(
+                                // Glass indicator fills the measured slot; native geometry keeps its defaults.
+                                liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
+                                role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
+                                options = listOf(AppSegmentOption(0, "关键词"), AppSegmentOption(1, "用户")),
+                                selectedValue = pager.currentPage,
+                                onSelectionChange = { scope.launch { com.android.purebilibili.navigation.animatePagerSelection(pager, it) } },
+                                indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+                                isScrollInProgressProvider = { pager.isScrollInProgress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            com.android.purebilibili.core.ui.components.AppHorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
+                                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                                    if (page == 0) LiveKeywordSection(shieldInfo, isLoggedIn) { pendingKeyword = it }
+                                    else LiveShieldUserSection(shieldInfo, isLoggedIn) { pendingUser = it }
+                                }
                             }
                         }
                     }
-                }
-                if (landscape) Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f)) { rules() }
-                    Box(Modifier.weight(1f)) { lists() }
-                } else Column(Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxWidth().heightIn(max = 260.dp)) { rules() }
-                    Box(Modifier.weight(1f)) { lists() }
+                    if (landscape) Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f)) { rules() }
+                        Box(Modifier.weight(1f)) { lists() }
+                    } else Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxWidth().heightIn(max = 260.dp)) { rules() }
+                        Box(Modifier.weight(1f)) { lists() }
+                    }
                 }
             }
         }

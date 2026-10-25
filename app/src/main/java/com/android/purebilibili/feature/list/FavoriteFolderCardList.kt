@@ -1,9 +1,11 @@
 package com.android.purebilibili.feature.list
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.semantics.semantics
@@ -175,7 +177,7 @@ private fun FavoriteFolderCard(
             .heightIn(min = 96.dp)
             .clip(AppShapes.container(ContainerLevel.Card))
             .semantics { if (selectionMode) this.selected = selected }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(onClick = appActionWithFeedback(onClick), onLongClick = onLongClick)
             .padding(vertical = AppSpacingTokens.ExtraSmall),
         horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Small + AppSpacingTokens.Micro),
     ) {
@@ -253,7 +255,7 @@ private fun FavoriteSubscribedEntryRow(
             .fillMaxWidth()
             .heightIn(min = AppChromeSizeTokens.MinimumTouchTarget)
             .clip(AppShapes.container(ContainerLevel.Card))
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = AppSpacingTokens.Medium, vertical = AppSpacingTokens.Small),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Small),

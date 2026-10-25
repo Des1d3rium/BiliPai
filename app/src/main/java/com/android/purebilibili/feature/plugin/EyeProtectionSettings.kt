@@ -1,6 +1,8 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.feature.plugin
+
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
 
 import com.android.purebilibili.core.ui.AppContentColors
 
@@ -66,9 +68,7 @@ internal fun EyeProtectionSettings(
     var uiConfig by remember { mutableStateOf(plugin.snapshotConfig()) }
     val isActive by plugin.isNightModeActive.collectAsStateWithLifecycle()
     val usageMinutes by plugin.usageMinutesFlow.collectAsStateWithLifecycle()
-    val pluginEnabled = PluginManager.plugins.any {
-        it.plugin.id == EYE_PROTECTION_PLUGIN_ID && it.enabled
-    }
+    val pluginEnabled = PluginManager.isEnabled(BuiltinPluginIds.EYE_PROTECTION)
 
     LaunchedEffect(Unit) {
         plugin.loadConfigSuspend()
@@ -546,7 +546,7 @@ private fun TimePickerDropdown(
         }
         return
     }
-    Box(modifier = modifier.fillMaxWidth()) {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(modifier = modifier.fillMaxWidth(), onOpen = { expanded = true }) {
         AppOutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier
@@ -584,6 +584,7 @@ private fun TimePickerDropdown(
             (0..23).forEach { hour ->
                 AppDropdownMenuItem(
                     text = { AppText(formatClockHour(hour)) },
+                    selected = hour == selectedHour,
                     trailingIcon = {
                         if (hour == selectedHour) {
                             AppText(

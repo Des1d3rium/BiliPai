@@ -341,7 +341,7 @@ object ActionRepository {
             ?: return@withContext Result.failure(Exception("缺少移动端登录凭证"))
         val request = buildRecommendationFeedbackRequest(metadata, reason)
             ?: return@withContext Result.failure(Exception("当前推荐不支持服务器同步"))
-        runCatching {
+        try {
             val params = buildRecommendationFeedbackParams(
                 request = request,
                 accessToken = accessToken,
@@ -351,6 +351,11 @@ object ActionRepository {
             if (response.code != 0) {
                 throw Exception(response.message.ifBlank { "反馈失败: ${response.code}" })
             }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
 

@@ -115,11 +115,9 @@ internal fun VideoDetailPipParamsEffect(
     }
 }
 
+/** 播放及缓冲保留常亮，暂停、结束和空闲立即释放常亮资格。 */
 @Composable
-internal fun VideoDetailKeepScreenOnEffect(
-    window: Window?,
-    player: Player,
-) {
+internal fun rememberVideoPlaybackKeepAwake(player: Player): Boolean {
     val shouldKeepAwake by produceState(
         initialValue = shouldKeepVideoPlaybackAwake(
             playWhenReady = player.playWhenReady,
@@ -141,8 +139,18 @@ internal fun VideoDetailKeepScreenOnEffect(
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = update()
         }
         player.addListener(listener)
+        update()
         awaitDispose { player.removeListener(listener) }
     }
+    return shouldKeepAwake
+}
+
+@Composable
+internal fun VideoDetailKeepScreenOnEffect(
+    window: Window?,
+    player: Player,
+) {
+    val shouldKeepAwake = rememberVideoPlaybackKeepAwake(player)
     DisposableEffect(window, shouldKeepAwake) {
         if (shouldKeepAwake) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

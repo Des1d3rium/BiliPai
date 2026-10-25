@@ -148,7 +148,7 @@ import com.android.purebilibili.core.player.HiResCompatibleRenderersFactory
 import com.android.purebilibili.core.plugin.PluginManager
 import com.android.purebilibili.core.store.DanmakuSettings
 import com.android.purebilibili.core.util.NetworkUtils
-import com.android.purebilibili.feature.plugin.PlaybackCdnPlugin
+import com.android.purebilibili.plugin.sdk.PlaybackCdnPlugin
 import com.android.purebilibili.core.store.DanmakuSettingsScope
 import com.android.purebilibili.core.store.PlaybackCompletionBehavior
 import com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode
@@ -2326,6 +2326,13 @@ private fun VideoPageItem(
         com.android.purebilibili.feature.video.ui.components.rememberVideoScreenshotAction(
             captureBitmap = { _, width, height -> enhancement.captureScreenshot(width, height) }
         )
+    var pendingPortraitShare by remember(bvid, currentPlayingCid) {
+        mutableStateOf<com.android.purebilibili.feature.video.share.VideoSharePayload?>(null)
+    }
+    com.android.purebilibili.feature.video.share.VideoShareSheetHost(
+        payload = pendingPortraitShare,
+        onDismiss = { pendingPortraitShare = null },
+    )
     var portraitPlayerMenuVisible by remember(bvid) { mutableStateOf(false) }
     var showPortraitExternalPlaylist by rememberSaveable(bvid) { mutableStateOf(false) }
     val portraitExternalPlaylist by PlaylistManager.playlist.collectAsStateWithLifecycle()
@@ -3314,7 +3321,6 @@ private fun VideoPageItem(
                             session = enhancement,
                             preferTexture = preferTexture,
                             resizeMode = portraitPagerResizeMode,
-                            fillContainer = portraitPagerFillContainer,
                             keepScreenOn = shouldKeepPortraitPagerItemAwake,
                             flippedHorizontal = portraitFlippedHorizontal,
                             flippedVertical = portraitFlippedVertical,
@@ -3497,6 +3503,23 @@ private fun VideoPageItem(
                     )
                 }
             }
+        }
+
+        val partResumeNotice = currentSuccess?.partResumeNotice
+        if (partResumeNotice != null && partResumeNotice.bvid == bvid &&
+            isCurrentPage && isPlayerReadyForThisVideo && isPlayerSurfaceReady &&
+            hasRenderedFirstFrame && !isLoading &&
+            !isInPipMode && !portraitScreenLocked
+        ) {
+            com.android.purebilibili.feature.video.ui.section.PartResumeNoticeChip(
+                notice = partResumeNotice,
+                onJump = viewModel::jumpToLastPlayedPart,
+                onDismiss = viewModel::dismissPartResumeNotice,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = (pageDanmakuTopInset + 56.dp).coerceAtLeast(72.dp))
+                    .zIndex(118f),
+            )
         }
 
         // 双击左右区快进/后退视觉反馈
@@ -4264,50 +4287,20 @@ private fun VideoPageItem(
                     }
                 },
                 onShare = {
-                    context.startActivity(android.content.Intent.createChooser(
-                        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            putExtra(android.content.Intent.EXTRA_TEXT, buildPortraitShareText(title, bvid))
-                            type = "text/plain"
-                        },
-                        "分享视频",
-                    ))
+                    val info = currentSuccess?.info
+                    pendingPortraitShare = com.android.purebilibili.feature.video.share.buildVideoSharePayload(
+                        title = title, bvid = bvid, coverUrl = info?.pic.orEmpty(),
+                        upName = info?.owner?.name.orEmpty(), authorId = info?.owner?.mid ?: 0L,
+                        page = info?.pages?.indexOfFirst { it.cid == currentPlayingCid }?.coerceAtLeast(0)?.plus(1) ?: 1,
+                        positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                    )
                 },
             )
-        // 玻璃竖屏流保留侧边互动和底部信息；原生材质继续使用统一播放器控制栏。
-        if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
-            com.android.purebilibili.feature.video.ui.overlay.glass.PortraitPagerControls(
-                state = portraitOverlayState.copy(
-                    isVisible = isCurrentPage && resolvePortraitOverlayControlsVisible(
-                        portraitOverlayVisible = portraitOverlayVisible,
-                        showDetailSheet = showDetailSheet,
-                    ),
-                ),
-                actions = portraitOverlayActions,
-                info = portraitDetailInfo,
-                stat = portraitDetailInfo?.stat ?: stat,
-                progress = progressState,
-                playbackReady = isCurrentPage && !isLoading && isPlayerReadyForThisVideo,
-                videoAspectRatio = currentVideoAspect,
-                commentExpansionProgress = commentSheetVisibilityProgress,
-                onDetailClick = { if (portraitDetailInfo != null) showDetailSheet = true },
-                onAuthorClick = {
-                    if (isCurrentPage && authorMid > 0L) {
-                        showUpPreview = true
-                        onUpPreviewActiveChange(true)
-                    }
-                },
-                onStaffMemberClick = { if (isCurrentPage && it > 0L) onUserClick(it) },
-                onSearchClick = {
-                    onExitSnapshot(bvid, exoPlayer.currentPosition, snapshotCid, cover)
-                    onSearchClick()
-                },
-            )
-        } else {
-            com.android.purebilibili.feature.video.ui.overlay.VideoPlayerOverlay(
-                state = portraitOverlayState,
-                actions = portraitOverlayActions,
-            )
-        }
+        // 竖屏与横屏共用功能组件，玻璃材质在控制栏内部适配。
+        com.android.purebilibili.feature.video.ui.overlay.VideoPlayerOverlay(
+            state = portraitOverlayState,
+            actions = portraitOverlayActions,
+        )
         AnimatedVisibility(
             visible = portraitPlaybackRecovering && portraitOverlayVisible &&
                 commentSheetVisibilityProgress <= 0.001f,

@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.plugin
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import android.content.ActivityNotFoundException
@@ -36,9 +38,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.network.policy.HomeFeedAnonymizerRuntime
 import com.android.purebilibili.core.network.policy.HomeFeedAnonymizerStatsSnapshot
-import com.android.purebilibili.core.plugin.Plugin
-import com.android.purebilibili.core.plugin.PluginCapability
-import com.android.purebilibili.core.plugin.PluginCapabilityManifest
+import com.android.purebilibili.core.plugin.BuiltinPlugin
+import com.android.purebilibili.plugin.sdk.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapabilityManifest
 import com.android.purebilibili.core.ui.AppAlertDialog
 import com.android.purebilibili.core.ui.components.AppSurface
 import com.android.purebilibili.core.ui.components.AppText
@@ -50,15 +52,14 @@ import java.time.format.DateTimeFormatter
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 
-internal const val HOME_FEED_ANONYMIZER_PLUGIN_ID = "home_feed_anonymizer"
 private const val TAG = "HomeFeedAnonymizerPlugin"
 private const val HOME_FEED_ANONYMIZER_WEB_ENDPOINT =
     "https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd"
 private val HOME_FEED_ANONYMIZER_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-class HomeFeedAnonymizerPlugin : Plugin {
-    override val id: String = HOME_FEED_ANONYMIZER_PLUGIN_ID
+class HomeFeedAnonymizerPlugin : BuiltinPlugin {
+    override val id: String = BuiltinPluginIds.HOME_FEED_ANONYMIZER
     override val name: String = "初见推荐"
     override val description: String = "仅在 Web 首页推荐接口隐藏登录 Cookie，让推荐流更接近未登录公共热门"
     override val version: String = "1.0.2"

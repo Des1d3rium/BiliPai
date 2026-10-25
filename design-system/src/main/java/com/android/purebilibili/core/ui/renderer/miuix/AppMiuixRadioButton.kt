@@ -19,7 +19,7 @@ internal fun AppMiuixRadioButton(
     val colors = RadioButtonDefaults.radioButtonColors(
         selectedColor = resolveControlGlyphColor(scheme.primary, scheme.surface, scheme.surface),
     )
-    ProvideAppMiuixHapticFeedback {
+    ProvideAppMiuixHapticFeedback(scene = com.android.purebilibili.core.ui.AppHapticScene.MENUS) {
         RadioButton(
             selected = selected,
             onClick = onClick,

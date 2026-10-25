@@ -1,6 +1,6 @@
 package com.android.purebilibili.feature.video.ui.components
 
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -19,9 +19,12 @@ import com.android.purebilibili.core.theme.LocalAppUiStyle
 import com.android.purebilibili.core.ui.LocalAppThemeConfig
 
 
+/** 只在同窗玻璃设置容器实际接管后移除内容的原生实色底板。 */
+internal val LocalPlayerGlassSettingsSurface = compositionLocalOf { false }
+
 internal fun playerNativeMenuConfig(config: com.android.purebilibili.core.ui.AppThemeConfig) =
-    config.copy(liquidGlassEnabled = false, nativeMiuixPopupsEnabled = false)
-/** Player sheets intentionally do not inherit the application's glass or popup material. */
+    config.copy(nativeMiuixPopupsEnabled = false)
+/** 播放器保留原生面板结构，内部菜单跟随应用玻璃开关；关闭玻璃不启用独立 Miuix 菜单。 */
 @Composable
 internal fun PlayerNativeMenuTheme(content: @Composable () -> Unit) {
     val config = LocalAppThemeConfig.current
@@ -41,10 +44,33 @@ internal fun PlayerNativeSettingsHost(
     content: @Composable () -> Unit,
 ) {
     val windowSize = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
+    // 玻璃复用原生菜单内容；列表自行滚动，宿主只接管外壳与触发按钮开合。
+    val glassPolicy = resolveDanmakuSettingsPanelLayoutPolicy(
+        isFullscreen = isFullscreen,
+        screenWidthDp = LocalConfiguration.current.screenWidthDp,
+        screenHeightDp = LocalConfiguration.current.screenHeightDp,
+    )
+    if (com.android.purebilibili.core.ui.components.AppGlassMenu(
+            expanded = true,
+            onDismissRequest = onDismiss,
+            title = "更多操作",
+            placement = if (com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource.current?.isAvailable == true) {
+                com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END
+            } else if (isFullscreen) com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END
+            else com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.CENTER,
+            minWidth = glassPolicy.minWidthDp.dp,
+            maxWidth = glassPolicy.maxWidthDp.dp,
+            maxHeight = glassPolicy.maxHeightDp.dp,
+            interactiveContent = true,
+        ) {
+            PlayerNativeMenuTheme {
+                Box(Modifier.fillMaxWidth().heightIn(max = glassPolicy.maxHeightDp.dp)) { content() }
+            }
+        }) return
     // 播放器提供避让宿主时，横屏更多操作与选集共用侧面板；其他入口保留原有弹窗。
     if (isFullscreen && windowSize.width > windowSize.height && LocalPlayerPanelViewport.current != null) {
         PlayerNativeMenuTheme {
-            PlayerDetailPanel("更多操作", isFullscreen, playerBounds, onDismiss) {
+            PlayerDetailPanel("更多操作", isFullscreen, playerBounds, onDismiss) { requestDismiss ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -54,7 +80,7 @@ internal fun PlayerNativeSettingsHost(
                 ) {
                     Text("更多操作", fontSize = 16.sp)
                     Spacer(Modifier.weight(1f))
-                    PanelAction(Icons.Outlined.Close, "关闭", onDismiss)
+                    PanelAction(Icons.Outlined.Close, "关闭", requestDismiss)
                 }
                 content()
             }
@@ -87,7 +113,7 @@ internal fun PlayerNativeSettingsHost(
 internal fun PlayerSettingsRow(title: String, subtitle: String? = null, onClick: (() -> Unit)?) {
     Row(
         modifier = Modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.appActionClickable(onClick = onClick) else Modifier)
             .heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -143,11 +169,14 @@ internal fun PlayerSettingsPopupRow(
     onSelected: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { expanded = true }) {
         PlayerSettingsRow(title, current) { expanded = true }
-        DropdownMenu(expanded, { expanded = false }) {
+        com.android.purebilibili.core.ui.components.AppDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
             options.forEachIndexed { index, label ->
-                DropdownMenuItem(
+                com.android.purebilibili.core.ui.components.AppDropdownMenuItem(
                     text = { Text(label, fontSize = 14.sp) },
                     enabled = enabledOptions.getOrElse(index) { true },
                     onClick = {
@@ -173,7 +202,7 @@ internal fun PlayerSettingsSelectionRow(
         headlineContent = { Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)) },
         supportingContent = if (subtitle != null) ({ Text(subtitle, fontSize = 12.sp) }) else null,
         trailingContent = { if (selected) Icon(Icons.Outlined.Done, null, tint = MaterialTheme.colorScheme.primary) },
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { if (!selected) onClick() },
+        modifier = Modifier.fillMaxWidth().appActionClickable(enabled = enabled) { if (!selected) onClick() },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
     )
 }

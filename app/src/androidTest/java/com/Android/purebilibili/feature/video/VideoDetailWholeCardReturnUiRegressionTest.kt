@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -67,7 +68,7 @@ class VideoDetailWholeCardReturnUiRegressionTest {
         try {
             rule.runOnIdle {
                 CardPositionManager.clear()
-                CardPositionManager.lastClickedVideoSourceKey = "home:BVquick"
+                recordCard("BVquick", "home")
             }
             rule.setContent {
                 val context = LocalContext.current
@@ -121,7 +122,11 @@ class VideoDetailWholeCardReturnUiRegressionTest {
                         kotlin.math.abs(info.red - liveWeight) < 0.04f)
             }
             assertPixels(0f) // No snapshot is ready yet.
-            rule.runOnIdle { CardPositionManager.recordWholeCardReturnBitmap(snapshot, "home:BVquick") }
+            rule.runOnIdle {
+                CardPositionManager.recordWholeCardReturnBitmap(
+                    snapshot, CardPositionManager.videoCardPixelOwnerFor("home:BVquick"),
+                )
+            }
             // Early return, full takeover, reverse/cancel, and restart all use the same depth.
             for (progress in listOf(0.9f, 0.45f, 0.25f, 0.01f, 0.25f, 0.9f, 1f)) {
                 rule.runOnIdle { depth.floatValue = progress }
@@ -140,6 +145,155 @@ class VideoDetailWholeCardReturnUiRegressionTest {
             rule.runOnIdle {
                 CardPositionManager.clear()
             }
+        }
+    }
+
+    private fun recordCard(bvid: String, route: String, instanceId: Long = 1L) {
+        CardPositionManager.recordVideoCardPosition(
+            bvid = bvid, sourceRoute = route,
+            bounds = Rect(0f, 0f, 240f, 180f),
+            screenWidth = 1080f, screenHeight = 1920f,
+            sourceLayout = VideoCardSourceLayout.STACKED,
+            sourceInstanceId = instanceId,
+        )
+    }
+
+    private fun solidBitmap(color: Int) =
+        Bitmap.createBitmap(240, 180, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(color)
+        }.asImageBitmap()
+
+    @Test
+    fun nestedReturnCannotRelabelChildPixelsOrOverwriteParentRetainedPixels() {
+        val childVisible = mutableStateOf(false)
+        val redraw = mutableIntStateOf(0)
+        val parentPixels = solidBitmap(android.graphics.Color.RED)
+        val childPixels = solidBitmap(android.graphics.Color.GREEN)
+        var parentOwner: com.android.purebilibili.core.util.VideoCardPixelOwner? = null
+        try {
+            rule.runOnIdle {
+                recordCard("BV_A", "home")
+                parentOwner = CardPositionManager.videoCardPixelOwnerFor("home:BV_A")
+                CardPositionManager.recordWholeCardReturnBitmap(
+                    parentPixels, CardPositionManager.videoCardPixelOwnerFor("home:BV_A"),
+                )
+            }
+            rule.setContent {
+                redraw.intValue
+                Column {
+                    val parent = rememberVideoDetailWholeCardReturn(
+                        bvid = "BV_A", sourceRoute = "home", ownsTransition = !childVisible.value,
+                        committedReturn = false, keepLoadedContentForBackPreview = false,
+                        sourceBounds = Rect(0f, 0f, 240f, 180f),
+                        sourceLayout = VideoCardSourceLayout.STACKED, isNowPlayingBar = false,
+                        depthProvider = { 0f },
+                        phaseProvider = { VideoCardTransitionBackgroundPhase.RETURNING },
+                        gestureProvider = { false }, followProgressProvider = { true },
+                    )
+                    Box(Modifier.size(120.dp, 90.dp).then(parent.modifier)
+                        .background(Color.Blue).testTag("parent-return"))
+                    if (childVisible.value) key("child-entry") {
+                        val child = rememberVideoDetailWholeCardReturn(
+                            bvid = "BV_B", sourceRoute = "video/BV_A", ownsTransition = true,
+                            committedReturn = false, keepLoadedContentForBackPreview = false,
+                            sourceBounds = Rect(0f, 0f, 240f, 180f),
+                            sourceLayout = VideoCardSourceLayout.SIDE_BY_SIDE, isNowPlayingBar = false,
+                            depthProvider = { 0f },
+                            phaseProvider = { VideoCardTransitionBackgroundPhase.RETURNING },
+                            gestureProvider = { false }, followProgressProvider = { true },
+                        )
+                        Box(Modifier.size(120.dp, 90.dp).then(child.modifier)
+                            .background(Color.Blue).testTag("child-return"))
+                    }
+                }
+            }
+            fun assertColor(tag: String, color: Color) {
+                val pixels = rule.onNodeWithTag(tag).captureToImage().toPixelMap()
+                val actual = pixels[pixels.width / 2, pixels.height / 2]
+                assertTrue("$tag used another entry's pixels: $actual", actual == color)
+            }
+            assertColor("parent-return", Color.Red)
+            rule.runOnIdle {
+                recordCard("BV_B", "video/BV_A", instanceId = 2L)
+                CardPositionManager.recordWholeCardReturnBitmap(
+                    childPixels, CardPositionManager.videoCardPixelOwnerFor("video/BV_A:BV_B"),
+                )
+                childVisible.value = true
+            }
+            assertColor("child-return", Color.Green)
+            rule.runOnIdle {
+                CardPositionManager.restoreVideoSource("home:BV_A", sourceOwner = parentOwner)
+                childVisible.value = false
+            }
+            assertColor("parent-return", Color.Red)
+            // Dispose the global child resource after the parent has had a chance to retain it.
+            // A key-only fix would now keep showing the polluted green retained snapshot.
+            rule.runOnIdle {
+                CardPositionManager.clearNativeVideoCardLayers()
+                redraw.intValue++
+            }
+            assertColor("parent-return", Color.Red)
+        } finally {
+            rule.runOnIdle { CardPositionManager.clear() }
+        }
+    }
+
+    @Test
+    fun repeatedSameKeyClickRejectsLatePixelsFromPreviousSourceInstance() {
+        try {
+            rule.runOnIdle {
+                recordCard("BVsame", "home", instanceId = 10L)
+                val first = CardPositionManager.videoCardPixelOwnerFor("home:BVsame")
+                recordCard("BVsame", "home", instanceId = 11L)
+                val second = CardPositionManager.videoCardPixelOwnerFor("home:BVsame")
+                CardPositionManager.recordWholeCardReturnBitmap(solidBitmap(android.graphics.Color.GREEN), second)
+                CardPositionManager.recordWholeCardReturnBitmap(solidBitmap(android.graphics.Color.RED), first)
+                assertTrue(CardPositionManager.lastClickedWholeCardReturnSnapshot?.owner === second)
+                val pixels = CardPositionManager.lastClickedWholeCardReturnSnapshot!!.bitmap.toPixelMap()
+                assertTrue(pixels[120, 90] == Color.Green)
+                // A second click of even the very same source instance is a different capture.
+                recordCard("BVsame", "home", instanceId = 11L)
+                CardPositionManager.recordWholeCardReturnBitmap(solidBitmap(android.graphics.Color.RED), second)
+                assertTrue(CardPositionManager.lastClickedWholeCardReturnSnapshot == null)
+                val third = CardPositionManager.videoCardPixelOwnerFor("home:BVsame")
+                CardPositionManager.recordNativeCardBitmap(solidBitmap(android.graphics.Color.GREEN), third)
+                assertTrue(CardPositionManager.lastClickedNativeCardBitmap != null)
+                CardPositionManager.restoreVideoSource("home:BVsame", sourceOwner = second)
+                assertTrue(CardPositionManager.lastClickedNativeCardBitmap == null)
+            }
+        } finally {
+            rule.runOnIdle { CardPositionManager.clear() }
+        }
+    }
+
+    @Test
+    fun sameBvidFromDifferentSourceKeepsItsOriginalPixelProvenanceAfterKeyRestore() {
+        try {
+            rule.runOnIdle {
+                recordCard("BVsame", "home", instanceId = 10L)
+                val homeOwner = CardPositionManager.videoCardPixelOwnerFor("home:BVsame")
+                recordCard("BVsame", "space/123", instanceId = 11L)
+                val spaceOwner = CardPositionManager.videoCardPixelOwnerFor("space/123:BVsame")
+                CardPositionManager.recordWholeCardReturnBitmap(
+                    solidBitmap(android.graphics.Color.GREEN), spaceOwner,
+                )
+                CardPositionManager.recordNativeCardBitmap(
+                    solidBitmap(android.graphics.Color.GREEN), spaceOwner,
+                )
+                assertTrue(CardPositionManager.lastClickedNativeCardBitmap != null)
+                CardPositionManager.restoreVideoSource("home:BVsame", sourceOwner = homeOwner)
+                assertTrue(CardPositionManager.lastClickedNativeCardBitmap == null)
+                assertTrue(CardPositionManager.videoCardPixelOwnerFor("home:BVsame") == null)
+                assertTrue(CardPositionManager.lastClickedWholeCardReturnSnapshot?.owner === spaceOwner)
+                CardPositionManager.recordWholeCardReturnBitmap(
+                    solidBitmap(android.graphics.Color.RED), homeOwner,
+                )
+                val captured = CardPositionManager.lastClickedWholeCardReturnSnapshot!!
+                assertTrue(captured.owner.sourceKey == "space/123:BVsame")
+                assertTrue(captured.bitmap.toPixelMap()[120, 90] == Color.Green)
+            }
+        } finally {
+            rule.runOnIdle { CardPositionManager.clear() }
         }
     }
 

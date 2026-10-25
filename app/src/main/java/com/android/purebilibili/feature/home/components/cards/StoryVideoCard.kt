@@ -14,7 +14,8 @@ import com.android.purebilibili.core.ui.FeedTitleHierarchy
 import com.android.purebilibili.core.ui.feedContentTypography
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -141,7 +142,8 @@ internal fun StoryVideoCard(
             FeedTitleHierarchy.Standard
         },
     )
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
+    val longPressHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.LONG_PRESS)
 
     val isLongPressEnabled = com.android.purebilibili.core.ui.LocalVideoCardLongPressEnabled.current
     val cardCornerRadius = AppShapes.containerCornerDp(ContainerLevel.ProminentCard)
@@ -208,7 +210,7 @@ internal fun StoryVideoCard(
     val cardCoordinates = remember { object { var value: LayoutCoordinates? = null } }
     val coverCoordinates = remember { object { var value: LayoutCoordinates? = null } }
     val nativeCardSnapshot = rememberNativeVideoCardSnapshotController(video.bvid)
-    val triggerCardClick = {
+    val triggerCardClick by rememberUpdatedState(appActionWithFeedback {
         cardCoordinates.value?.takeIf { it.isAttached }?.videoCardSourceBoundsInRoot()?.let { bounds ->
             CardPositionManager.recordVideoCardPosition(
                 bvid = video.bvid,
@@ -243,7 +245,7 @@ internal fun StoryVideoCard(
             nativeCardSnapshot.capture()
         }
         onClick(video.bvid, 0)
-    }
+    })
 
     //  尝试获取共享元素作用域
     val sharedTransitionScope = LocalSharedTransitionScope.current
@@ -367,10 +369,10 @@ internal fun StoryVideoCard(
                      detectTapGestures(
                          onLongPress = {
                              if (onLongClick != null) {
-                                 haptic(HapticType.HEAVY)
+                                 longPressHaptic(HapticType.HEAVY)
                                  onLongClick(video)
                              } else if (onDismiss != null) {
-                                 haptic(HapticType.HEAVY)
+                                 longPressHaptic(HapticType.HEAVY)
                                  showDismissMenu = true
                              }
                          },
@@ -505,7 +507,7 @@ internal fun StoryVideoCard(
 
             val upClickMid = video.owner.mid.takeIf { it > 0L && onUpClick != null }
             val upNameModifier = if (upClickMid != null) {
-                Modifier.fillMaxWidth().clickable { onUpClick?.invoke(upClickMid) }
+                Modifier.fillMaxWidth().appActionClickable { onUpClick?.invoke(upClickMid) }
             } else {
                 Modifier.fillMaxWidth()
             }

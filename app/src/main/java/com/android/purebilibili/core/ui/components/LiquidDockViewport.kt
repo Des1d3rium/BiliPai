@@ -32,6 +32,8 @@ import com.android.purebilibili.feature.home.components.FloatingBottomBarGeometr
 internal fun Modifier.liquidDockViewport(
     verticalOverflow: Dp = Dp.Unspecified,
     horizontalOverflow: Dp = Dp.Unspecified,
+    // 仅由需要弹性拖拽的入口显式启用；其他原生视口保留既有圆角边界。
+    allowNativeOverflow: Boolean = false,
 ): Modifier {
     val uiStyle = LocalAppUiStyle.current
     val liquidGlassEnabled = LocalAppThemeConfig.current.liquidGlassEnabled
@@ -42,7 +44,7 @@ internal fun Modifier.liquidDockViewport(
     } else {
         CircleShape
     }
-    if (!liquidGlassEnabled || (verticalOverflow.isSpecified && verticalOverflow <= 0.dp)) {
+    if ((!liquidGlassEnabled && !allowNativeOverflow) || (verticalOverflow.isSpecified && verticalOverflow <= 0.dp)) {
         return this.clip(shape)
     }
     // Expand only the drawing clip, not the scroll layout or its pointer viewport.

@@ -1,6 +1,5 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
-import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,18 +9,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import com.android.purebilibili.core.plugin.PluginStore
 import com.android.purebilibili.data.repository.SponsorBlockRepository
-import com.android.purebilibili.feature.plugin.SPONSOR_BLOCK_PLUGIN_ID
 import com.android.purebilibili.feature.plugin.SponsorBlockConfig
 import com.android.purebilibili.feature.plugin.SponsorBlockSegmentBehavior
+import com.android.purebilibili.feature.plugin.loadSponsorBlockConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 /** Keep this session above chrome/dialog visibility branches so dispatched requests survive closing. */
 data class PiliSponsorMenuSession(
@@ -32,23 +25,6 @@ data class PiliSponsorMenuSession(
     val onChangeCategory: (segmentId: String, category: String) -> Unit,
 )
 
-private val SponsorMenuConfigJson = Json { ignoreUnknownKeys = true }
-private val SponsorMenuConfigMutex = Mutex()
-
-internal fun decodePiliSponsorMenuConfig(raw: String?): SponsorBlockConfig =
-    raw?.let { SponsorMenuConfigJson.decodeFromString<SponsorBlockConfig>(it) } ?: SponsorBlockConfig()
-
-/** Use the same persisted configuration/identity migration as SponsorBlockPlugin.loadConfigSuspend. */
-private suspend fun loadPiliSponsorMenuConfig(context: Context): SponsorBlockConfig = SponsorMenuConfigMutex.withLock {
-    val raw = PluginStore.getConfigJson(context, SPONSOR_BLOCK_PLUGIN_ID)
-    val decoded = decodePiliSponsorMenuConfig(raw)
-    val normalized = decoded.normalized()
-    if (raw == null || decoded.userId.isBlank()) {
-        PluginStore.setConfigJson(context, SPONSOR_BLOCK_PLUGIN_ID, SponsorMenuConfigJson.encodeToString(normalized))
-    }
-    normalized
-}
-
 @Composable
 fun rememberPiliSponsorMenuSession(bvid: String): PiliSponsorMenuSession {
     val context = LocalContext.current.applicationContext
@@ -58,7 +34,7 @@ fun rememberPiliSponsorMenuSession(bvid: String): PiliSponsorMenuSession {
 
     LaunchedEffect(context, bvid) {
         try {
-            config = loadPiliSponsorMenuConfig(context)
+            config = loadSponsorBlockConfig(context, config)
             configReady = true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -75,7 +51,7 @@ fun rememberPiliSponsorMenuSession(bvid: String): PiliSponsorMenuSession {
                 try {
                     // Read again at submission: changing server/user identity in settings must
                     // never send a vote to the previous server with a stale identity.
-                    val current = loadPiliSponsorMenuConfig(context)
+                    val current = loadSponsorBlockConfig(context, config)
                     config = current
                     configReady = true
                     SponsorBlockRepository.voteOnSegment(

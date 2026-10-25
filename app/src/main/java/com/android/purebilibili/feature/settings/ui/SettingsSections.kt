@@ -25,6 +25,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -238,16 +241,22 @@ internal fun SettingsRootCategoryListSection(
     SettingsCardGroup {
         categories.forEachIndexed { index, category ->
             val visual = rememberSettingsEntryVisual(category.searchTarget)
-            SettingsRootCategoryRow(
-                title = stringResource(category.titleResource()),
-                subtitle = stringResource(category.subtitleResource()),
-                iconColorKey = category.title,
-                icon = visual.icon,
-                iconPainter = visual.iconResId?.let { painterResource(id = it) },
-                iconTint = siblingTints[index],
-                iconSizeDp = visual.iconSizeDp,
+            SettingsCategoryContainerOrigin(
+                category = category,
+                first = index == 0,
                 onClick = { onCategoryClick(category) },
-            )
+            ) { open ->
+                SettingsRootCategoryRow(
+                    title = stringResource(category.titleResource()),
+                    subtitle = stringResource(category.subtitleResource()),
+                    iconColorKey = category.title,
+                    icon = visual.icon,
+                    iconPainter = visual.iconResId?.let { painterResource(id = it) },
+                    iconTint = siblingTints[index],
+                    iconSizeDp = visual.iconSizeDp,
+                    onClick = open,
+                )
+            }
             SettingsAdaptiveDivider()
         }
         SettingsRootCategoryRow(
@@ -259,6 +268,55 @@ internal fun SettingsRootCategoryListSection(
             iconSizeDp = donateVisual.iconSizeDp,
             onClick = onDonateClick,
         )
+    }
+}
+
+/** 捕获单行自己的绘制；材质、字体和按压反馈仍由原设置行负责。 */
+@Composable
+private fun SettingsCategoryContainerOrigin(
+    category: SettingsRootCategory,
+    first: Boolean,
+    onClick: () -> Unit,
+    content: @Composable (() -> Unit) -> Unit,
+) {
+    val sources = LocalSettingsContainerSources.current
+    val owner = LocalSettingsContainerOwner.current
+    if (sources == null || owner == null) {
+        content(onClick)
+        return
+    }
+    val target = resolveSettingsCategoryNavKey(category)
+    val anchor = remember(category, sources, owner) {
+        sources.sources[target]?.takeIf { it.owner == owner }?.anchor ?: SettingsContainerAnchor()
+    }
+    val layer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    val roundedGroup = LocalAppUiStyle.current == AppUiStyle.MIUIX
+    // 首页 MD3 使用平铺分组；Miuix 沿用卡片在各玻璃状态下的实际底色。
+    val color = if (roundedGroup) {
+        com.android.purebilibili.core.ui.components.adaptivePreferenceGroupContainerColor()
+    } else AppSurfaceTokens.groupedListContainer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val groupRadius = rememberAdaptiveListVisualCapabilities().componentSpec.groupCornerRadiusDp
+    val topRadius = if (first && roundedGroup) with(density) { groupRadius.dp.toPx() } else 0f
+    SideEffect {
+        // 深层子页可能让来源行退出组合；重建后将同一导航来源重新绑定到新图层。
+        sources.sources[target]?.takeIf { it.anchor === anchor }?.layer = layer
+    }
+    DisposableEffect(anchor) {
+        onDispose { anchor.detach() }
+    }
+    Box(Modifier.fillMaxWidth()
+        .onGloballyPositioned(anchor::update)
+        .drawWithContent {
+            layer.record { this@drawWithContent.drawContent() }
+            anchor.recorded = true
+            drawLayer(layer)
+        }
+    ) {
+        content {
+            sources.capture(target, owner, anchor, layer, color, topRadius, 0f)
+            onClick()
+        }
     }
 }
 
@@ -432,6 +490,7 @@ internal fun SettingsRootCategoryContent(
                 }
             }
             SettingsRootCategory.PLAYBACK_QUALITY -> {
+                // 分类入口直跳播放器与画质页；此页仅保留搜索叶子结果落地的分组。
                 if (com.android.purebilibili.feature.nearby.NEARBY_HANDOFF_ENABLED) {
                     SettingsRootCategoryEntranceSection {
                         SettingsDetailGroup(title = "跨设备播放") {
@@ -444,42 +503,6 @@ internal fun SettingsRootCategoryContent(
                                 ),
                             ))
                         }
-                    }
-                }
-                SettingsRootCategoryEntranceSection {
-                    SettingsDetailGroup(title = "播放与画质") {
-                        SettingsDetailEntrySection(
-                            entries = listOf(
-                                SettingsDetailEntry(
-                                    target = SettingsSearchTarget.PLAYBACK_QUALITY,
-                                    title = settingsDestinationCopy(SettingsSearchTarget.PLAYBACK).title,
-                                    value = settingsDestinationCopy(SettingsSearchTarget.PLAYBACK).summary,
-                                    openFocus = SettingsSceneDetailFocus(
-                                        SettingsSearchTarget.PLAYBACK,
-                                        SettingsSearchFocusIds.PLAYBACK_DECODER,
-                                    ),
-                                    onClick = actions.onPlaybackClick,
-                                ),
-                            ),
-                        )
-                    }
-                }
-                SettingsRootCategoryEntranceSection {
-                    SettingsDetailGroup(title = "互动与评论") {
-                        SettingsDetailEntrySection(
-                            entries = listOf(
-                                SettingsDetailEntry(
-                                    target = SettingsSearchTarget.INTERACTION_COMMENT,
-                                    title = settingsDestinationCopy(SettingsSearchTarget.INTERACTION_COMMENT).title,
-                                    value = settingsDestinationCopy(SettingsSearchTarget.INTERACTION_COMMENT).summary,
-                                    openFocus = SettingsSceneDetailFocus(
-                                        SettingsSearchTarget.PLAYBACK,
-                                        SettingsSearchFocusIds.PLAYBACK_COMMENTS,
-                                    ),
-                                    onClick = actions.onPlaybackClick,
-                                ),
-                            ),
-                        )
                     }
                 }
             }

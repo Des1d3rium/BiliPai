@@ -1,6 +1,8 @@
 package com.android.purebilibili.core.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import com.android.purebilibili.core.store.ThemeModeRoleOverrides
 import com.android.purebilibili.core.store.ThemeRoleOverrides
 import com.android.purebilibili.feature.settings.Md3ColorSource
@@ -11,6 +13,45 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class ThemePreviewPolicyTest {
+    @Test
+    fun wallpaperModePreviewsUseActualLightAndDarkSchemesInsteadOfFallbackSeed() {
+        val light = lightColorScheme(primary = Color(0xFF006A60), background = Color(0xFFF4FBF8))
+        val dark = darkColorScheme(primary = Color(0xFF80D5C8), background = Color(0xFF101815))
+        val wallpaper = ThemeWallpaperPreviewSchemes(light, dark)
+        for (glass in listOf(false, true)) for (isDark in listOf(false, true)) {
+            for (amoled in listOf(false, true)) {
+                val configuration = ThemePreviewConfiguration(
+                    source = Md3ColorSource.FOLLOW_WALLPAPER,
+                    liquidGlassEnabled = glass,
+                    amoledDarkTheme = amoled,
+                    wallpaperSchemes = wallpaper,
+                )
+                val preview = resolveThemePreviewPalette(Color(0xFFFF4081), isDark,
+                    PaletteStyle.TonalSpot, ColorSpec.SpecVersion.SPEC_2025, Contrast.Default,
+                    SeedPaletteStyle.Standard, configuration).material
+                val actual = if (isDark) dark else light
+                assertEquals(actual.primary, preview.primary)
+                assertEquals(if (isDark && amoled) Color.Black else actual.background, preview.background)
+            }
+        }
+    }
+
+    @Test
+    fun customColorCandidatesIgnoreWallpaperPreviewSchemes() {
+        val configuration = ThemePreviewConfiguration(source = Md3ColorSource.CUSTOM)
+        for (dark in listOf(false, true)) {
+            val expected = resolveThemePreviewPalette(seed, dark, PaletteStyle.TonalSpot,
+                ColorSpec.SpecVersion.SPEC_2025, Contrast.Default, SeedPaletteStyle.Standard, configuration)
+            val actual = resolveThemePreviewPalette(seed, dark, PaletteStyle.TonalSpot,
+                ColorSpec.SpecVersion.SPEC_2025, Contrast.Default, SeedPaletteStyle.Standard,
+                configuration.copy(wallpaperSchemes = ThemeWallpaperPreviewSchemes(
+                    lightColorScheme(primary = Color.Red), darkColorScheme(primary = Color.Blue),
+                )))
+            assertEquals(expected.material.primary, actual.material.primary)
+            assertEquals(expected.material.background, actual.material.background)
+        }
+    }
+
     private val seed = Color(0xFF34C759)
     private val overrides = ThemeRoleOverrides(
         enabled = true,

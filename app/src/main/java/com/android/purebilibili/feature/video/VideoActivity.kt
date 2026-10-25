@@ -175,6 +175,8 @@ class VideoActivity : ComponentActivity() {
             val commentReplyPreviewVisible by remember(this@VideoActivity) {
                 SettingsManager.getCommentReplyPreviewVisible(this@VideoActivity)
             }.collectAsStateWithLifecycle(initialValue = true)
+            val hapticSettings by remember(this@VideoActivity) { SettingsManager.getHapticSettings(this@VideoActivity) }
+                .collectAsStateWithLifecycle(initialValue = com.android.purebilibili.core.ui.AppHapticSettings())
             val hapticFeedbackEnabled by SettingsManager
                 .getHapticFeedbackEnabled(this@VideoActivity)
                 .collectAsStateWithLifecycle(initialValue = true)
@@ -200,6 +202,7 @@ class VideoActivity : ComponentActivity() {
                 progressiveTopBlurEnabled,
                 progressiveTopFadeEnabled,
                 hapticFeedbackEnabled,
+                hapticSettings,
                 globalTextTapCopyEnabled,
                 uiEntranceAnimationEnabled,
                 globalDragFeedbackEnabled,
@@ -213,6 +216,7 @@ class VideoActivity : ComponentActivity() {
                     progressiveTopBlurEnabled = progressiveTopBlurEnabled,
                     progressiveTopFadeEnabled = progressiveTopFadeEnabled,
                     hapticFeedbackEnabled = hapticFeedbackEnabled,
+                    hapticSettings = hapticSettings,
                     globalTextTapCopyEnabled = globalTextTapCopyEnabled,
                     uiEntranceAnimationEnabled = uiEntranceAnimationEnabled,
                     globalDragFeedbackEnabled = globalDragFeedbackEnabled,
@@ -243,6 +247,9 @@ class VideoActivity : ComponentActivity() {
                             adaptiveInfo = appWindowAdaptiveInfo
                         ),
                     LocalVideoTransitionAdaptiveInfo provides videoTransitionAdaptiveInfo,
+                    // 与主导航一致：玻璃态下独立播放窗口的对话框也使用统一玻璃表面渲染。
+                    com.android.purebilibili.core.ui.LocalAppPopupSurfaceRenderer provides
+                        com.android.purebilibili.core.ui.components.BiliPaiPopupSurfaceRenderer,
                     com.android.purebilibili.feature.home.components.cards.LocalHomeCardDynamicTintEnabled provides
                         cardDynamicTintEnabled,
                     com.android.purebilibili.feature.home.components.cards.LocalHomeCardFrostedGlassEnabled provides
@@ -250,6 +257,16 @@ class VideoActivity : ComponentActivity() {
                 ) {
                 // VideoDetailScreen handles its own UI state and player initialization
                 var nearbyVideo by remember { mutableStateOf<com.android.purebilibili.feature.nearby.NearbyVideo?>(null) }
+                // 独立播放窗口同样装配同窗玻璃菜单宿主：玻璃态的播放器菜单不再降级到
+                // Miuix 独立窗口弹窗在视频面上空采样 backdrop；关闭玻璃时不提供
+                // presenter，原生 Miuix / MD3 菜单路径保持不变。
+                com.android.purebilibili.core.ui.popup.AppGlassPopupHost(
+                    glassAvailable = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
+                        com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass(
+                            android.os.Build.VERSION.SDK_INT,
+                        ),
+                    tuning = com.android.purebilibili.feature.home.components.LocalLiquidGlassRenderConfig.current.tuning,
+                ) {
                 com.android.purebilibili.feature.nearby.NearbyHandoffHost(
                     miniPlayer = MiniPlayerManager.getInstance(this@VideoActivity),
                     onOpenVideo = { nearbyVideo = it },
@@ -270,6 +287,7 @@ class VideoActivity : ComponentActivity() {
                     isInPipMode = isInPipMode ||
                         MiniPlayerManager.getInstance(this@VideoActivity).shouldKeepPlaybackForPipTransition()
                 )
+                }
                 }
                 }
                 }

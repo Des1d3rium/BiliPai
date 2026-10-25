@@ -2,7 +2,7 @@ package com.android.purebilibili.feature.login
 
 import android.app.Application
 import android.content.Context
-import com.android.purebilibili.core.plugin.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapability
 import com.android.purebilibili.core.plugin.js.BiliPaiJsPluginManifest
 import com.android.purebilibili.core.plugin.json.JsonPluginManager
 import com.google.zxing.BarcodeFormat

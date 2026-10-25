@@ -4,6 +4,8 @@ import com.android.purebilibili.core.network.WbiKeyManager
 import com.android.purebilibili.core.network.WbiUtils
 import com.android.purebilibili.core.network.BuvidManager
 import com.android.purebilibili.core.network.NetworkModule
+import com.android.purebilibili.core.network.getSpaceAggregate
+import com.android.purebilibili.data.model.response.SpaceLiveRoom
 import com.android.purebilibili.core.store.TokenManager
 import com.android.purebilibili.data.model.response.CreatorCardStats
 import com.android.purebilibili.data.model.response.PopularSeriesPeriod
@@ -275,6 +277,32 @@ object VideoCatalogRepository {
     }
 
     private val creatorCardStatsCache = ConcurrentHashMap<Long, CreatorCardStats>()
+
+    private val creatorLiveRoomCache = OnDemandRequestCache<Long, Result<SpaceLiveRoom?>>(
+        maxEntries = 32,
+        maxAgeMs = 30_000L,
+        canCache = { it.isSuccess },
+    )
+
+    /** 直播状态短时缓存并合并同一 UP 的并发请求，失败不写入缓存。 */
+    suspend fun getCreatorLiveRoom(mid: Long): Result<SpaceLiveRoom?> = withContext(Dispatchers.IO) {
+        if (mid <= 0L) return@withContext Result.failure(IllegalArgumentException("Invalid mid"))
+        creatorLiveRoomCache.getOrLoad(mid) {
+            try {
+                val response = NetworkModule.spaceApi.getSpaceAggregate(mid)
+                val data = response.data
+                if (response.code == 0 && data != null) {
+                    Result.success(data.live)
+                } else {
+                    Result.failure(Exception(response.message.ifBlank { "UP主直播状态加载失败(${response.code})" }))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
 
     suspend fun getCreatorCardStats(mid: Long): Result<CreatorCardStats> = withContext(Dispatchers.IO) {
         if (mid <= 0L) return@withContext Result.failure(IllegalArgumentException("Invalid mid"))

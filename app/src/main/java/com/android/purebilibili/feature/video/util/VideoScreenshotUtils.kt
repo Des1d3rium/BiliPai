@@ -277,9 +277,7 @@ internal suspend fun captureSurfaceViewBitmap(
         }
     }
 
-    continuation.invokeOnCancellation {
-        sourceBitmap.recycle()
-    }
+    // PixelCopy 无法取消；取消后的位图由结果回调回收，避免回收仍在写入的目标。
 }
 
 private suspend fun captureSurfaceViewAmbientBitmap(

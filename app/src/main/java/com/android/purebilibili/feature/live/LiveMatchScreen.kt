@@ -151,7 +151,9 @@ private fun LiveMatchContent(
                     )
                 }
                 if (state.gameId > 0) {
-                    Box(Modifier.padding(horizontal = 16.dp)) {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(Modifier.padding(horizontal = 16.dp), onOpen = {
+                        if (state.seasonsError != null) onRetrySeasons() else seasonMenu = true
+                    }, enabled = !state.seasonsLoading) {
                         AppTextButton(enabled = !state.seasonsLoading, onClick = {
                             if (state.seasonsError != null) onRetrySeasons() else seasonMenu = true
                         }) {

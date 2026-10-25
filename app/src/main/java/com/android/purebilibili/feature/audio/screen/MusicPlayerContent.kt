@@ -1,5 +1,8 @@
 package com.android.purebilibili.feature.audio.screen
 
+import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import com.android.purebilibili.core.ui.components.appSearchElasticPress
@@ -38,7 +41,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1348,7 +1350,7 @@ internal fun MusicPlayerContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
+                        .appActionClickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
@@ -1402,171 +1404,181 @@ internal fun MusicPlayerContent(
                     if (showActions) {
                         // 菜单使用主题文字色，与动态封面背景解耦。
                         val sheetContentColor = AppContentColors.primaryText()
-                        WindowListPopup(
-                            show = showActions,
+                        val actionsContent: @Composable () -> Unit = {
+                            AppText(
+                                text = "播放器操作",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = sheetContentColor,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                            )
+                            MusicActionSheetItem(
+                                "切换封面：${resolveCoverStyleLabel(resolveNextCoverStyle(coverStyle))}",
+                                contentColor = sheetContentColor
+                            ) {
+                                showActions = false
+                                coverStyle = resolveNextCoverStyle(coverStyle)
+                            }
+                            MusicActionSheetItem(
+                                if (audioSpectrumEnabled) "音乐氛围：开启" else "音乐氛围：关闭",
+                                contentColor = sheetContentColor
+                            ) {
+                                showActions = false
+                                val nextEnabled = !audioSpectrumEnabled
+                                settingsScope.launch {
+                                    SettingsManager.setAudioSpectrumEnabled(context, nextEnabled)
+                                }
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (nextEnabled) "已开启音乐氛围" else "已关闭音乐氛围",
+                                    android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            MusicActionSheetItem(
+                                "歌词界面：${lyricsUiStyle.next().label}",
+                                contentColor = sheetContentColor
+                            ) {
+                                showActions = false
+                                val nextStyle = lyricsUiStyle.next()
+                                settingsScope.launch {
+                                    SettingsManager.setMusicLyricsUiStyle(context, nextStyle)
+                                }
+                            }
+                            MusicActionSheetItem(
+                                if (musicTitleCollapsed) "展开标题" else "折叠标题",
+                                contentColor = sheetContentColor
+                            ) {
+                                showActions = false
+                                musicTitleCollapsed = !musicTitleCollapsed
+                            }
+                            if (
+                                !adaptiveInfo.foldingFeature.hasObstructingHinge &&
+                                adaptiveInfo.windowSizeClass.widthDp.value >= MUSIC_PLAYER_EXPANDED_WIDTH_DP
+                            ) {
+                                MusicPlayerLayoutPreference.entries.forEach { preference ->
+                                    MusicActionSheetItem(
+                                        label = "布局：${resolveMusicPlayerLayoutPreferenceLabel(preference)}" +
+                                            if (layoutPreferenceName == preference.name) "（当前）" else "",
+                                        contentColor = sheetContentColor,
+                                    ) {
+                                        layoutPreferenceName = preference.name
+                                        showActions = false
+                                    }
+                                }
+                            }
+                            if (onAudioQualitySelected != null) {
+                                MusicActionSheetItem(
+                                    "音频音质：$audioQualityLabel",
+                                    contentColor = sheetContentColor
+                                ) {
+                                    showActions = false
+                                    showAudioQuality = true
+                                }
+                            }
+                            MusicActionSheetItem("3D 唱片架 / 播放队列", contentColor = sheetContentColor) {
+                                showActions = false
+                                showQueue = true
+                            }
+                            MusicActionSheetItem("导入歌单", contentColor = sheetContentColor) {
+                                showActions = false
+                                showImportDialog = true
+                            }
+                            onVideoModeClick?.let { action ->
+                                MusicActionSheetItem("返回视频", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onCollectionClick?.let { action ->
+                                MusicActionSheetItem("选集 / 合集", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onSpeedClick?.let { action ->
+                                MusicActionSheetItem(speedLabel, contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            if (onPlayFromHistory != null) {
+                                MusicActionSheetItem("最近播放", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    showPlayHistory = true
+                                }
+                            }
+                            onSleepTimerClick?.let { action ->
+                                MusicActionSheetItem(sleepTimerLabel, contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onFavoriteClick?.let { action ->
+                                MusicActionSheetItem(
+                                    if (isFavorited) "已收藏" else "收藏",
+                                    contentColor = sheetContentColor
+                                ) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onDownloadClick?.let { action ->
+                                MusicActionSheetItem("缓存音频", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onShareClick?.let { action ->
+                                MusicActionSheetItem("分享", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onPipClick?.let { action ->
+                                MusicActionSheetItem("画中画", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            onToggleOrientation?.let { action ->
+                                MusicActionSheetItem(orientationActionLabel, contentColor = sheetContentColor) {
+                                    showActions = false
+                                    action()
+                                }
+                            }
+                            MusicActionSheetItem("搜索歌词", contentColor = sheetContentColor) {
+                                showActions = false
+                                showLyricsSearch = true
+                            }
+                            if (state.lyrics != null || subtitleLanguageOptions.isNotEmpty() ||
+                                onVideoSubtitlesEnabledChange != null
+                            ) {
+                                MusicActionSheetItem("字幕 / 歌词设置", contentColor = sheetContentColor) {
+                                    showActions = false
+                                    showLyricsOffsetSettings = true
+                                }
+                            }
+
+                        }
+                        val glassActions = glassEnabled && com.android.purebilibili.core.ui.components.AppGlassMenu(
+                            expanded = showActions,
                             onDismissRequest = { showActions = false },
-                            alignment = PopupPositionProvider.Align.End,
-                            popupPositionProvider = ListPopupDefaults.dropdownPositionProvider(
-                                verticalMargin = 8.dp,
-                                horizontalMargin = 12.dp,
-                            ),
-                            enableWindowDim = false,
+                            title = "播放器操作",
                             maxHeight = 440.dp,
-                        ) {
-                            ListPopupColumn {
-                                AppText(
-                                    text = "播放器操作",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = sheetContentColor,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                                )
-                                MusicActionSheetItem(
-                                    "切换封面：${resolveCoverStyleLabel(resolveNextCoverStyle(coverStyle))}",
-                                    contentColor = sheetContentColor
-                                ) {
-                                    showActions = false
-                                    coverStyle = resolveNextCoverStyle(coverStyle)
-                                }
-                                MusicActionSheetItem(
-                                    if (audioSpectrumEnabled) "音乐氛围：开启" else "音乐氛围：关闭",
-                                    contentColor = sheetContentColor
-                                ) {
-                                    showActions = false
-                                    val nextEnabled = !audioSpectrumEnabled
-                                    settingsScope.launch {
-                                        SettingsManager.setAudioSpectrumEnabled(context, nextEnabled)
-                                    }
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        if (nextEnabled) "已开启音乐氛围" else "已关闭音乐氛围",
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                                MusicActionSheetItem(
-                                    "歌词界面：${lyricsUiStyle.next().label}",
-                                    contentColor = sheetContentColor
-                                ) {
-                                    showActions = false
-                                    val nextStyle = lyricsUiStyle.next()
-                                    settingsScope.launch {
-                                        SettingsManager.setMusicLyricsUiStyle(context, nextStyle)
-                                    }
-                                }
-                                MusicActionSheetItem(
-                                    if (musicTitleCollapsed) "展开标题" else "折叠标题",
-                                    contentColor = sheetContentColor
-                                ) {
-                                    showActions = false
-                                    musicTitleCollapsed = !musicTitleCollapsed
-                                }
-                                if (
-                                    !adaptiveInfo.foldingFeature.hasObstructingHinge &&
-                                    adaptiveInfo.windowSizeClass.widthDp.value >= MUSIC_PLAYER_EXPANDED_WIDTH_DP
-                                ) {
-                                    MusicPlayerLayoutPreference.entries.forEach { preference ->
-                                        MusicActionSheetItem(
-                                            label = "布局：${resolveMusicPlayerLayoutPreferenceLabel(preference)}" +
-                                                if (layoutPreferenceName == preference.name) "（当前）" else "",
-                                            contentColor = sheetContentColor,
-                                        ) {
-                                            layoutPreferenceName = preference.name
-                                            showActions = false
-                                        }
-                                    }
-                                }
-                                if (onAudioQualitySelected != null) {
-                                    MusicActionSheetItem(
-                                        "音频音质：$audioQualityLabel",
-                                        contentColor = sheetContentColor
-                                    ) {
-                                        showActions = false
-                                        showAudioQuality = true
-                                    }
-                                }
-                                MusicActionSheetItem("3D 唱片架 / 播放队列", contentColor = sheetContentColor) {
-                                    showActions = false
-                                    showQueue = true
-                                }
-                                MusicActionSheetItem("导入歌单", contentColor = sheetContentColor) {
-                                    showActions = false
-                                    showImportDialog = true
-                                }
-                                onVideoModeClick?.let { action ->
-                                    MusicActionSheetItem("返回视频", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onCollectionClick?.let { action ->
-                                    MusicActionSheetItem("选集 / 合集", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onSpeedClick?.let { action ->
-                                    MusicActionSheetItem(speedLabel, contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                if (onPlayFromHistory != null) {
-                                    MusicActionSheetItem("最近播放", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        showPlayHistory = true
-                                    }
-                                }
-                                onSleepTimerClick?.let { action ->
-                                    MusicActionSheetItem(sleepTimerLabel, contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onFavoriteClick?.let { action ->
-                                    MusicActionSheetItem(
-                                        if (isFavorited) "已收藏" else "收藏",
-                                        contentColor = sheetContentColor
-                                    ) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onDownloadClick?.let { action ->
-                                    MusicActionSheetItem("缓存音频", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onShareClick?.let { action ->
-                                    MusicActionSheetItem("分享", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onPipClick?.let { action ->
-                                    MusicActionSheetItem("画中画", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                onToggleOrientation?.let { action ->
-                                    MusicActionSheetItem(orientationActionLabel, contentColor = sheetContentColor) {
-                                        showActions = false
-                                        action()
-                                    }
-                                }
-                                MusicActionSheetItem("搜索歌词", contentColor = sheetContentColor) {
-                                    showActions = false
-                                    showLyricsSearch = true
-                                }
-                                if (state.lyrics != null || subtitleLanguageOptions.isNotEmpty() ||
-                                    onVideoSubtitlesEnabledChange != null
-                                ) {
-                                    MusicActionSheetItem("字幕 / 歌词设置", contentColor = sheetContentColor) {
-                                        showActions = false
-                                        showLyricsOffsetSettings = true
-                                    }
-                                }
+                        ) { Column { actionsContent() } }
+                        if (!glassActions) {
+                            WindowListPopup(
+                                show = showActions,
+                                onDismissRequest = { showActions = false },
+                                alignment = PopupPositionProvider.Align.End,
+                                popupPositionProvider = ListPopupDefaults.dropdownPositionProvider(
+                                    verticalMargin = 8.dp,
+                                    horizontalMargin = 12.dp,
+                                ),
+                                enableWindowDim = false,
+                                maxHeight = 440.dp,
+                            ) {
+                                ListPopupColumn { actionsContent() }
                             }
                         }
                     }
@@ -1741,7 +1753,7 @@ internal fun MusicPlayerContent(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
+                                .appActionClickable {
                                     onLyricsCandidateSelected(index)
                                     showLyricsSearch = false
                                 }
@@ -2024,7 +2036,7 @@ private fun ImmersiveBottomQueueShelf(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable {
+                                .appActionClickable {
                                     onQueueItemSelected(index)
                                 }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -2604,7 +2616,7 @@ private fun MusicArtwork(
                     color = artworkBorderColor,
                     shape = CircleShape
                 )
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+                .then(if (onClick != null) Modifier.appActionClickable(onClick = onClick) else Modifier),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -2682,7 +2694,7 @@ private fun MusicArtwork(
                 .background(
                     artworkFallbackBrush
                 )
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+                .then(if (onClick != null) Modifier.appActionClickable(onClick = onClick) else Modifier),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -3697,7 +3709,7 @@ private fun MusicPlayPauseButton(
                     style = Stroke(width = 1.dp.toPx())
                 )
             })
-            .clickable(
+            .appActionClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onPlayPause,
@@ -3823,7 +3835,7 @@ private fun LyricLineContent(
             .fillMaxWidth()
             .then(focusModifier)
             .graphicsLayer { this.alpha = alpha.value }
-            .clickable(onClick = onClick),
+            .appActionClickable(onClick = onClick),
         horizontalAlignment = if (centerAligned) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         AppText(
@@ -3948,7 +3960,7 @@ private fun MusicTopBar(
                     onClick = onToggleLayout
                 )
             }
-            Box {
+            com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = onMore) {
                 GlassIconButton(
                     icon = Icons.Outlined.MoreHoriz,
                     description = "更多操作",
@@ -3959,7 +3971,10 @@ private fun MusicTopBar(
                     isDarkEnvironment = isDarkEnvironment,
                     onClick = onMore
                 )
-                actionsPopup()
+                CompositionLocalProvider(
+                    com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop provides
+                        (miuixBackdrop.takeIf { glassEnabled } ?: com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop.current),
+                ) { actionsPopup() }
             }
         }
     }
@@ -4068,7 +4083,7 @@ private fun GlassTextButton(
                 liquidGlassTuning = liquidGlassTuning,
             )
             .border(0.8.dp, borderColor, shape)
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -4111,7 +4126,7 @@ private fun MusicDockPagePill(
                     Modifier
                 }
             )
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -4455,7 +4470,7 @@ private fun ExpandedQueuePane(
                                 .background(
                                     if (isPlayingItem) MusicAccentColor.copy(alpha = 0.16f) else Color.Transparent
                                 )
-                                .clickable { onItemClick(index) }
+                                .appActionClickable { onItemClick(index) }
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -4509,11 +4524,18 @@ private fun MusicActionSheetItem(
     contentColor: Color = AppContentColors.primaryText(),
     onClick: () -> Unit
 ) {
+    if (com.android.purebilibili.core.ui.components.LocalAppGlassMenuScope.current != null) {
+        com.android.purebilibili.core.ui.components.AppDropdownMenuItem(
+            text = { AppText(label, color = contentColor, tapToCopyEnabled = false) },
+            onClick = onClick,
+        )
+        return
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.CenterStart
     ) {

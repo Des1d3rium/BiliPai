@@ -1,31 +1,33 @@
 package com.android.purebilibili.feature.plugin.googlecast
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import android.content.Context
 import android.os.Build
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.android.purebilibili.core.plugin.CastPluginApi
-import com.android.purebilibili.core.plugin.CastDiscoveryRequirement
+import com.android.purebilibili.plugin.sdk.CastPluginApi
+import com.android.purebilibili.core.plugin.BuiltinPlugin
+import com.android.purebilibili.plugin.sdk.CastDiscoveryRequirement
 import com.android.purebilibili.feature.cast.hasRawLocalNetworkAccess
-import com.android.purebilibili.core.plugin.CastPluginMediaRequest
-import com.android.purebilibili.core.plugin.CastPluginPlaybackState
-import com.android.purebilibili.core.plugin.CastPluginRoute
-import com.android.purebilibili.core.plugin.PluginCapability
-import com.android.purebilibili.core.plugin.PluginCapabilityManifest
+import com.android.purebilibili.plugin.sdk.CastPluginMediaRequest
+import com.android.purebilibili.plugin.sdk.CastPluginPlaybackState
+import com.android.purebilibili.plugin.sdk.CastPluginRoute
+import com.android.purebilibili.plugin.sdk.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapabilityManifest
 import com.android.purebilibili.core.util.Logger
 import com.google.android.gms.cast.framework.CastContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cast
 import kotlinx.coroutines.flow.StateFlow
 
-const val GOOGLE_CAST_PLUGIN_ID = "google_cast"
 private const val TAG = "GoogleCastPlugin"
 
 internal fun resolveGoogleCastDiscoveryRequirement(sdkInt: Int): CastDiscoveryRequirement =
     if (sdkInt >= 37) CastDiscoveryRequirement.RAW_LOCAL_NETWORK else CastDiscoveryRequirement.NONE
 
-class GoogleCastPlugin : CastPluginApi {
+class GoogleCastPlugin : BuiltinPlugin, CastPluginApi {
 
-    override val id = GOOGLE_CAST_PLUGIN_ID
+    override val id = BuiltinPluginIds.GOOGLE_CAST
     override val name = "Google Cast"
     override val description = "将视频投屏到 Chromecast / Google Cast 设备"
     override val version = "0.1.1"

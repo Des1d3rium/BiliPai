@@ -1,6 +1,9 @@
 // File: feature/video/ui/overlay/TopControlBar.kt
 package com.android.purebilibili.feature.video.ui.overlay.glass
 
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
+
 import com.android.purebilibili.feature.video.ui.overlay.*
 
 import com.android.purebilibili.core.ui.MediaContrastPalette
@@ -198,6 +201,7 @@ fun TopControlBar(
 ) {
     val context = LocalContext.current
     val displayCutoutInsets = WindowInsets.displayCutout
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val configuration = LocalConfiguration.current
     val ambient = LocalAmbientPresentation.current
     var rowOrigin by remember { mutableStateOf<Offset?>(null) }
@@ -267,6 +271,7 @@ fun TopControlBar(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     // Only glass fullscreen separates More into a circle aligned with the lock button.
+    val glassControls = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     val separateGlassMore = isFullscreen &&
         com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     // Glass fullscreen aligns the two-line title and actions to one shell height.
@@ -350,7 +355,7 @@ fun TopControlBar(
             ) {
                 // Back Button
                 PlayerControlGlassDock(
-                    enabled = isFullscreen,
+                    enabled = isFullscreen || glassControls,
                     shape = androidx.compose.foundation.shape.CircleShape,
                 ) {
                     AppIconButton(
@@ -404,10 +409,10 @@ fun TopControlBar(
 
             Spacer(modifier = Modifier.width(layoutPolicy.sectionGapDp.dp)) // Space between text and actions
 
-            // --- Right Section: Actions ---
+            // 横屏互动入口各自提供圆形材质，不再包裹整组底板。
             PlayerControlGlassDock(
-                enabled = isFullscreen,
-                modifier = (if (isFullscreen) Modifier.layout { measurable, constraints ->
+                enabled = false,
+                modifier = (if (isFullscreen || glassControls) Modifier.layout { measurable, constraints ->
                     // Reserve the back button and minimum title dock before measuring actions.
                     val reservedWidth = (layoutPolicy.buttonSizeDp * 2 +
                         layoutPolicy.backToTitleSpacingDp + layoutPolicy.sectionGapDp).dp.roundToPx()
@@ -419,22 +424,23 @@ fun TopControlBar(
                 },
             ) {
                 Row(
-                    modifier = if (isFullscreen) Modifier
+                    modifier = if (isFullscreen || glassControls) Modifier
                         .horizontalScroll(rememberScrollState())
                         .padding(horizontal = 4.dp)
                         .then(alignedGlassDockHeight?.let { Modifier.height(it) } ?: Modifier)
                     else Modifier,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(layoutPolicy.actionSpacingDp.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isFullscreen || glassControls) 6.dp else layoutPolicy.actionSpacingDp.dp)
                 ) {
                     if (showInteractiveActionGroup) {
                         // Like
                         Box(modifier = Modifier.likeBurstAnchor()) {
                             ActionIcon(
+                                glassEnabled = isFullscreen || glassControls,
                                 icon = if (likeStatusKnown && isLiked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                                 contentDescription = if (likeStatusKnown) "点赞" else "点赞状态尚未确认",
                                 isActive = likeStatusKnown && isLiked,
-                                onClick = onLikeClick,
+                                onClick = { haptic(HapticType.LIGHT); onLikeClick() },
                                 buttonSizeDp = layoutPolicy.buttonSizeDp,
                                 iconSizeDp = layoutPolicy.iconSizeDp
                             )
@@ -443,6 +449,7 @@ fun TopControlBar(
                         if (showDislikeAction && !separateGlassMore) {
                             // Dislike
                             ActionIcon(
+                                glassEnabled = isFullscreen || glassControls,
                                 icon = Icons.Outlined.ThumbDown,
                                 contentDescription = "不喜欢",
                                 isActive = false,
@@ -454,10 +461,11 @@ fun TopControlBar(
 
                         // Coin
                         ActionIcon(
+                            glassEnabled = isFullscreen || glassControls,
                             icon = AppIcons.BiliCoin,
                             contentDescription = "投币",
                             isActive = isCoined,
-                            onClick = onCoinClick,
+                            onClick = { haptic(HapticType.LIGHT); onCoinClick() },
                             buttonSizeDp = layoutPolicy.buttonSizeDp,
                             iconSizeDp = layoutPolicy.iconSizeDp
                         )
@@ -465,10 +473,11 @@ fun TopControlBar(
                         // Glass fullscreen completes the engagement group; native keeps its actions.
                         if (separateGlassMore) {
                             ActionIcon(
+                                glassEnabled = isFullscreen || glassControls,
                                 icon = favoriteIcon,
                                 contentDescription = if (isFavorited) "已收藏，管理收藏夹" else "收藏",
                                 isActive = isFavorited,
-                                onClick = onFavoriteClick,
+                                onClick = { haptic(HapticType.LIGHT); onFavoriteClick() },
                                 buttonSizeDp = layoutPolicy.buttonSizeDp,
                                 iconSizeDp = layoutPolicy.iconSizeDp,
                             )
@@ -477,6 +486,7 @@ fun TopControlBar(
                         if (showDislikeAction && separateGlassMore) {
                             // Dislike
                             ActionIcon(
+                                glassEnabled = isFullscreen || glassControls,
                                 icon = Icons.Outlined.ThumbDown,
                                 contentDescription = "不喜欢",
                                 isActive = false,
@@ -488,6 +498,7 @@ fun TopControlBar(
 
                         // Share
                         ActionIcon(
+                            glassEnabled = isFullscreen || glassControls,
                             icon = Icons.Outlined.Share,
                             contentDescription = "分享",
                             isActive = false,
@@ -499,6 +510,7 @@ fun TopControlBar(
 
                     if (showCastButton) {
                         ActionIcon(
+                            glassEnabled = isFullscreen || glassControls,
                             icon = Icons.Outlined.Cast,
                             contentDescription = "投屏",
                             isActive = false,
@@ -509,6 +521,7 @@ fun TopControlBar(
                     }
 
                     ActionIcon(
+                        glassEnabled = isFullscreen || glassControls,
                         icon = Icons.Outlined.Comment,
                         contentDescription = "评论区",
                         isActive = false,
@@ -519,16 +532,18 @@ fun TopControlBar(
 
                     // More (Three dots)
                     if (!separateGlassMore) {
-                        AppIconButton(
-                            onClick = onMoreClick,
-                            modifier = Modifier.size(layoutPolicy.buttonSizeDp.dp)
-                        ) {
-                            AppIcon(
-                                imageVector = Icons.Outlined.MoreVert,
-                                contentDescription = "更多",
-                                tint = Color.White,
-                                modifier = Modifier.size(layoutPolicy.iconSizeDp.dp)
-                            )
+                        PlayerControlGlassDock(enabled = glassControls, shape = androidx.compose.foundation.shape.CircleShape) {
+                            AppIconButton(
+                                onClick = onMoreClick,
+                                modifier = Modifier.size(layoutPolicy.buttonSizeDp.dp)
+                            ) {
+                                AppIcon(
+                                    imageVector = Icons.Outlined.MoreVert,
+                                    contentDescription = "更多",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(layoutPolicy.iconSizeDp.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -916,19 +931,22 @@ private fun ActionIcon(
     onClick: () -> Unit,
     buttonSizeDp: Int = 32,
     iconSizeDp: Int = 24,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    glassEnabled: Boolean = false,
 ) {
-    AppIconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(buttonSizeDp.dp)
-    ) {
-        AppIcon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = if (!enabled) Color.White.copy(alpha = 0.38f) else if (isActive) AppContentColors.accent() else Color.White,
-            modifier = Modifier.size(iconSizeDp.dp)
-        )
+    PlayerControlGlassDock(enabled = glassEnabled && enabled, shape = androidx.compose.foundation.shape.CircleShape) {
+        AppIconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(buttonSizeDp.dp)
+        ) {
+            AppIcon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (!enabled) Color.White.copy(alpha = 0.38f) else if (isActive) AppContentColors.accent() else Color.White,
+                modifier = Modifier.size(iconSizeDp.dp)
+            )
+        }
     }
 }
 

@@ -526,6 +526,7 @@ fun AppearanceSettingsContent(
         amoledDarkTheme = state.darkThemeStyle == DarkThemeStyle.AMOLED,
         roleOverrides = themeRoleOverrides,
         wallpaperOverrides = wallpaperPreviewOverrides,
+        wallpaperSchemes = com.android.purebilibili.core.theme.LocalThemeWallpaperPreviewSchemes.current,
     )
     val showThemeColorPicker = shouldShowMd3CustomColorControls(state.md3ColorSource)
     var showMd3ColorPickerDialog by rememberSaveable { mutableStateOf(false) }
@@ -553,6 +554,28 @@ fun AppearanceSettingsContent(
     }
     val effectiveColorSpec = resolveSelectedColorSpec(state.colorSpec, state.colorStyle, state.seedPaletteStyle)
     val colorContrastOptions = remember { resolveColorContrastOptions() }
+    // 主题模式 / 深色主题风格选项示意图的种子与预览方案：与色板小样共用同一来源和
+    // 配置推导，输入变化时一次性重算，后面嵌套的色板预览也复用这份种子。
+    val themePreviewCompatibilitySeed = com.android.purebilibili.core.theme.LocalWallpaperColorCompatibility.current.seed
+    val themePreviewSeed = remember(
+        state.md3ColorSource, state.md3CustomColorHex, state.themeColorIndex,
+        MaterialTheme.colorScheme.primary, themePreviewCompatibilitySeed,
+    ) {
+        resolveMd3ThemeSeedColor(
+            state.md3ColorSource, state.md3CustomColorHex, state.themeColorIndex,
+            wallpaperSeed = if (state.md3ColorSource == Md3ColorSource.WALLPAPER_RETONED) {
+                themePreviewCompatibilitySeed ?: com.android.purebilibili.core.theme.readSystemWallpaperSeed(context)
+            } else null,
+        )
+    }
+    val themeOptionPreviewPalettes = rememberThemeOptionPreviewPalettes(
+        seed = themePreviewSeed,
+        paletteStyle = state.colorStyle,
+        colorSpec = effectiveColorSpec,
+        colorContrast = state.colorContrast,
+        seedPaletteStyle = state.seedPaletteStyle,
+        configuration = palettePreviewConfiguration,
+    )
     val fontPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -595,12 +618,15 @@ fun AppearanceSettingsContent(
         item(key = "appearance_display_mode") {
             Box(modifier = Modifier.entrance()) {
                 AppPreferenceGroup {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column {
                         SettingsSingleChoicePreference(
                             title = "${uiPresetTitle}：$selectedUiStyleLabel",
                             subtitle = uiPresetSubtitle,
                             options = uiStyleOptions,
                             selectedValue = state.themeSelection,
+                            optionLeading = { value ->
+                                SettingsOptionPreviewThumb(SettingsOptionPreview.UiPreset(miuix = value == AppUiStyle.MIUIX))
+                            },
                             onSelectionChange = viewModel::setThemeSelection,
                         )
 
@@ -661,6 +687,13 @@ fun AppearanceSettingsContent(
                                 subtitle = context.getString(R.string.appearance_list_item_style_summary),
                                 options = appListItemStyleOptions,
                                 selectedValue = state.appListItemStyle,
+                                optionLeading = { style ->
+                                    SettingsOptionPreviewThumb(SettingsOptionPreview.ListItem(mode = when (style) {
+                                        AppListItemStyle.AUTO -> 0
+                                        AppListItemStyle.CUSTOM -> 1
+                                        AppListItemStyle.NATIVE -> 2
+                                    }))
+                                },
                                 onSelectionChange = { style ->
                                     viewModel.setAppListItemStyle(style)
                                 }
@@ -675,6 +708,15 @@ fun AppearanceSettingsContent(
                                 subtitle = context.getString(R.string.appearance_icon_style_summary),
                                 options = appIconStyleOptions,
                                 selectedValue = state.appIconStyle,
+                                optionLeading = { style ->
+                                    SettingsOptionPreviewThumb(SettingsOptionPreview.IconChip(mode = when (style) {
+                                        AppIconStyle.AUTO -> 0
+                                        AppIconStyle.THEME_CONTAINER -> 1
+                                        AppIconStyle.MD3_STANDARD -> 2
+                                        AppIconStyle.SOFT_COLORFUL -> 3
+                                        AppIconStyle.VIVID_COLORFUL -> 4
+                                    }))
+                                },
                                 onSelectionChange = { style ->
                                     viewModel.setAppIconStyle(style)
                                 }
@@ -689,6 +731,9 @@ fun AppearanceSettingsContent(
                                 subtitle = context.getString(R.string.appearance_single_choice_summary),
                                 options = singleChoicePresentationOptions,
                                 selectedValue = singleChoicePresentation,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Choice(
+                                    anchored = value == com.android.purebilibili.core.ui.components.AppSingleChoicePresentation.WINDOW_POPUP,
+                                )) },
                                 onSelectionChange = { presentation ->
                                     scope.launch {
                                         SettingsManager.setSingleChoicePresentation(
@@ -700,10 +745,16 @@ fun AppearanceSettingsContent(
                             )
                         }
                         AppPreferenceDivider()
-                        AppPreference(
-                            title = context.getString(R.string.appearance_animation_glass_title),
+                        SettingsNavigationContainerOrigin(
+                            target = com.android.purebilibili.navigation3.BiliPaiNavKey.AnimationSettings,
                             onClick = onAnimationClick,
-                        )
+                            first = false,
+                        ) { open ->
+                            AppPreference(
+                                title = context.getString(R.string.appearance_animation_glass_title),
+                                onClick = open,
+                            )
+                        }
                     }
                 }
             }
@@ -718,11 +769,23 @@ fun AppearanceSettingsContent(
         item(key = "appearance_theme_color") {
             Box(modifier = Modifier.entrance()) {
                 AppPreferenceGroup {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column {
                         SettingsSingleChoicePreference(
                             title = "${themeModeTitle}：$selectedThemeModeLabel",
                             subtitle = themeModeSubtitle,
                             options = themeModeOptions,
+                            // 每个选项配迷你屏幕示意图：跟随系统为浅深对角拼接，浅色/深色
+                            // 各自按当前种子推导的方案着色，选中前即可看到实际观感。
+                            optionLeading = { mode ->
+                                ThemeOptionPreviewThumb(
+                                    kind = when (mode) {
+                                        AppThemeMode.FOLLOW_SYSTEM -> ThemeOptionPreviewKind.FOLLOW_SYSTEM
+                                        AppThemeMode.LIGHT -> ThemeOptionPreviewKind.LIGHT
+                                        AppThemeMode.DARK -> ThemeOptionPreviewKind.DARK
+                                    },
+                                    palettes = themeOptionPreviewPalettes,
+                                )
+                            },
                             selectedValue = state.themeMode,
                             onSelectionChange = { mode ->
                                 viewModel.setThemeMode(mode)
@@ -748,6 +811,17 @@ fun AppearanceSettingsContent(
                                     title = "${darkThemeStyleTitle}：$selectedDarkThemeStyleLabel",
                                     subtitle = darkThemeStyleSubtitle,
                                     options = darkThemeStyleOptions,
+                                    // 普通黑与 AMOLED 纯黑用底面明度区分的示意图，
+                                    // 均按当前种子与色彩设置生成深色方案。
+                                    optionLeading = { style ->
+                                        ThemeOptionPreviewThumb(
+                                            kind = when (style) {
+                                                DarkThemeStyle.DEFAULT -> ThemeOptionPreviewKind.DARK
+                                                DarkThemeStyle.AMOLED -> ThemeOptionPreviewKind.AMOLED
+                                            },
+                                            palettes = themeOptionPreviewPalettes,
+                                        )
+                                    },
                                     selectedValue = state.darkThemeStyle,
                                     onSelectionChange = { style ->
                                         viewModel.setDarkThemeStyle(style)
@@ -867,18 +941,8 @@ fun AppearanceSettingsContent(
                             exit = shrinkVertically() + fadeOut()
                         ) {
                             Column {
-                                val currentPrimary = MaterialTheme.colorScheme.primary
-                                val compatibilitySeed = com.android.purebilibili.core.theme.LocalWallpaperColorCompatibility.current.seed
-                                val seedPreviewColor = remember(
-                                    state.md3ColorSource, state.md3CustomColorHex, state.themeColorIndex, currentPrimary, compatibilitySeed,
-                                ) {
-                                    resolveMd3ThemeSeedColor(
-                                        state.md3ColorSource, state.md3CustomColorHex, state.themeColorIndex,
-                                        wallpaperSeed = if (state.md3ColorSource == Md3ColorSource.WALLPAPER_RETONED) {
-                                            compatibilitySeed ?: com.android.purebilibili.core.theme.readSystemWallpaperSeed(context)
-                                        } else null,
-                                    )
-                                }
+                                // 种子已提升到内容顶部计算（themePreviewSeed），此处直接复用。
+                                val seedPreviewColor = themePreviewSeed
                                 val seedPreviewSwatches = rememberSeedStyleSwatches(
                                     seedColor = seedPreviewColor,
                                     isDark = resolveColorSchemeIsDark(MaterialTheme.colorScheme),
@@ -999,7 +1063,7 @@ fun AppearanceSettingsContent(
                                     enter = expandVertically() + fadeIn(),
                                     exit = shrinkVertically() + fadeOut(),
                                 ) {
-                                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                                    Column(modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp)) {
 
                                 // 预设色板每格的三色预览：跟随当前色彩风格 / 色彩标准与明暗，
                                 // 展开时整组算一次，网格滚动不重复生成方案。
@@ -1187,7 +1251,7 @@ fun AppearanceSettingsContent(
         item(key = "appearance_text_size") {
             Box(modifier = Modifier.entrance()) {
                 AppPreferenceGroup {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column {
                         SettingsItemAnchor("appearance.app_font_size_preset") {
                             SettingsSingleChoicePreference(
                                 title = context.getString(R.string.appearance_setting_font_size_title),
@@ -1203,6 +1267,7 @@ fun AppearanceSettingsContent(
                                     AppFontSizePreset.EXTRA_EXTRA_LARGE -> R.string.appearance_font_size_extra_extra_large
                                 })) },
                                 selectedValue = state.appFontSizePreset,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Typography(scale = value.multiplier)) },
                                 onSelectionChange = { preset ->
                                     viewModel.setAppFontSizePreset(preset)
                                 }
@@ -1220,6 +1285,7 @@ fun AppearanceSettingsContent(
                                     AppFontWeightPreset.BOLD -> R.string.appearance_font_weight_bold
                                 })) },
                                 selectedValue = state.appFontWeightPreset,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Typography(weight = value.fontWeight)) },
                                 onSelectionChange = { preset ->
                                     viewModel.setAppFontWeightPreset(preset)
                                 }
@@ -1277,6 +1343,7 @@ fun AppearanceSettingsContent(
                                     AppUiScalePreset.LARGE -> R.string.appearance_ui_scale_large
                                 })) },
                                 selectedValue = state.appUiScalePreset,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Density(value.densityMultiplier)) },
                                 onSelectionChange = { preset ->
                                     viewModel.setAppUiScalePreset(preset)
                                 }
@@ -1323,7 +1390,8 @@ fun AppearanceSettingsContent(
                                 AppText(
                                     text = resolveDisplayMetricsSummary(context, displayMetricsSnapshot),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = AppContentColors.secondaryText()
+                                    color = AppContentColors.secondaryText(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 )
                             }
                         }
@@ -1598,19 +1666,17 @@ fun AppearanceSettingsContent(
         item(key = "appearance_language") {
             Box(modifier = Modifier.entrance()) {
                 AppPreferenceGroup {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        SettingsSingleChoicePreference(
-                            icon = rememberSettingsSemanticIcon(SettingsIconRole.APP_LANGUAGE),
-                            iconTint = AppContentColors.secondaryText(),
-                            title = "${appLanguageTitle}：$selectedAppLanguageLabel",
-                            subtitle = appLanguageSubtitle,
-                            options = appLanguageOptions,
-                            selectedValue = state.appLanguage,
-                            onSelectionChange = { language ->
-                                onAppLanguageChange(language)
-                            }
-                        )
-                    }
+                    SettingsSingleChoicePreference(
+                        icon = rememberSettingsSemanticIcon(SettingsIconRole.APP_LANGUAGE),
+                        iconTint = AppContentColors.secondaryText(),
+                        title = "${appLanguageTitle}：$selectedAppLanguageLabel",
+                        subtitle = appLanguageSubtitle,
+                        options = appLanguageOptions,
+                        selectedValue = state.appLanguage,
+                        onSelectionChange = { language ->
+                            onAppLanguageChange(language)
+                        }
+                    )
                 }
             }
         }
@@ -1643,6 +1709,10 @@ fun AppearanceSettingsContent(
                                 }))
                             },
                             selectedValue = displayMode,
+                            optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Feed(
+                                columns = if (value == DisplayMode.SingleColumn.value) 1 else 2,
+                                horizontalCards = value == DisplayMode.SingleColumn.value,
+                            )) },
                             icon = rememberSettingsSemanticIcon(SettingsIconRole.HOME_FEED),
                             iconTint = displayModeTint,
                             onSelectionChange = viewModel::setDisplayMode,
@@ -1673,6 +1743,7 @@ fun AppearanceSettingsContent(
                                             )
                                         },
                                         selectedValue = state.gridColumnCount,
+                                        optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Feed(columns = value)) },
                                         onSelectionChange = viewModel::setGridColumnCount,
                                     )
                                 }

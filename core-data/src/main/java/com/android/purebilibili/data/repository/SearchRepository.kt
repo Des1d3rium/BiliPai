@@ -141,7 +141,7 @@ object SearchRepository {
                         cover = com.android.purebilibili.data.model.response.normalizeSearchImageUrl(item.cover)
                     )
                 }
-            // 综合搜索的 esports 块只取首场比赛卡片展示，解析失败时静默跳过。
+            // 综合搜索读取首个赛事块中的全部比赛，页面将首场置顶、其余保留在 UP 主后。
             val matches = categories.firstOrNull { it.result_type == "esports" }
                 ?.data.orEmpty()
                 .firstOrNull()
@@ -285,7 +285,7 @@ object SearchRepository {
         }
     }
 
-    /** PiliPlus 综合页无筛选时用 all/v2；排序或筛选后切到 video/type API。 */
+    /** 综合页无筛选的首屏使用 all/v2，后续翻页或启用筛选时使用视频分类接口。 */
     suspend fun searchAllPage(
         keyword: String,
         page: Int = 1,
@@ -297,7 +297,7 @@ object SearchRepository {
     ): Result<SearchAllResults> {
         val hasVideoFilters = order != SearchOrder.TOTALRANK || durations.isNotEmpty() ||
             tids != 0 || pubBegin != null || pubEnd != null
-        if (!hasVideoFilters) return searchAll(keyword, page)
+        if (!hasVideoFilters && page == 1) return searchAll(keyword, page)
 
         return searchWithDurations(
             keyword = keyword,

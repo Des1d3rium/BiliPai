@@ -49,3 +49,38 @@ internal fun NativePlayerSideButton(
         }
     }
 }
+
+/** 共用横屏侧键的材质入口；关闭玻璃后完整保留原生参数。 */
+@Composable
+internal fun PlayerSideButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    cornerRadiusDp: Int = 8,
+    iconSizeDp: Int = 20,
+) {
+    if (!LocalPlayerControlGlassEnabled.current) {
+        NativePlayerSideButton(icon, contentDescription, onClick, modifier, cornerRadiusDp, iconSizeDp)
+        return
+    }
+    PlayerControlGlassDock(
+        enabled = true,
+        modifier = modifier.size(PlayerChromeLayout.CircularButtonSizeDp.dp),
+        shape = androidx.compose.foundation.shape.CircleShape,
+    ) {
+        CompositionLocalProvider(LocalAppButtonSlotColorCorrectionEnabled provides false) {
+            AppSurface(
+                onClick = onClick,
+                modifier = Modifier.fillMaxSize(),
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = Color.Transparent,
+                contentColor = Color.White,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AppIcon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+    }
+}

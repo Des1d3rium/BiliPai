@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalDensity
@@ -65,7 +66,7 @@ internal fun LiveRoomCard(
     onLongPress: (() -> Unit)? = null,
     enableSharedCoverTransition: Boolean = false,
     modifier: Modifier = Modifier,
-    onFeedback: (() -> Unit)? = null,
+    onFeedback: ((com.android.purebilibili.core.ui.components.AppGlassMenuSource) -> Unit)? = null,
     searchResult: Boolean = false,
 ) {
     val topChromePolicy = rememberAppTopChromePolicy()
@@ -190,9 +191,13 @@ internal fun LiveRoomCard(
         }
     }
     if (model.feedback.isNotEmpty() && onFeedback != null) {
+        val feedbackSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
         com.android.purebilibili.core.ui.components.AppIconButton(
-            onClick = onFeedback,
-            modifier = Modifier.align(Alignment.BottomEnd).size(29.dp),
+            onClick = { onFeedback(feedbackSource) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(29.dp)
+                .appGlassMenuSource(feedbackSource, onOpen = { onFeedback(feedbackSource) }),
         ) {
             com.android.purebilibili.core.ui.components.AppIcon(
                 androidx.compose.material.icons.Icons.Outlined.MoreVert,

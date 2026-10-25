@@ -21,7 +21,7 @@ import com.android.purebilibili.R
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -171,7 +171,7 @@ fun VideoCardLarge(
 
     var modifier = Modifier
         .fillMaxWidth()
-        .clickable(onClick = triggerClick)
+        .appActionClickable(onClick = triggerClick)
 
     val sharedTransitionScope = LocalSharedTransitionScope.current
     val animatedVisibilityScope = LocalAnimatedVisibilityScope.current

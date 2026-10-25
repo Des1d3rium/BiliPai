@@ -6,6 +6,7 @@ package com.android.purebilibili.core.ui.effect
 // Matched to compose-miuix-ui/miuix revision 5c91d5e5, component/liquid/Lens.kt.
 // Adapted from Kyant0/AndroidLiquidGlass — https://github.com/Kyant0/AndroidLiquidGlass (Apache 2.0).
 
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastCoerceAtMost
@@ -29,6 +30,9 @@ fun BackdropEffectScope.lens(
     chromaticAberration: Float = 0f,
     /** Optional top/bottom overflow band in local pixels; zero disables gap dispersion. */
     chromaticEdgeBand: Float? = null,
+    /** 仅供玻璃弹窗的局部轮廓使用；默认仍按原生组件的完整尺寸和圆角采样。 */
+    outlineBounds: Rect? = null,
+    outlineRadius: Float? = null,
 ) {
     if (!isRuntimeShaderSupported()) return
     if (refractionHeight <= 0f || refractionAmount <= 0f) return
@@ -37,7 +41,10 @@ fun BackdropEffectScope.lens(
         padding = refractionAmount
     }
 
-    val radii = roundedRectCornerRadii() ?: return
+    val radii = if (outlineBounds != null && outlineRadius != null) {
+        val radius = outlineRadius.coerceIn(0f, outlineBounds.minDimension / 2f)
+        FloatArray(4) { radius }
+    } else roundedRectCornerRadii() ?: return
 
     // A moving overflow band can cross zero on every spring/velocity reversal.
     // Keep the same shader and let its mask reach zero continuously instead of
@@ -59,8 +66,8 @@ fun BackdropEffectScope.lens(
         // Round outwards so the lens never loses its requested sampling reach.
         padding = ceil(padding / sf) * sf
     }
-    val scaledSizeW = size.width / sf
-    val scaledSizeH = size.height / sf
+    val scaledSizeW = (outlineBounds?.width ?: size.width) / sf
+    val scaledSizeH = (outlineBounds?.height ?: size.height) / sf
     val scaledPadding = padding / sf
     val scaledRefractionHeight = refractionHeight / sf
     val scaledRefractionAmount = refractionAmount / sf
@@ -72,7 +79,8 @@ fun BackdropEffectScope.lens(
         uniformShaderName = "content",
     ) {
         setFloatUniform("size", scaledSizeW, scaledSizeH)
-        setFloatUniform("offset", -scaledPadding, -scaledPadding)
+        setFloatUniform("offset", -scaledPadding - (outlineBounds?.left ?: 0f) / sf,
+            -scaledPadding - (outlineBounds?.top ?: 0f) / sf)
         setFloatUniform("cornerRadii", scaledRadii)
         setFloatUniform("refractionHeight", scaledRefractionHeight)
         setFloatUniform("refractionAmount", -scaledRefractionAmount)

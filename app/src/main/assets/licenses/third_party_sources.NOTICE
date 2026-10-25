@@ -114,3 +114,78 @@ Reference paths: lib/grpc/bilibili/app/im/v1.pb.dart, lib/grpc/im.dart,
 lib/http/msg.dart, lib/pages/whisper*, lib/pages/msg_feed_top/, lib/pages/contact/.
 PiliPlus contributors; GPL-3.0. BiliPai implementation uses its existing Android
 networking, account lifecycle and theme components; distributed under GPLv3.
+
+app/src/main/java/com/android/purebilibili/navigation3/SettingsContainerMotionPolicy.kt
+app/src/main/java/com/android/purebilibili/navigation3/SettingsContainerTransition.kt
+/*
+ * Settings container transition timing, geometry and content-fade staging reference:
+ * chen08209/FlClash, lib/ui/open_container.dart (main, inspected 2026-10-25).
+ * https://github.com/chen08209/FlClash/blob/main/lib/ui/open_container.dart
+ * FlClash contributors; GPL-3.0. Reimplemented for Compose and the shared Miuix
+ * navigation driver. Distributed as part of BiliPai under GPLv3.
+ * Full license: flclash.LICENSE.
+ */
+
+app/src/main/java/com/android/purebilibili/feature/settings/ui/SettingsGlassPopupMotion.kt
+/*
+ * Popup platter springs, capsule corner timing, content reveal, return dip and
+ * no-anchor shrink reference chen08209/FlClash, lib/ui/popup.dart (main,
+ * inspected 2026-10-25).
+ * https://github.com/chen08209/FlClash/blob/main/lib/ui/popup.dart
+ * FlClash contributors; GPL-3.0. Compose uses the shared Backdrop layer transform
+ * for optical sampling. The settings row owns the captured control graphics layer,
+ * hides its on-screen replay while the popup is active, and restores it on landing.
+ * Menu placement, 160..280dp sizing and neutral menu tints also reference
+ * lib/ui/popup.dart and LiquidGlassStyle.menu in lib/ui/liquid_glass.dart.
+ * Full license: flclash.LICENSE. Distributed as part of BiliPai under GPLv3.
+ */
+
+/*
+ * Popup drag tracking and release comparison: chen08209/FlClash,
+ * lib/ui/navigation_dock.dart (ElasticPress, _Spring), revision
+ * 7fd417fb9a9a277c6a9339a8ac87f907df7c25f7, inspected 2026-10-25.
+ * https://github.com/chen08209/FlClash/blob/7fd417fb9a9a277c6a9339a8ac87f907df7c25f7/lib/ui/navigation_dock.dart
+ * FlClash contributors; GPL-3.0. The Compose implementation separates axis
+ * targets and tracking/release springs, preserves velocity on retargeting,
+ * and sizes the rubber-band limit to the menu. Full license: flclash.LICENSE.
+ */
+app/src/main/java/com/android/purebilibili/feature/settings/SettingsOptionPreviewThumb.kt
+app/src/main/java/com/android/purebilibili/feature/settings/ThemeOptionPreviewThumb.kt
+/*
+ * Settings option pictograms reference the miniature-screen and choice-leading
+ * composition in chen08209/FlClash, lib/views/theme_preview.dart and lib/views/theme.dart,
+ * revision 7fd417fb9a9a277c6a9339a8ac87f907df7c25f7, inspected 2026-10-25.
+ * https://github.com/chen08209/FlClash/blob/7fd417fb9a9a277c6a9339a8ac87f907df7c25f7/lib/views/theme_preview.dart
+ * FlClash contributors; GPL-3.0. Compose drawings use the active BiliPai theme
+ * roles and existing single-choice presentation slots. Full license: flclash.LICENSE.
+ */
+
+app/src/main/java/com/android/purebilibili/core/ui/popup/AppGlassPopupGestures.kt
+app/src/main/java/com/android/purebilibili/core/ui/popup/AppPopupDragFeedback.kt
+app/src/main/java/com/android/purebilibili/core/ui/popup/AppGlassSurfaceMaterial.kt
+Popup elastic transform, rubber-band resistance, press/track spring parameters and
+optional theme-frosted popup tint rules adapted from chen08209/FlClash,
+lib/ui/navigation_dock.dart, lib/ui/dialog.dart and lib/ui/liquid_glass.dart, revision
+7fd417fb9a9a277c6a9339a8ac87f907df7c25f7, inspected 2026-10-26.
+https://github.com/chen08209/FlClash/tree/7fd417fb9a9a277c6a9339a8ac87f907df7c25f7/lib/ui
+FlClash contributors; GPL-3.0. Distributed as part of BiliPai under GPLv3.
+
+/*
+ * Popup slide-to-pick row feedback comparison: chen08209/FlClash,
+ * lib/ui/popup.dart (_startPress, _slidePress, _endPress, _buildRow),
+ * main inspected 2026-10-26.
+ * https://github.com/chen08209/FlClash/blob/main/lib/ui/popup.dart
+ * FlClash contributors; GPL-3.0. BiliPai draws the active row in the existing
+ * Compose popup/menu scope and preserves long-list scrolling priority.
+ * Full license: flclash.LICENSE. Distributed as part of BiliPai under GPLv3.
+ */
+
+Content image export and share interaction reference:
+https://github.com/bggRGjQaUbCoE/PiliPlus/tree/3d0aed958b3b7e59c39c121196f189f429719904
+Reference paths: lib/pages/save_panel/view.dart, lib/pages/share/view.dart,
+lib/pages/video/introduction/ugc/controller.dart, lib/pages/video/introduction/pgc/controller.dart,
+lib/pages/live_room/superchat/superchat_card.dart, lib/utils/request_utils.dart,
+lib/utils/page_utils.dart and lib/grpc/bilibili/im/type.pbenum.dart.
+PiliPlus contributors; GPL-3.0. The Android implementation uses the existing
+rendering, account, networking and theme components. Distributed under GPLv3.
+License copy: artwork/third-party/piliplus/LICENSE in the source distribution.

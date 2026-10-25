@@ -92,7 +92,7 @@ fun VideoPreviewDialog(
     backgroundBlurEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val context = LocalContext.current
     val clearIcon = rememberAppClearIcon()
     val photoIcon = rememberAppPhotoIcon()

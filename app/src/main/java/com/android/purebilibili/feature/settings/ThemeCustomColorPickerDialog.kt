@@ -75,7 +75,7 @@ internal fun ThemeCustomColorPickerDialog(
     var previewChecked by rememberSaveable { mutableStateOf(true) }
     var previewValue by rememberSaveable { mutableFloatStateOf(0.65f) }
     var lastHapticAtMs by remember { mutableLongStateOf(0L) }
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.ADJUSTMENT)
     val color = Color.hsv(hue, saturation, brightness)
     val colorHex = formatMd3CustomColorHex(color)
     val roleTargetLabel = roleTarget?.let { stringResource(it.labelRes) }

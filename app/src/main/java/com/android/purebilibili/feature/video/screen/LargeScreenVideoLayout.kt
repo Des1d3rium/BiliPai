@@ -195,6 +195,7 @@ internal fun LargeScreenVideoLayout(
         val intro: @Composable (Modifier) -> Unit = { modifier ->
             if (success != null) {
                 TabletVideoInfoPane(
+                    currentPositionMsProvider = { playerState.player.currentPosition },
                     success = success,
                     engagementState = engagementState,
                     downloadProgress = downloadProgress,

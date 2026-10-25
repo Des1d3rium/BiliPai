@@ -480,8 +480,8 @@ class BottomBarMiuixStructureTest {
             .substringBefore("private fun OfficialMd3FloatingBottomBar(")
 
         assertTrue(
-            officialToolbarSource.contains("HorizontalFloatingToolbar("),
-            "OfficialMd3FloatingToolbarContent must render HorizontalFloatingToolbar"
+            officialToolbarSource.contains("AppMaterial3Toolbar("),
+            "OfficialMd3FloatingToolbarContent must render AppMaterial3Toolbar"
         )
     }
 

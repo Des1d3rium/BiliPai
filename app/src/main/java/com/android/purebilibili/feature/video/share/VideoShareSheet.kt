@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Link
@@ -86,6 +89,9 @@ internal fun VideoShareSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val sourcePayload = payload
+    var preciseShare by remember(sourcePayload.bvid, sourcePayload.page) { mutableStateOf(false) }
+    val effectivePayload = sourcePayload.withPosition(preciseShare)
     val context = LocalContext.current
     val shareScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -158,12 +164,12 @@ internal fun VideoShareSheet(
     )
 
     if (showDynamicComposer) {
-        VideoShareToDynamicDialog(payload = payload, onDismiss = onDismiss)
+        VideoShareToDynamicDialog(payload = effectivePayload, onDismiss = onDismiss)
         return
     }
     if (showFollowingPicker) {
         VideoShareToFollowingDialog(
-            payload = payload,
+            payload = effectivePayload,
             onDismiss = onDismiss,
             onSuccess = { count ->
                 if (count > 0) VideoShareFeedbackEvents.prepared(payload.bvid)
@@ -178,7 +184,7 @@ internal fun VideoShareSheet(
             onDismiss = onDismiss,
             onTargetClick = { target ->
                 context.startTargetedVideoShare(
-                    payload = payload,
+                    payload = effectivePayload,
                     packageName = target.packageName,
                     appName = target.label,
                     shareMedia = moreShareMedia,
@@ -187,7 +193,7 @@ internal fun VideoShareSheet(
                 onDismiss()
             },
             onSystemChooserClick = {
-                context.startMoreVideoShare(payload, moreShareMedia)
+                context.startMoreVideoShare(effectivePayload, moreShareMedia)
                 onDismiss()
             },
         )
@@ -205,6 +211,8 @@ internal fun VideoShareSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.9f).dp)
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
         ) {
             AppText(
@@ -286,13 +294,13 @@ internal fun VideoShareSheet(
                                         try {
                                             val shareMedia = prepareVideoShareMedia(
                                                 context = context,
-                                                payload = payload,
+                                                payload = effectivePayload,
                                                 style = shareStyle,
                                                 progressMessage = "正在生成分享卡片",
                                             )
                                             hideVideoShareSheet(sheetState)
                                             context.startTargetedVideoShare(
-                                                payload = payload,
+                                                payload = effectivePayload,
                                                 packageName = packageName,
                                                 appName = item.label,
                                                 shareMedia = shareMedia,
@@ -304,7 +312,7 @@ internal fun VideoShareSheet(
                                     }
                                 }
                                 VideoShareTarget.COPY_LINK -> {
-                                    copyPlainTextToClipboard(context, payload.url, "视频链接")
+                                    copyPlainTextToClipboard(context, effectivePayload.url, "视频链接")
                                     VideoShareFeedbackEvents.prepared(payload.bvid)
                                     Toast.makeText(context, "已复制链接", Toast.LENGTH_SHORT).show()
                                     shareScope.launch {
@@ -320,7 +328,7 @@ internal fun VideoShareSheet(
                                         try {
                                             val shareMedia = prepareVideoShareMedia(
                                                 context = context,
-                                                payload = payload,
+                                                payload = effectivePayload,
                                                 style = shareStyle,
                                                 progressMessage = "正在生成分享卡片",
                                             )
@@ -330,7 +338,7 @@ internal fun VideoShareSheet(
                                                 showMoreTargets = true
                                                 openedLocalTargets = true
                                             } else {
-                                                context.startMoreVideoShare(payload, shareMedia)
+                                                context.startMoreVideoShare(effectivePayload, shareMedia)
                                             }
                                         } finally {
                                             sharingTarget = null
@@ -344,6 +352,22 @@ internal fun VideoShareSheet(
                 }
             }
 
+            if (sourcePayload.positionMs > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    com.android.purebilibili.core.ui.components.AppCheckbox(
+                        checked = preciseShare, onCheckedChange = { preciseShare = it },
+                    )
+                    AppText("从 ${sourcePayload.positionMs / 60000}:${(sourcePayload.positionMs / 1000 % 60).toString().padStart(2, '0')} 开始播放", modifier = Modifier.clickable { preciseShare = !preciseShare })
+                }
+            }
+            com.android.purebilibili.core.ui.components.AppTextButton(onClick = {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(effectivePayload.url)))
+                    onDismiss()
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(context, "没有可打开此链接的应用", Toast.LENGTH_SHORT).show()
+                }
+            }) { AppText("其他应用打开") }
             Spacer(modifier = Modifier.height(24.dp))
             AppHorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Box(

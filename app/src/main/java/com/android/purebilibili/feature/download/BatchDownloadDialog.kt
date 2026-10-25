@@ -66,7 +66,7 @@ internal fun BatchDownloadDialog(
     val workingCandidates = candidates.map { candidate ->
         candidate.copy(selected = selectionOverrides[candidate.id] ?: candidate.selected)
     }
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.REFRESH)
     fun updateCandidates(next: List<BatchDownloadCandidate>) {
         val previousIds = workingCandidates.filter { it.selected }.map { it.id }.toSet()
         val nextIds = next.filter { it.selected }.map { it.id }.toSet()

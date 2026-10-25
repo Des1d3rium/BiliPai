@@ -77,7 +77,7 @@ private fun LiveMatchGradeContent(
         title = { AppText("选手评分 · 第 ${state.game} 局") },
         text = {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { menu = true }, enabled = !state.loading && !state.submitting && state.availableGames > 1) {
                     AppTextButton(enabled = !state.loading && !state.submitting && state.availableGames > 1, onClick = { menu = true }) { AppText("切换局次") }
                     AppDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         (1..state.availableGames.coerceIn(1, 99)).forEach { index ->

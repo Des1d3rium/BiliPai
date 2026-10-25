@@ -116,7 +116,7 @@ internal fun AppFloatingSelectionToolbar(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.TEXT)
     val positionProvider = remember(rect) { SelectionToolbarPositionProvider(rect) }
 
     Popup(

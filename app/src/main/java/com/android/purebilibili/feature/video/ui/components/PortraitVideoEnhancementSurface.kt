@@ -2,6 +2,8 @@
 
 package com.android.purebilibili.feature.video.ui.components
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import android.graphics.Bitmap
 import android.view.LayoutInflater
 import android.view.Surface
@@ -29,7 +31,10 @@ import com.android.purebilibili.core.util.Logger
 import com.android.purebilibili.feature.anime4k.*
 import com.android.purebilibili.feature.anime4k.gl.Anime4KDisplayScaleMode
 import com.android.purebilibili.feature.anime4k.gl.Anime4KGLSurfaceView
-import com.android.purebilibili.feature.plugin.Anime4KPlugin
+import com.android.purebilibili.plugin.sdk.Anime4KConfig
+import com.android.purebilibili.plugin.sdk.Anime4KPreset
+import com.android.purebilibili.plugin.sdk.VideoEnhancementAlgorithm
+import com.android.purebilibili.plugin.sdk.VideoEnhancementPluginApi
 import com.android.purebilibili.feature.video.ui.section.VideoOutputRouter
 import com.android.purebilibili.feature.video.util.captureSurfaceViewBitmap
 import com.android.purebilibili.feature.video.util.captureVideoScreenshot
@@ -60,7 +65,7 @@ internal class PortraitVideoEnhancementSession internal constructor(internal val
     internal var videoSize by mutableStateOf(VideoSize.UNKNOWN)
     internal val router = VideoOutputRouter(player)
     internal var changeEnabled: (Boolean) -> Unit = {}
-    internal var plugin: Anime4KPlugin? = null
+    internal var plugin: VideoEnhancementPluginApi? = null
     val pipelineActive: Boolean get() = usePipeline && inputSurface != null
 
     fun setEnabled(value: Boolean) = changeEnabled(value)
@@ -101,8 +106,8 @@ internal fun rememberPortraitVideoEnhancementSession(
     val scope = rememberCoroutineScope()
     val session = remember(player, mediaIdentity) { PortraitVideoEnhancementSession(player) }
     val plugins by PluginManager.pluginsFlow.collectAsStateWithLifecycle()
-    val info = plugins.firstOrNull { it.plugin.id == Anime4KPlugin.PLUGIN_ID }
-    val plugin = info?.plugin as? Anime4KPlugin
+    val info = plugins.firstOrNull { it.plugin.id == BuiltinPluginIds.VIDEO_ENHANCEMENT }
+    val plugin = PluginManager.getPlugin(VideoEnhancementPluginApi::class)
     val config = if (plugin != null) plugin.configState.collectAsStateWithLifecycle().value else Anime4KConfig()
     val glesAvailable = remember(context) { isAnime4KGles3Available(context) }
     var inputFormat by remember(player) { mutableStateOf(player.videoFormat) }
@@ -150,8 +155,8 @@ internal fun rememberPortraitVideoEnhancementSession(
             session.requested = value
             session.failed = false
             scope.launch {
-                if (value && info?.enabled != true) PluginManager.setEnabled(Anime4KPlugin.PLUGIN_ID, true)
-                Anime4KPlugin.getInstance()?.rememberCurrentVideoEnabled(value)
+                if (value && info?.enabled != true) PluginManager.setEnabled(BuiltinPluginIds.VIDEO_ENHANCEMENT, true)
+                plugin?.rememberCurrentVideoEnabled(value)
             }
         }
     }
@@ -190,7 +195,6 @@ internal fun PortraitVideoEnhancementSurface(
     session: PortraitVideoEnhancementSession,
     preferTexture: Boolean,
     resizeMode: Int,
-    fillContainer: Boolean,
     keepScreenOn: Boolean,
     flippedHorizontal: Boolean,
     flippedVertical: Boolean,
@@ -235,17 +239,20 @@ internal fun PortraitVideoEnhancementSurface(
                     latestViewChanged(view)
                     if (!session.pipelineActive && view.player !== session.player) view.player = session.player
                     view.keepScreenOn = keepScreenOn
-                    val modeChanged = view.resizeMode != resizeMode
-                    val sizeTag = "vp:${view.width}x${view.height}:$resizeMode:$fillContainer"
-                    val sizeChanged = view.tag != sizeTag
-                    applyPlayerViewResizeMode(view, resizeMode, forceRelayout = false)
-                    if (modeChanged || (fillContainer && sizeChanged)) {
-                        view.tag = sizeTag
-                        schedulePlayerViewViewportRefresh(view, resizeMode)
-                    }
+                    // 原生布局完成及视频格式变化都需要恢复视口；不能只依赖组合时的旧 View 尺寸。
+                    // 玻璃、MD3 与 Miuix 共用出画修复，不改变各自的容器比例。
+                    schedulePlayerViewViewportRefresh(
+                        playerView = view,
+                        resizeMode = resizeMode,
+                        expectedWidth = view.width,
+                        expectedHeight = view.height,
+                        videoWidth = session.videoSize.width,
+                        videoHeight = session.videoSize.height,
+                    )
                     view.visibility = if (session.pipelineActive && session.firstFrame) View.INVISIBLE else View.VISIBLE
                 },
                 onRelease = { view ->
+                    cancelPlayerViewViewportRefresh(view)
                     if (session.nativeView === view) {
                         session.nativeView = null
                         latestViewChanged(null)

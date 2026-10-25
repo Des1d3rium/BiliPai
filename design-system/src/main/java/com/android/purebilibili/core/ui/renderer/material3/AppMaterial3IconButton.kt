@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.core.ui.renderer.material3
 
@@ -61,10 +61,6 @@ internal fun AppMaterial3IconButton(
             disabledContainerColor = Color.Transparent,
         )
     } else requestedColors
-    val nativeShapes = IconButtonDefaults.shapes(
-        shape = nativeShape,
-        pressedShape = if (glassSurfaceProvided) nativeShape else null,
-    )
     val nativeModifier = modifier.appDesktopInteractionVisuals(
         interactionSource = resolvedInteractionSource,
         enabled = enabled,
@@ -78,7 +74,7 @@ internal fun AppMaterial3IconButton(
             enabled = enabled,
             colors = nativeColors,
             interactionSource = resolvedInteractionSource,
-            shapes = nativeShapes,
+            shape = nativeShape,
             content = {
                 com.android.purebilibili.core.ui.ProvideAppButtonSlotPalette(
                     containerColor = if (enabled) nativeColors.containerColor else nativeColors.disabledContainerColor,
@@ -91,7 +87,7 @@ internal fun AppMaterial3IconButton(
             onClick = onClick,
             modifier = nativeModifier,
             enabled = enabled,
-            shapes = nativeShapes,
+            shape = nativeShape,
             colors = nativeColors,
             interactionSource = resolvedInteractionSource,
             content = {

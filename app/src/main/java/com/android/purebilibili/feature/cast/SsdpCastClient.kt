@@ -1,7 +1,7 @@
 package com.android.purebilibili.feature.cast
 
 import com.android.purebilibili.core.lifecycle.BackgroundManager
-import com.android.purebilibili.core.plugin.CastPluginPlaybackState
+import com.android.purebilibili.plugin.sdk.CastPluginPlaybackState
 import com.android.purebilibili.core.util.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

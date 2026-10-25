@@ -119,7 +119,7 @@ private fun LiveMatchSeasonContent(
                 }
                 stages.isEmpty() -> AppText("该赛季暂无阶段与积分数据", modifier = Modifier.padding(16.dp))
                 else -> {
-                    Box(Modifier.padding(horizontal = 16.dp)) {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(Modifier.padding(horizontal = 16.dp), onOpen = { stageMenu = true }) {
                         AppTextButton(onClick = { stageMenu = true }) { AppText(stageTitle(active?.series)) }
                         AppDropdownMenu(expanded = stageMenu, onDismissRequest = { stageMenu = false }) {
                             stages.forEach { entry ->

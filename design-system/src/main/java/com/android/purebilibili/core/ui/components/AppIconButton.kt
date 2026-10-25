@@ -84,6 +84,7 @@ private fun AppIconButtonImpl(
     variant: AppIconButtonVariant,
     content: @Composable () -> Unit,
 ): Unit = AppExactTouchTargets {
+    val feedbackClick = appActionWithFeedback(onClick)
     val decorator = LocalAppTopBarIconDecorator.current.takeIf {
         LocalAppTopBarIconDecorationEnabled.current
     }
@@ -95,17 +96,14 @@ private fun AppIconButtonImpl(
         }
         return@AppExactTouchTargets
     }
-    ProvideAppElasticFeedback(enabled = enabled) {
+    // 玻璃图标的弹性由外层 dock 提供，普通 MD3 图标保留原生涟漪与固定形状。
+    val elasticFeedbackEnabled = enabled && (LocalAppUiStyle.current == AppUiStyle.MIUIX ||
+        LocalAppIconButtonGlassSurfaceProvided.current)
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         when (LocalAppUiStyle.current) {
             AppUiStyle.MATERIAL3 -> AppMaterial3IconButton(
-                onClick = onClick,
-                modifier = modifier.appElasticPress(
-                    enabled = enabled,
-                    highlightShape = when (variant) {
-                        AppIconButtonVariant.Standard -> androidx.compose.material3.IconButtonDefaults.standardShape
-                        AppIconButtonVariant.Filled -> androidx.compose.material3.IconButtonDefaults.filledShape
-                    },
-                ),
+                onClick = feedbackClick,
+                modifier = modifier,
                 enabled = enabled,
                 colors = colors,
                 interactionSource = interactionSource,
@@ -113,7 +111,7 @@ private fun AppIconButtonImpl(
                 content = content,
             )
             AppUiStyle.MIUIX -> AppMiuixIconButton(
-                onClick = onClick,
+                onClick = feedbackClick,
                 modifier = modifier.appElasticPress(
                     enabled = enabled,
                     highlightShape = androidx.compose.foundation.shape.RoundedCornerShape(

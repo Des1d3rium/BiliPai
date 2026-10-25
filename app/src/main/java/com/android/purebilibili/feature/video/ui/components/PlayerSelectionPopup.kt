@@ -39,7 +39,7 @@ import kotlin.math.roundToInt
 
 enum class PlayerListPopupPlacement { CENTER, START, END, END_BOTTOM, ANCHOR_END }
 
-/** 播放器选择弹窗只按主题选择原生组件，独立于液态玻璃及页面材质。 */
+/** 同窗玻璃宿主可用时使用统一菜单；关闭玻璃及独立窗口保持原生组件。 */
 @Composable
 fun PlayerSelectionPopup(
     title: String,
@@ -52,9 +52,40 @@ fun PlayerSelectionPopup(
     anchorBounds: IntRect? = null,
     scrollState: ScrollState = rememberScrollState(),
     maxWidth: Dp = 288.dp,
+    sourceLayer: androidx.compose.ui.graphics.layer.GraphicsLayer? = null,
+    source: com.android.purebilibili.core.ui.components.AppGlassMenuSource? =
+        com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource.current,
+    onSourceVisibilityChange: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    if (placement == PlayerListPopupPlacement.ANCHOR_END && anchorBounds == null) return
+    val glassSource = source
+    val anchorToGlassSource = glassSource?.isAvailable == true &&
+        com.android.purebilibili.core.ui.components.appGlassMenuAvailable()
+    if (placement == PlayerListPopupPlacement.ANCHOR_END && anchorBounds == null && !anchorToGlassSource) return
+    if (com.android.purebilibili.core.ui.components.AppGlassMenu(
+            expanded = true,
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            title = title,
+            // 真实触发源仅改变玻璃菜单的定位，原生布局继续使用调用方 placement。
+            placement = if (anchorToGlassSource) com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END else when (placement) {
+                PlayerListPopupPlacement.CENTER -> com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.CENTER
+                PlayerListPopupPlacement.START -> com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.START
+                PlayerListPopupPlacement.END -> com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END
+                PlayerListPopupPlacement.END_BOTTOM -> com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END_BOTTOM
+                PlayerListPopupPlacement.ANCHOR_END -> com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END
+            },
+            anchorBounds = anchorBounds?.let { androidx.compose.ui.geometry.Rect(
+                it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat()) },
+            minWidth = minWidth, maxWidth = maxWidth, maxHeight = maxHeight, scrollState = scrollState,
+            source = source, sourceLayer = sourceLayer, onSourceVisibilityChange = onSourceVisibilityChange,
+        ) {
+            Column {
+                if (showTitle) Text(title, style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                content()
+            }
+        }) return
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
     val size = LocalWindowInfo.current.containerSize
@@ -225,6 +256,21 @@ internal fun PlayerNativeDropdownItem(
     onSelectedIndexChange: (Int) -> Unit,
 ) {
     val itemModifier = modifier.semantics(mergeDescendants = true) { selected = isSelected }
+    if (com.android.purebilibili.core.ui.components.LocalAppGlassMenuScope.current != null) {
+        com.android.purebilibili.core.ui.components.AppDropdownMenuItem(
+            modifier = itemModifier,
+            text = {
+                Column {
+                    Text(item.text)
+                    item.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            enabled = enabled,
+            trailingIcon = if (isSelected) { { Icon(Icons.Default.Check, contentDescription = null) } } else null,
+            onClick = { onSelectedIndexChange(index) },
+        )
+        return
+    }
     if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
         Box(modifier = itemModifier) {
             DropdownImpl(

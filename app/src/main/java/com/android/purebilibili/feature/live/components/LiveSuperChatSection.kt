@@ -124,13 +124,24 @@ internal fun LiveSuperChatCard(
     var saving by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var menuExpanded by remember(item.superChatId) { mutableStateOf(false) }
+    var previewFiles by remember(item.superChatId) { mutableStateOf<List<java.io.File>>(emptyList()) }
+    if (previewFiles.isNotEmpty()) {
+        com.android.purebilibili.feature.share.ShareImagePreviewSheet(
+            document = com.android.purebilibili.feature.share.ShareImageDocument(
+                key = "sc:${item.superChatId}", title = "醒目留言", url = "", blocks = emptyList(),
+            ),
+            capturedFiles = previewFiles,
+            onDismiss = { previewFiles = emptyList() },
+        )
+    }
+
     val latestOnMenuVisibilityChange by rememberUpdatedState(onMenuVisibilityChange)
     androidx.compose.runtime.DisposableEffect(item.superChatId, menuExpanded) {
         latestOnMenuVisibilityChange(menuExpanded)
         onDispose { if (menuExpanded) latestOnMenuVisibilityChange(false) }
     }
-    androidx.compose.runtime.DisposableEffect(item.superChatId, menuExpanded, persistent) {
-        val holdsCountdown = menuExpanded && !persistent
+    androidx.compose.runtime.DisposableEffect(item.superChatId, menuExpanded, persistent, previewFiles.isNotEmpty()) {
+        val holdsCountdown = (menuExpanded || previewFiles.isNotEmpty()) && !persistent
         val notifyPause = onCountdownPauseChange
         if (holdsCountdown) notifyPause(true)
         onDispose { if (holdsCountdown) notifyPause(false) }
@@ -141,8 +152,8 @@ internal fun LiveSuperChatCard(
         mutableIntStateOf(remainingLiveSuperChatSeconds(endTime, System.currentTimeMillis() / 1_000L))
     }
 
-    LaunchedEffect(item.superChatId, endTime, item.text, persistent, menuExpanded) {
-        if (persistent || menuExpanded) return@LaunchedEffect
+    LaunchedEffect(item.superChatId, endTime, item.text, persistent, menuExpanded, previewFiles.isNotEmpty()) {
+        if (persistent || menuExpanded || previewFiles.isNotEmpty()) return@LaunchedEffect
         while (remainingSec > 0) {
             delay(1_000)
             remainingSec -= 1
@@ -245,6 +256,20 @@ internal fun LiveSuperChatCard(
                       } catch (_: Exception) {
                           Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
                       } finally { saving = false }
+                  }
+              },
+          )
+          AppDropdownMenuItem(
+              text = { AppText(if (saving) "生成中…" else "预览 / 分享图片") },
+              enabled = !saving,
+              onClick = {
+                  saving = true
+                  scope.launch {
+                      try {
+                          val bitmap = cardLayer.toImageBitmap().asAndroidBitmap()
+                          previewFiles = listOf(com.android.purebilibili.feature.share.cacheCapturedShareImage(context, bitmap))
+                          menuExpanded = false
+                      } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { Toast.makeText(context, "生成图片失败，请重试", Toast.LENGTH_SHORT).show() } finally { saving = false }
                   }
               },
           )

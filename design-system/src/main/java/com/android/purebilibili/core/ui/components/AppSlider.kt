@@ -50,7 +50,7 @@ fun AppSlider(
     colors: AppSliderColors? = null,
     interactionSource: MutableInteractionSource? = null,
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.ADJUSTMENT)
     val hapticTickCount = (steps + 1).takeIf { steps > 0 } ?: 20
     fun hapticBucket(progress: Float): Int = (
         ((progress - valueRange.start) / (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.0001f)) *

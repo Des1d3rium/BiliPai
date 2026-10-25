@@ -241,18 +241,22 @@ internal suspend fun captureNativeVideoCardBitmap(
     expectedSourceKey: String?,
 ) {
     if (!isNativeVideoCardLayerDrawable(layer.size.width, layer.size.height)) return
+    if (!CardPositionManager.isNativeVideoCardLayerCurrentOwner(layer)) return
+    val owner = CardPositionManager.videoCardPixelOwnerFor(expectedSourceKey) ?: return
     CardPositionManager.recordNativeCardBitmap(
         bitmap = layer.toImageBitmap(),
-        expectedSourceKey = expectedSourceKey,
+        expectedOwner = owner,
     )
 }
 
 /** 在来源卡离开前冻结完整像素；只允许当前点击身份接收异步结果。 */
 internal suspend fun captureWholeCardReturnBitmap(layer: GraphicsLayer, expectedSourceKey: String?) {
     if (!isNativeVideoCardLayerDrawable(layer.size.width, layer.size.height)) return
+    if (!CardPositionManager.isNativeVideoCardLayerCurrentOwner(layer)) return
+    val owner = CardPositionManager.videoCardPixelOwnerFor(expectedSourceKey) ?: return
     val bitmap = layer.toImageBitmap()
     if (CardPositionManager.isNativeVideoCardLayerCurrentOwner(layer)) {
-        CardPositionManager.recordWholeCardReturnBitmap(bitmap, expectedSourceKey)
+        CardPositionManager.recordWholeCardReturnBitmap(bitmap, owner)
     }
 }
 
@@ -325,7 +329,7 @@ internal fun rememberNativeVideoCardSnapshotController(
         },
         freezeToBitmap = {
             val expectedSourceKey = CardPositionManager.lastClickedVideoSourceKey
-            captureScope.launch {
+            captureScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 captureNativeVideoCardBitmap(
                     layer = layer,
                     expectedSourceKey = expectedSourceKey,

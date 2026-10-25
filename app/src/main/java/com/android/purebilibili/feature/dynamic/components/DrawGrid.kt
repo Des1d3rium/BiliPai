@@ -15,7 +15,7 @@ import com.android.purebilibili.core.ui.MediaContrastPalette
 import com.android.purebilibili.core.ui.rememberAppSparklesIcon
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 //  Material Icons
@@ -180,7 +180,7 @@ private fun DrawGridImage(
                 imageRectRef.value = coordinates.boundsInWindow()
                 galleryRects[index] = imageRectRef.value!!
             }
-            .clickable(
+            .appActionClickable(
                 interactionSource = null,
                 indication = null,
                 enabled = !sourceHidden,

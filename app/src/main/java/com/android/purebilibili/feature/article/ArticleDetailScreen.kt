@@ -120,6 +120,21 @@ fun ArticleDetailScreen(
         else -> initialTitle.ifBlank { "专栏详情" }
     }
     var sharedReturnReady by remember { mutableStateOf(false) }
+    var showShare by remember(articleId) { mutableStateOf(false) }
+    if (showShare) {
+        (uiState as? ArticleDetailUiState.Success)?.article?.let { article ->
+            com.android.purebilibili.feature.share.ContentShareSheet(
+                source = com.android.purebilibili.feature.share.ContentSharePayload(
+                    key = "article:$articleId", title = article.title,
+                    url = "https://www.bilibili.com/read/cv$articleId",
+                    cover = article.bannerUrl.orEmpty(), author = article.authorName,
+                    authorId = article.authorMid, source = 6, resourceId = articleId,
+                ),
+                onDismiss = { showShare = false },
+            )
+        }
+    }
+
 
     // Container entries let the host seek the whole card during predictive back.
     BackHandler(enabled = backHandlerEnabled) {
@@ -131,6 +146,13 @@ fun ArticleDetailScreen(
         topBar = {
             AppTopBar(
                 title = screenTitle,
+                actions = {
+                    if (uiState is ArticleDetailUiState.Success) {
+                        AppIconButton(onClick = { showShare = true }) {
+                            AppIcon(com.android.purebilibili.core.ui.rememberAppShareIcon(), contentDescription = "分享专栏")
+                        }
+                    }
+                },
                 navigationIcon = {
                     AppIconButton(onClick = { onBack(sharedReturnReady) }) {
                         AppIcon(rememberAppBackIcon(), contentDescription = backLabel)

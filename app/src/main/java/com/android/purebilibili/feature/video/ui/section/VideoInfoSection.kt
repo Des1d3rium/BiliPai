@@ -563,10 +563,9 @@ fun VideoTitleWithDesc(
     ) {
         val stackSponsorLabel = sponsorLabel.isNotBlank() && shouldStackSponsorLabelAboveTitle(sponsorLabel)
         if (stackSponsorLabel) {
-            // 长徽标独立成行，避免挤压标题
+            // 长徽标独立成行，背景随内容收缩；窄窗口仍受父级宽度约束并允许换行。
             VideoDetailSponsorLabelChip(
                 label = sponsorLabel,
-                modifier = Modifier.fillMaxWidth(),
                 maxLines = 2,
             )
         }
@@ -765,10 +764,7 @@ fun VideoTitleWithDesc(
             if (argueMsg.isNotBlank() && noReprint) Spacer(Modifier.height(2.dp))
             if (noReprint) VideoArgueMsgRow(argueMsg = "未经作者授权，请勿转载")
         }
-        }
-        trailingStatsContent?.invoke()
-        }
-
+        // BV 号与统计信息共用一列，避免右侧操作按钮的行高再叠加独立 BV 行。
         androidx.compose.animation.AnimatedVisibility(
             visible = expanded,
             enter = if (animateLayout) {
@@ -787,9 +783,12 @@ fun VideoTitleWithDesc(
                 style = MaterialTheme.typography.labelSmall,
                 color = AppContentColors.secondaryText(),
                 modifier = Modifier
-                    .padding(top = 6.dp)
+                    .padding(top = 2.dp)
                     .copyOnClick(info.bvid, "BV号")
             )
+        }
+        }
+        trailingStatsContent?.invoke()
         }
 
         if (videoBadges.isNotEmpty()) {
@@ -910,7 +909,7 @@ fun VideoDescriptionAndTags(
             }
         ) {
             Column {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 val descriptionUrlColor = AppContentColors.accent()
                 val descriptionLinkListener = remember(onDescriptionUrlClick) {
                     onDescriptionUrlClick?.let { handler ->
@@ -974,7 +973,7 @@ fun VideoDescriptionAndTags(
             val tagMetrics = com.android.purebilibili.core.ui.components
                 .resolveAppTagChipMetrics(videoTagSize)
             Column {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 // Keep native touch expansion without reserving a 48dp layout box per tag.
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     androidx.compose.foundation.layout.FlowRow(
@@ -1079,6 +1078,7 @@ fun UpInfoSection(
     horizontalPadding: androidx.compose.ui.unit.Dp = 12.dp,
     modifier: Modifier = Modifier,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
+    onOpenLiveRoom: ((String) -> Unit)? = null,
 ) {
     val playerControlVisibility by com.android.purebilibili.core.store.SettingsManager
         .getPlayerControlVisibilitySettings(LocalContext.current)
@@ -1258,7 +1258,7 @@ fun UpInfoSection(
                         secondary = secondaryColor,
                     )
                 }
-                SelectionContainer {
+                SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
                     AppText(
                         text = info.owner.name,
                         style = MaterialTheme.typography.titleSmall,
@@ -1269,6 +1269,11 @@ fun UpInfoSection(
                         modifier = upNameModifier
                     )
                 }
+                VideoOwnerLiveBadge(
+                    ownerMid = info.owner.mid,
+                    modifier = Modifier.padding(start = 6.dp),
+                    onOpenLiveRoom = onOpenLiveRoom,
+                )
             }
         }
 
@@ -1356,7 +1361,7 @@ fun UpInfoSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onUpClick(info.owner.mid) }
-                        .padding(horizontal = horizontalPadding, vertical = 6.dp),
+                        .padding(horizontal = horizontalPadding, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     avatarContent()
@@ -1393,7 +1398,7 @@ fun UpInfoSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onUpClick(info.owner.mid) }
-                        .padding(horizontal = horizontalPadding, vertical = 6.dp),
+                        .padding(horizontal = horizontalPadding, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     avatarContent()

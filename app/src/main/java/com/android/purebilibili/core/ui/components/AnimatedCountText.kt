@@ -35,6 +35,7 @@ import com.android.purebilibili.core.ui.motion.AppMotionEasing
  * 数值变化时带滚动 + 脉冲缩放的计数文本：
  * 数值经弹性 spring 插值滚动到目标，同时整体放大再回落（1 -> 1.15 -> 1），
  * 用于高赞弹幕计数、点赞数等需要"跳一下"反馈的场景。
+ * 数字以等宽特性渲染，滚动与进位期间文本宽度保持稳定。
  */
 @Composable
 fun AnimatedCountText(
@@ -99,7 +100,7 @@ fun AnimatedCountText(
         text = prefix + formatter(
             if (count > Int.MAX_VALUE.toLong()) count else animatedValue.coerceAtLeast(0).toLong()
         ),
-        style = style,
+        style = style.withTabularNumbers(),
         color = color,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,

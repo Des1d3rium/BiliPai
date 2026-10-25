@@ -1086,7 +1086,7 @@ private fun SubscriptionArticleScreen(
                     }) {
                         AppIcon(Icons.Default.Share, contentDescription = "分享文章")
                     }
-                    Box {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { actionsExpanded = true }) {
                         AppIconButton(onClick = { actionsExpanded = true }) {
                             AppIcon(Icons.Default.MoreVert, contentDescription = "阅读选项")
                         }

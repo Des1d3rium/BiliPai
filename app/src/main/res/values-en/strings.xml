@@ -331,6 +331,10 @@
     <string name="animation_transition_blur_summary">Adds depth to transitions; turn off to save power</string>
     <string name="animation_back_title">Page transition animation</string>
     <string name="animation_back_summary">Animation style shared by page entry and return</string>
+    <string name="animation_settings_container_title">Settings container animation</string>
+    <string name="animation_settings_container_summary">Entry and return animation for settings pages</string>
+    <string name="animation_settings_container_morph">Container morph</string>
+    <string name="animation_settings_container_default">Default navigation</string>
     <string name="animation_back_preview_title">Back preview range</string>
     <string name="animation_back_preview_summary">Adjust how much of the page is revealed during swipe back</string>
     <string name="animation_back_blur_on">Blur the page behind during swipe back</string>
@@ -920,4 +924,5 @@
     <string name="appearance_home_card_ratio_bilipai_label">16:10 (BiliPai default)</string>
     <string name="animation_indicator_wobble_title">Liquid glass indicator recoil</string>
     <string name="animation_indicator_wobble_summary">Add squash and rebound when selecting a tab or releasing a drag. Applies only to liquid glass indicators; turning it off keeps normal movement and press feedback.</string>
+    <string name="animation_settings_container_blur_summary">Blur the settings page behind container transitions in real time; requires Android 12 or later</string>
 </resources>

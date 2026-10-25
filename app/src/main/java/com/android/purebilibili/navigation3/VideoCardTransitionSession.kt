@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.android.purebilibili.core.ui.transition.VideoCardSourceChromeSnapshot
 import com.android.purebilibili.core.ui.transition.VideoCardSourceLayout
+import com.android.purebilibili.core.util.VideoCardPixelOwner
 
 /**
  * A click-time snapshot of the source card used for the complete detail round trip.
@@ -33,7 +34,11 @@ internal data class VideoCardTransitionSession(
     val sourceChromeSnapshot: VideoCardSourceChromeSnapshot?,
     /** Navigation-host origin frozen at click, so the landing rect stays in one coordinate space. */
     val hostOriginInRoot: Offset = Offset.Zero,
+    val sourcePixelOwner: VideoCardPixelOwner? = null,
 ) {
+    val sourceInstanceId: Long?
+        get() = sourcePixelOwner?.sourceInstanceId
+
     val hasUsableSourceGeometry: Boolean
         get() = cardBounds != null && cardFullyVisible
 
@@ -53,6 +58,7 @@ internal data class VideoCardTransitionSession(
             sourceLayout: VideoCardSourceLayout = VideoCardSourceLayout.COVER_ONLY,
             sourceChromeSnapshot: VideoCardSourceChromeSnapshot? = null,
             hostOriginInRoot: Offset = Offset.Zero,
+            sourcePixelOwner: VideoCardPixelOwner? = null,
         ): VideoCardTransitionSession {
             val normalizedBvid = bvid.trim()
             val sourceBvid = source.key
@@ -85,6 +91,9 @@ internal data class VideoCardTransitionSession(
                 sourceLayout = sourceLayout,
                 sourceChromeSnapshot = sourceChromeSnapshot.takeIf { ownsRecordedGeometry },
                 hostOriginInRoot = hostOriginInRoot,
+                sourcePixelOwner = sourcePixelOwner.takeIf {
+                    ownsRecordedGeometry && it?.sourceKey == source.key
+                },
             )
         }
     }

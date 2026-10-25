@@ -39,6 +39,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import com.android.purebilibili.core.ui.components.AppHorizontalPager as HorizontalPager
@@ -75,6 +76,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import coil3.compose.AsyncImage
 import coil3.Image
 import coil3.imageLoader
+import com.android.purebilibili.core.util.originalBiliImage
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -445,7 +447,7 @@ private fun ImagePreviewOverlayContent(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val scope = rememberCoroutineScope()
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.RESULTS)
     val shareIcon = rememberAppShareIcon()
     val likeIcon = rememberAppLikeIcon()
     val likeFilledIcon = rememberAppLikeFilledIcon()
@@ -1178,6 +1180,7 @@ private fun ImagePreviewOverlayContent(
                         val previewRequest = remember(context, imageUrl, decodeSize, placeholderCacheKey, requestToken, publicContent) {
                             ImageRequest.Builder(context)
                                 .data(imageUrl)
+                                .originalBiliImage()
                                 // 预览必须采样解码，避免超大原图超过 Canvas 单位图绘制上限。
                                 .size(decodeSize.widthPx, decodeSize.heightPx)
                                 .placeholderMemoryCacheKey(placeholderCacheKey)
@@ -1865,7 +1868,7 @@ private fun ImagePreviewOverlayContent(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MediaContrastPalette.Scrim.copy(alpha = 0.65f))
-                                    .clickable { showLivePhotoMenu = !showLivePhotoMenu }
+                                    .appActionClickable { showLivePhotoMenu = !showLivePhotoMenu }
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1903,7 +1906,7 @@ private fun ImagePreviewOverlayContent(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
+                                                .appActionClickable {
                                                     isLivePhotoEnabled = !isLivePhotoEnabled
                                                     if (isLivePhotoEnabled) {
                                                         isLivePhotoPlaying = true
@@ -1936,7 +1939,7 @@ private fun ImagePreviewOverlayContent(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
+                                                .appActionClickable {
                                                     isLivePhotoEnabled = true
                                                     isLivePhotoPlaying = true
                                                     livePhotoPlayer?.seekTo(0)
@@ -1977,7 +1980,7 @@ private fun ImagePreviewOverlayContent(
                             )
                             .clip(CircleShape)
                             .background(MediaContrastPalette.Scrim.copy(alpha = 0.65f))
-                            .clickable { isLivePhotoMuted = !isLivePhotoMuted }
+                            .appActionClickable { isLivePhotoMuted = !isLivePhotoMuted }
                             .padding(8.dp)
                     ) {
                         AppIcon(
@@ -2118,7 +2121,7 @@ private fun ImagePreviewCommentTopBar(
                     .background(MediaContrastPalette.Foreground.copy(alpha = 0.16f))
                     .then(
                         if (onViewOriginal != null) {
-                            Modifier.clickable(
+                            Modifier.appActionClickable(
                                 enabled = enabled,
                                 onClick = onViewOriginal
                             )
@@ -2227,7 +2230,7 @@ private fun ImagePreviewCommentPanel(
                     .height(AppSpacingTokens.DoubleExtraLarge + AppSpacingTokens.ExtraSmall + AppSpacingTokens.Micro)
                     .clip(AppShapes.container(ContainerLevel.Floating))
                     .background(MediaContrastPalette.Foreground.copy(alpha = 0.12f))
-                    .clickable(enabled = context.onReplyClick != null, onClick = onReply)
+                    .appActionClickable(enabled = context.onReplyClick != null, onClick = onReply)
                     .padding(horizontal = AppSpacingTokens.Medium + AppSpacingTokens.Micro),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -2281,7 +2284,7 @@ private fun ImagePreviewCommentActionButton(
     Column(
         modifier = Modifier
             .size(width = AppSpacingTokens.TripleExtraLarge - AppSpacingTokens.Micro, height = AppSpacingTokens.TripleExtraLarge)
-            .clickable(enabled = enabled && !busy, onClick = onClick),
+            .appActionClickable(enabled = enabled && !busy, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -2547,6 +2550,7 @@ suspend fun saveImageToGallery(context: android.content.Context, imageUrl: Strin
             val imageLoader = if (publicContent) com.android.purebilibili.core.plugin.feed.PublicContentImageLoader.get(context) else context.imageLoader
             val request = ImageRequest.Builder(context)
                 .data(imageUrl)
+                .originalBiliImage()
                 // B 站图片需要固定 Referer；公开内容（RSS 正文）改由匿名图片链路按图片站点补 Referer。
                 .apply {
                     if (!publicContent) {

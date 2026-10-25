@@ -95,7 +95,13 @@ private class GlobalTextTapCopyNode(private var text: String) :
         val context = currentValueOf(LocalContext)
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("BiliPai 文本", text.trim()))
-        currentValueOf(LocalHapticFeedback).performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val config = currentValueOf(com.android.purebilibili.core.ui.LocalAppThemeConfig)
+        if (config.hapticFeedbackEnabled && config.hapticSettings.isEnabled(com.android.purebilibili.core.ui.AppHapticScene.TEXT)) {
+            val feedback = currentValueOf(LocalHapticFeedback)
+            val textFeedback = (feedback as? com.android.purebilibili.core.ui.AppPolicyHapticFeedback)
+                ?.forScene(com.android.purebilibili.core.ui.AppHapticScene.TEXT) ?: feedback
+            textFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
         }

@@ -114,6 +114,8 @@ docs/*
 !docs/DLNA_CAST_PLUGIN.md
 !docs/android17-verification.md
 !docs/telegram-thanos-port.md
+!docs/video-startup-comparison.md
+!docs/recommendation-and-part-resume-analysis.md
 !docs/TV_ADAPTATION.md
 !docs/images/
 !docs/images/screenshot*.png

@@ -65,7 +65,11 @@ BiliPai 基于 Kotlin 与 Jetpack Compose，支持视频、番剧、直播、动
 
 ## 插件
 
-内置空降助手、去广告、Anime4K、弹幕增强、夜间护眼、推荐与投屏等插件。JSON / `.bp` 规则支持 URL 导入；源码插件通过编译集成，外部 `.bpplugin` 执行仍处于预览阶段。
+内置空降助手、去广告、Anime4K、弹幕增强、夜间护眼、推荐与投屏等 12 个插件。JSON / `.bp` 规则支持 URL 导入；源码插件通过编译集成，外部 `.bpplugin` 目前仅预览、保存与记录授权，不加载或执行外部代码。
+
+- `plugin-sdk` 是执行契约与共用模型的唯一来源；App 的 `BuiltinPlugin` 只增加展示与设置界面，`PluginManager` 统一注册、查询和启停。
+- 播放器能力以 `PlayerPluginApi.createSession()` 为每个播放器和视频创建独立会话；信息流与推荐能力以泛型直接接收宿主视频对象。弹幕样式颜色使用 ARGB 整数，`null` 表示未指定。
+- 本次为 `0.1.0-SNAPSHOT` 的源码级破坏性调整：插件作者需迁移基础接口、播放器会话及推荐泛型并重新编译，不保留旧宿主接口别名。独立 SDK 示例见 `plugins/samples/watch-compass` 与 `plugins/samples/today-watch-remix`；两者使用本地 SDK，并与主项目保持 AGP 9.3.2／Kotlin 2.4.0 一致。
 
 导入第三方插件前，请检查来源与权限声明。
 
@@ -137,6 +141,7 @@ APK 输出至 `app/build/outputs/bilipai/dev/`；正式版输出至 `app/build/o
 | [Haze](https://github.com/chrisbanes/haze) | 毛玻璃效果 |
 | [Compose Cupertino](https://github.com/alexzhirkevich/compose-cupertino) | iOS 风格组件 |
 | [Miuix](https://github.com/compose-miuix-ui/miuix) | 界面组件与液态玻璃动效参考 |
+| [FlClash](https://github.com/chen08209/FlClash) | 设置容器展开及玻璃指示器动效参考 |
 | [BiliPai-miuix](https://github.com/Piracola/BiliPai-miuix) | UI 组件与设计系统贡献（@piracola） |
 | [Lottie](https://github.com/airbnb/lottie-android) | 矢量动画 |
 | [Coil](https://github.com/coil-kt/coil) | 图片加载 |

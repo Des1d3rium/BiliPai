@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.android.purebilibili.core.ui.components
 
@@ -44,9 +44,14 @@ fun AppPrimaryButton(
     isLoading: Boolean = false,
     leadingIcon: ImageVector? = null,
 ): Unit = AppExactTouchTargets {
-    ProvideAppElasticFeedback(enabled = enabled && !isLoading) {
+    val elasticFeedbackEnabled = enabled && !isLoading && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val haptic = LocalHapticFeedback.current
         val hapticEnabled = LocalAppThemeConfig.current.hapticFeedbackEnabled
+        val feedbackClick = appActionWithFeedback {
+            onClick()
+            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
         val interactionSource = remember { MutableInteractionSource() }
         val primaryContentColor = resolveButtonContentColor(
             containerColor = AppContentColors.accent(),
@@ -56,13 +61,10 @@ fun AppPrimaryButton(
 
         if (LocalAppUiStyle.current == AppUiStyle.MATERIAL3) {
             Button(
-                onClick = {
-                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                },
-                modifier = modifier.appElasticPress(enabled = enabled && !isLoading),
+                onClick = feedbackClick,
+                modifier = modifier,
                 enabled = enabled && !isLoading,
-                shapes = ButtonDefaults.shapes(),
+                shape = ButtonDefaults.shape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AppContentColors.accent(),
                     contentColor = primaryContentColor,
@@ -104,10 +106,7 @@ fun AppPrimaryButton(
         }
 
         AppButton(
-            onClick = {
-                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onClick()
-            },
+            onClick = feedbackClick,
             modifier = modifier.heightIn(min = AppChromeSizeTokens.CompactActionHeight),
             enabled = enabled && !isLoading,
             interactionSource = interactionSource,

@@ -2,6 +2,7 @@ package com.android.purebilibili.data.repository
 
 import com.android.purebilibili.data.model.response.PlayUrlData
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Actual URLs, rather than advertised tiers or cached account flags, define availability. */
 fun PlayUrlData.playableVideoQualityIds(): List<Int> = dash?.video.orEmpty()
@@ -26,17 +27,18 @@ fun missingPlaybackQualityBelowHighest(data: PlayUrlData): Int? {
 }
 
 /**
- * PiliPlus supplements once, at the highest missing tier below the returned maximum.
- * Keep the first response's audio, language, progress and catalogue metadata intact.
+ * 补查最高可用画质之下缺失的一档，限时完成；超时保留首次可播放结果。
+ * 保留首次响应的音频、语言、进度与目录信息。
  * Deduplicate by quality AND codec so AVC/HEVC/AV1 variants remain selectable.
  */
 suspend fun supplementPlaybackQualities(
     initial: PlayUrlData,
+    timeoutMs: Long = 1_500L,
     fetch: suspend (quality: Int) -> PlayUrlData?
 ): PlayUrlData {
     val quality = missingPlaybackQualityBelowHighest(initial) ?: return initial
     val supplement = try {
-        fetch(quality)
+        withTimeoutOrNull(timeoutMs) { fetch(quality) }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {

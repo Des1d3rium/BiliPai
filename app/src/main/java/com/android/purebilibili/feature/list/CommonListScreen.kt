@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.list
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.components.wallpaperMediaCardSurface
 import com.android.purebilibili.core.ui.AppContentColors
 
@@ -77,7 +79,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -790,7 +792,7 @@ fun CommonListScreen(
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     // 双指缩放列数：换档震动 + HUD 胶囊提示
-    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val hapticFeedback = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.REFRESH)
     var pinchPillVisible by remember { mutableStateOf(false) }
     var pinchPillDismissJob by remember { androidx.compose.runtime.mutableStateOf<Job?>(null) }
     val onPinchColumnsChange: (Int) -> Unit = { newColumns ->
@@ -3340,7 +3342,7 @@ private fun HistoryArticleCard(
                 cardBoundsRef.value = coordinates.boundsInRoot()
             }
             .combinedClickable(
-                onClick = triggerArticleClick,
+                onClick = appActionWithFeedback(triggerArticleClick),
                 onLongClick = onLongClick
             ),
         shape = AppCardShape.Semantic(ContainerLevel.Sheet),
@@ -3551,7 +3553,7 @@ private fun FavoriteSubscribedFolderRow(
                 transitionEnabled = transitionEnabled
             )
             .then(cardSurface.modifier)
-            .clickable(onClick = onClick),
+            .appActionClickable(onClick = onClick),
         color = cardSurface.containerColor,
         shape = AppShapes.container(ContainerLevel.Card)
     ) {
@@ -3693,7 +3695,7 @@ private fun FavoriteCollectionRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(cardSurface.modifier)
-            .clickable(onClick = onClick),
+            .appActionClickable(onClick = onClick),
         color = cardSurface.containerColor,
         shape = AppShapes.container(ContainerLevel.Card)
     ) {

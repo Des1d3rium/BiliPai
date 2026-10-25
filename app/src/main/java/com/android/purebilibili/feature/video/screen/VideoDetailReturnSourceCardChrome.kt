@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -86,6 +85,7 @@ import com.android.purebilibili.navigation3.predictiveback.resolveMiuixVideoCard
 import com.android.purebilibili.core.util.CardPositionManager
 import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.core.theme.BiliPink
+import com.android.purebilibili.core.theme.withDensityScale
 import com.android.purebilibili.data.model.response.ViewInfo
 import com.android.purebilibili.feature.home.resolveHomeCardInfoSurfaceAppearance
 import com.android.purebilibili.feature.home.components.cards.HorizontalVideoStatRow
@@ -483,7 +483,9 @@ internal fun BoxScope.VideoDetailReturnSourceCardChrome(
         return
     }
 
-    val baseContainer = AppSurfaceTokens.cardContainer()
+    val baseContainer = AppSurfaceTokens.videoCardContainer(
+        glassEnabled = model.infoPresentation.useTintedInfoSurface,
+    )
     val isDarkTheme = AppSurfaceTokens.chromeBackground().luminance() < 0.5f
     val surface = remember(
         model.infoPresentation.useTintedInfoSurface,
@@ -706,15 +708,9 @@ internal fun VideoDetailReturnCoverChrome(
     ) ?: return
     val baseDensity = LocalDensity.current
     val densityScale = resolveVideoDetailReturnCoverChromeDensityScale(sourceScale)
-    val compensatedDensity = remember(
-        baseDensity.density,
-        baseDensity.fontScale,
-        densityScale,
-    ) {
-        Density(
-            density = baseDensity.density * densityScale,
-            fontScale = baseDensity.fontScale,
-        )
+    // 仅叠加封面缩放系数；sp↔px 换算委托系统 Density，保留非线性字体缩放曲线。
+    val compensatedDensity = remember(baseDensity, densityScale) {
+        baseDensity.withDensityScale(densityScale)
     }
     Box(modifier = modifier) {
         CompositionLocalProvider(LocalDensity provides compensatedDensity) {

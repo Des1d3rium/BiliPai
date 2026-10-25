@@ -522,6 +522,7 @@ fun LiveListScreen(
     val coroutineScope = rememberCoroutineScope()
     var coverToSave by remember { mutableStateOf<LiveRoomCardUiModel?>(null) }
     var feedbackCard by remember { mutableStateOf<LiveRoomCardUiModel?>(null) }
+    var feedbackSource by remember { mutableStateOf<com.android.purebilibili.core.ui.components.AppGlassMenuSource?>(null) }
 
     val windowSizeClass = LocalWindowSizeClass.current
     val topChromePolicy = rememberAppTopChromePolicy()
@@ -615,7 +616,7 @@ fun LiveListScreen(
                 onAreaDetailClick = onAreaDetailClick,
                 onFollowingClick = onFollowingClick,
                 onLongPressCard = { coverToSave = it },
-                onFeedback = { feedbackCard = it },
+                onFeedback = { card, source -> feedbackSource = source; feedbackCard = card },
             )
         }
     }
@@ -661,6 +662,7 @@ fun LiveListScreen(
     feedbackCard?.let { card ->
         LiveFeedbackDialog(
             card = card,
+            source = feedbackSource,
             onSubmit = { reason -> viewModel.submitFeedback(card.roomId, reason) },
             onDismiss = { feedbackCard = null },
         )
@@ -707,7 +709,7 @@ private fun LiveHomeContent(
     onAreaDetailClick: (Int, Int, String) -> Unit,
     onFollowingClick: () -> Unit,
     onLongPressCard: (LiveRoomCardUiModel) -> Unit = {},
-    onFeedback: (LiveRoomCardUiModel) -> Unit = {},
+    onFeedback: (LiveRoomCardUiModel, com.android.purebilibili.core.ui.components.AppGlassMenuSource) -> Unit = { _, _ -> },
 ) {
     val selectedParent = areaList.firstOrNull { it.id == selectedParentAreaId }
         ?: areaList.firstOrNull {
@@ -801,7 +803,7 @@ private fun LiveHomeContent(
                         enableSharedCoverTransition = true,
                         onClick = { onLiveClick(item.roomId, item.title, item.uname) },
                         onLongPress = { onLongPressCard(model) },
-                        onFeedback = { onFeedback(model) },
+                        onFeedback = { source -> onFeedback(model, source) },
                     )
                 }
             }

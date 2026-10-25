@@ -102,6 +102,52 @@ fun ProvideAppContentColors(content: @Composable () -> Unit) {
 
 enum class AppContentStatus { SUCCESS, WARNING }
 
+/**
+ * 玻璃弹窗内容调色板：玻璃底色半透明，实际底是玻璃色叠任意背景（如深色视频）。
+ * 以纯黑与纯白两种最差背景的合成结果校验次要文字对比度，不达标时向主文字色收敛。
+ * 主文字、链接与状态色保持原调色板，仅修正 [AppContentColors.secondaryText]。
+ */
+@Composable
+fun ProvideAppGlassPopupContentColors(
+    glassSurfaceColor: Color,
+    content: @Composable () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val basePalette = LocalAppContentPalette.current
+    val baseSecondary = basePalette?.secondary
+        ?: resolveReadableNeutralContent(AppSurfaceTokens.onSurfaceVariantSummary(), scheme)
+    val adjusted = remember(scheme, baseSecondary, glassSurfaceColor) {
+        val worstSurfaces = listOf(Color.Black, Color.White)
+            .map { opaqueCompositeOver(glassSurfaceColor, it) }
+        fun readable(color: Color) = worstSurfaces.all {
+            calculateContrastRatio(color, it) >= ACCESSIBLE_TEXT_MIN_CONTRAST
+        }
+        val secondary = if (readable(baseSecondary)) {
+            baseSecondary
+        } else {
+            var result = scheme.onSurface
+            for (step in 1..16) {
+                val candidate = lerp(baseSecondary, scheme.onSurface, step / 16f)
+                if (readable(candidate)) {
+                    result = candidate
+                    break
+                }
+            }
+            result
+        }
+        AppContentPalette(
+            secondary = secondary,
+            link = basePalette?.link ?: resolveReadableNeutralContent(scheme.primary, scheme),
+            success = basePalette?.success ?: resolveStatusContentColor(AppContentStatus.SUCCESS, scheme),
+            warning = basePalette?.warning ?: resolveStatusContentColor(AppContentStatus.WARNING, scheme),
+        )
+    }
+    CompositionLocalProvider(
+        LocalAppContentPalette provides adjusted,
+        content = content,
+    )
+}
+
 /** Keep status hues independent of the user's accent and readable on ordinary app surfaces. */
 fun resolveStatusContentColor(status: AppContentStatus, scheme: ColorScheme): Color {
     val dark = scheme.surface.luminance() < 0.5f

@@ -1,6 +1,8 @@
 // 文件路径: feature/dynamic/DynamicScreen.kt
 package com.android.purebilibili.feature.dynamic
 
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import android.os.Build
@@ -26,7 +28,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -1284,7 +1286,7 @@ fun DynamicScreen(
                         modifier = Modifier
                             .size(22.dp)
                             .clip(androidx.compose.foundation.shape.CircleShape)
-                            .clickable { oldContentLocatorDismissed = true },
+                            .appActionClickable { oldContentLocatorDismissed = true },
                         contentAlignment = Alignment.Center
                     ) {
                         AppIcon(
@@ -1313,9 +1315,10 @@ fun DynamicScreen(
     //  [新增] 转发弹窗
     showRepostDialog?.let { dynamicId ->
         RepostDialog(
+            contentKey = dynamicId,
             onDismiss = { showRepostDialog = null },
-            onRepost = { content: String, alsoComment: Boolean, onComplete: (Boolean) -> Unit ->
-                viewModel.repostDynamic(dynamicId, content, alsoComment) { success, msg ->
+            onRepost = { content, alsoComment, richContents, topic, onComplete ->
+                viewModel.repostDynamic(dynamicId, content, alsoComment, richContents, topic) { success, msg ->
                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                     if (success) showRepostDialog = null
                     onComplete(success)
@@ -1388,7 +1391,7 @@ fun DynamicScreen(
                                     onClick = { selectedReason = reason }
                                 )
                             },
-                            modifier = Modifier.clickable { selectedReason = reason }
+                            modifier = Modifier.appActionClickable { selectedReason = reason }
                         )
                     }
                     if (selectedReason.type == 0) {
@@ -1885,19 +1888,20 @@ private fun HorizontalUserList(
                 val isSelected = isDynamicUpPanelItemSelected(selectedUserId, user.uid)
                 val isShortcut = isDynamicUpPanelShortcut(user.uid, selfUid)
                 var showMenu by remember { mutableStateOf(false) }
+                val glassMenuAvailable = com.android.purebilibili.core.ui.components.appGlassMenuAvailable()
                 val displayName = if (user.isHidden) {
                     "${user.name}(隐)"
                 } else {
                     user.name
                 }
 
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showMenu = true }, enabled = !isShortcut) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .combinedClickable(
-                                onClick = { onUserClick(user.uid) },
-                                onLongClick = { if (!isShortcut) showMenu = true }
+                                onClick = appActionWithFeedback { onUserClick(user.uid) },
+                                onLongClick = if (glassMenuAvailable) null else ({ if (!isShortcut) showMenu = true })
                             )
                             .padding(AppSpacingTokens.ExtraSmall)
                             .alpha(if (user.isHidden) 0.5f else 1f)
@@ -2007,7 +2011,7 @@ private fun HorizontalUserList(
                         modifier = Modifier
                             .padding(AppSpacingTokens.ExtraSmall)
                             .combinedClickable(
-                                onClick = onToggleShowHidden,
+                                onClick = appActionWithFeedback(onToggleShowHidden),
                                 onLongClick = onToggleShowHidden
                             )
                     ) {

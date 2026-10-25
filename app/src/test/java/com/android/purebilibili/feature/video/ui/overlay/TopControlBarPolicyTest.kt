@@ -8,7 +8,7 @@ class TopControlBarPolicyTest {
     @Test
     fun portraitInline_matchesReferenceGates() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = true, isFullscreen = false)
-        assertTrue(policy.showHome)
+        assertFalse(policy.showHome)
         assertFalse(policy.showTitle)
         assertFalse(policy.showStatus)
         assertTrue(policy.showAudio)
@@ -33,7 +33,7 @@ class TopControlBarPolicyTest {
     @Test
     fun landscapeInline_horizontalScreen_hidesTitleStatusAndEngagement() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = false, isFullscreen = false)
-        assertTrue(policy.showHome)
+        assertFalse(policy.showHome)
         assertFalse(policy.showTitle)
         assertFalse(policy.showStatus)
         assertTrue(policy.showAudio)
@@ -45,7 +45,7 @@ class TopControlBarPolicyTest {
     @Test
     fun landscapeFullscreen_showsTitleStatusAndEngagementWithoutCastOrAudio() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = false, isFullscreen = true)
-        assertTrue(policy.showHome)
+        assertFalse(policy.showHome)
         assertTrue(policy.showTitle)
         assertTrue(policy.showStatus)
         assertFalse(policy.showAudio)

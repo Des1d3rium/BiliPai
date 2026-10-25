@@ -6,7 +6,7 @@ import android.os.Looper
 import android.os.Build
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
-import com.android.purebilibili.core.plugin.CastPluginRoute
+import com.android.purebilibili.plugin.sdk.CastPluginRoute
 import com.android.purebilibili.core.util.Logger
 import com.android.purebilibili.feature.cast.hasRawLocalNetworkAccess
 import com.google.android.gms.cast.CastMediaControlIntent

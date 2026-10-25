@@ -1,6 +1,9 @@
 package com.android.purebilibili.feature.bangumi.ui.player
 
 import androidx.compose.runtime.Composable
+import android.os.SystemClock
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,8 +29,8 @@ import com.android.purebilibili.feature.bangumi.resolveBangumiUnsupportedOverlay
 import com.android.purebilibili.feature.bangumi.shouldShowBangumiOverlayDislikeAction
 import com.android.purebilibili.core.util.ShareUtils
 import com.android.purebilibili.feature.anime4k.Anime4KBypassReason
-import com.android.purebilibili.feature.anime4k.Anime4KPreset
-import com.android.purebilibili.feature.anime4k.VideoEnhancementAlgorithm
+import com.android.purebilibili.plugin.sdk.Anime4KPreset
+import com.android.purebilibili.plugin.sdk.VideoEnhancementAlgorithm
 import com.android.purebilibili.feature.video.ui.components.VideoAspectRatio
 import com.android.purebilibili.feature.video.ui.overlay.PlaybackDebugInfo
 import com.android.purebilibili.feature.video.ui.overlay.VideoPlayerOverlay
@@ -119,7 +122,15 @@ internal fun BangumiPlayerOverlayHost(
     onFsrSharpnessChange: (Float) -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    var pendingContentShare by androidx.compose.runtime.remember(epId) {
+        androidx.compose.runtime.mutableStateOf<com.android.purebilibili.feature.share.ContentSharePayload?>(null)
+    }
+    pendingContentShare?.let { payload ->
+        com.android.purebilibili.feature.share.ContentShareSheet(payload, onDismiss = { pendingContentShare = null })
+    }
     val context = LocalContext.current
+    val seekHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_SEEK)
+    val seekHaptics = remember(player, epId, bvid, cid) { BangumiSeekHapticPolicy() }
     val settingsScope = rememberCoroutineScope()
     val danmakuSettingsScope = resolveDanmakuSettingsScope(isFullscreen)
     val settings by SettingsManager.getDanmakuSettings(context, danmakuSettingsScope)
@@ -232,6 +243,9 @@ internal fun BangumiPlayerOverlayHost(
         actions = VideoPlayerOverlayActions(
             onSeekStart = danmakuManager::prepareForSeekScrub,
             onSeekDragStart = { position ->
+                if (seekHaptics.start(position, player.duration, SystemClock.uptimeMillis())) {
+                    seekHaptic(HapticType.LIGHT)
+                }
                 seekSession = startPlaybackSeekInteraction(
                     state = seekSession.copy(playbackPositionMs = player.currentPosition),
                     player = player,
@@ -239,13 +253,18 @@ internal fun BangumiPlayerOverlayHost(
                 )
             },
             onSeekDragUpdate = { position ->
+                if (seekHaptics.update(position, SystemClock.uptimeMillis())) {
+                    seekHaptic(HapticType.GESTURE_STEP)
+                }
                 seekSession = updatePlaybackSeekInteraction(seekSession, position)
             },
             onSeekDragCancel = {
+                seekHaptics.finish()
                 seekSession = cancelPlaybackSeekInteraction(seekSession)
                 danmakuManager.cancelSeekScrub()
             },
             onSeekTo = { position ->
+                seekHaptics.finish()
                 val result = commitPlaybackSeekInteraction(
                     state = seekSession.copy(playbackPositionMs = player.currentPosition),
                     player = player,
@@ -306,11 +325,13 @@ internal fun BangumiPlayerOverlayHost(
             subtitleControlCallbacks = features.subtitle.callbacks,
             onAspectRatioChange = onAspectRatioChange,
             onShare = {
-                ShareUtils.shareBangumi(
-                    context = context,
+                pendingContentShare = com.android.purebilibili.feature.share.buildBangumiContentSharePayload(
+                    epId = epId,
                     title = resolveBangumiOverlayShareTitle(title = title, subtitle = subtitle),
-                    seasonId = seasonId,
-                    epId = epId.takeIf { it > 0L }
+                    cover = coverUrl,
+                    seasonType = features.shareSeasonType,
+                    positionMs = player.currentPosition.coerceAtLeast(0L),
+                    aid = aid,
                 )
             },
             onReloadVideo = onReloadVideo,

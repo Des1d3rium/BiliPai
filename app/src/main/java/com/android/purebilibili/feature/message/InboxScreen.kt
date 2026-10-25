@@ -1,6 +1,9 @@
 // 私信收件箱页面
 package com.android.purebilibili.feature.message
 
+import com.android.purebilibili.core.ui.components.appActionClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 import com.android.purebilibili.core.ui.UserAvatarCornerMarkBadge
 import com.android.purebilibili.core.ui.resolveUserAvatarCornerMark
@@ -14,7 +17,6 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.android.purebilibili.core.store.MessageCenterPreferences
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -180,7 +182,7 @@ fun InboxScreen(
                         val overflow = uiState.menu + uiState.outside.filter { it !in visibleOutside }
                         var expanded by remember { mutableStateOf(false) }
                         if (overflow.isNotEmpty()) {
-                            Box {
+                            com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { expanded = true }) {
                                 AppIconButton(onClick = { expanded = true }, enabled = !uiState.isBatchOperating) { AppIcon(Icons.Default.MoreVert, "更多") }
                                 AppDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                                     overflow.forEach { item -> AppDropdownMenuItem(text = { AppText(item.title) }, onClick = { expanded = false; openMenuItem(item) }) }
@@ -455,7 +457,7 @@ private fun MessageCenterShortcutCard(
         MessageCenterDestination.LikeMe -> androidx.compose.material.icons.Icons.Outlined.FavoriteBorder
         MessageCenterDestination.SystemNotice -> androidx.compose.material.icons.Icons.Outlined.NotificationsNone
     }
-    Column(modifier.clickable(onClick = onClick).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.appActionClickable(onClick = onClick).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box {
             AppSurface(modifier = Modifier.size(44.dp), shape = CircleShape, color = AppSurfaceTokens.surfaceContainer()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { AppIcon(icon, item.title, tint = AppContentColors.accent(), modifier = Modifier.size(20.dp)) }
@@ -622,7 +624,7 @@ fun SessionListItem(
     AppSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = { showMenu = true })
+            .combinedClickable(onClick = appActionWithFeedback(onClick), onLongClick = { showMenu = true })
             .messageSecondaryClick { showMenu = true }
             .padding(horizontal = if (useGroupedListCards) 12.dp else 0.dp, vertical = if (useGroupedListCards) 3.dp else 0.dp),
         shape = if (useGroupedListCards) {
@@ -652,7 +654,7 @@ fun SessionListItem(
                     modifier = Modifier
                         .fillMaxSize(if (hasPendant) 0.72f else 1f)
                         .clip(CircleShape)
-                        .then(if (onAvatarClick != null) Modifier.clickable(onClick = onAvatarClick) else Modifier)
+                        .then(if (onAvatarClick != null) Modifier.appActionClickable(onClick = onAvatarClick) else Modifier)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentScale = ContentScale.Crop
                 )

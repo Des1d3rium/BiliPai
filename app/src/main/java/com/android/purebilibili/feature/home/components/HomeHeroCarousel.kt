@@ -470,7 +470,7 @@ private fun HomeHeroCarouselCard(
         label = "hero_card_press",
     )
     // 长按复用网格卡片的预览弹窗（立即播放/稍后再看/保存封面/分享/屏蔽/不感兴趣）。
-    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val hapticFeedback = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     val longPressAction: (() -> Unit)? = onLongPress?.let { callback ->
         {
             hapticFeedback.performHapticFeedback(

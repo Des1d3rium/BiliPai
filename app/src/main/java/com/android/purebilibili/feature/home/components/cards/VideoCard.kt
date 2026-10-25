@@ -15,12 +15,15 @@ import com.android.purebilibili.core.ui.AppChromeSizeTokens
 import com.android.purebilibili.core.ui.AppAlertDialog
 import com.android.purebilibili.core.ui.components.AppDropdownMenu
 import com.android.purebilibili.core.ui.components.AppDropdownMenuItem
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
+import com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource
 import com.android.purebilibili.core.ui.components.AppSurface
 import com.android.purebilibili.core.ui.components.AppTextButton
 
 import com.android.purebilibili.core.ui.MediaContrastPalette
 
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -50,6 +53,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.layout.onPlaced
@@ -290,7 +294,7 @@ private fun VideoCardOwnerMetadata(
         .fillMaxWidth()
         .then(
             if (upClickMid != null) {
-                Modifier.clickable { onUpClick?.invoke(upClickMid) }
+                Modifier.appActionClickable { onUpClick?.invoke(upClickMid) }
             } else {
                 Modifier
             }
@@ -720,7 +724,8 @@ internal fun ElegantVideoCard(
         )
         return
     }
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
+    val longPressHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.LONG_PRESS)
     val contentTypography = feedContentTypography()
     val playbackProgressManager = remember(context) {
         PlaybackProgressManager.getInstance(context)
@@ -830,6 +835,14 @@ internal fun ElegantVideoCard(
         )
     }
     val useCardEffectSurface = homeCardDynamicTintEnabled || homeCardFrostedGlassEnabled
+    val useRealtimeInfoHaze = homeCardFrostedGlassEnabled &&
+        infoSurfaceAppearance.useRealtimeHaze && wallpaperHazeState != null &&
+        !lowBlurBudgetForced && Build.VERSION.SDK_INT >= 31 &&
+        com.android.purebilibili.core.ui.LocalAppThemeConfig.current.bottomBarBlurEnabled
+    val hasRealtimeInfoBlur = useRealtimeWallpaperBackdrop || useRealtimeInfoHaze
+    // 模糊不可用时，关闭动态取色的卡片必须保持中性实色，不能透出壁纸伪装成模糊。
+    val useWallpaperInfoBacking = resolvedWallpaperTintEnabled &&
+        (homeCardDynamicTintEnabled || hasRealtimeInfoBlur)
     val scrollLitePolicy = remember(compactStatsOnCover) {
         resolveVideoCardScrollLiteVisualPolicy(
             scrollLiteModeEnabled = false,
@@ -918,6 +931,7 @@ internal fun ElegantVideoCard(
         defaultOnSurfaceVariant,
         homeCardDynamicTintEnabled,
         homeCardFrostedGlassEnabled,
+        useWallpaperInfoBacking,
     ) {
         resolveVideoCardAdaptiveContentColors(
             wallpaperPalette = wallpaperPalette,
@@ -926,7 +940,7 @@ internal fun ElegantVideoCard(
             } else {
                 null
             },
-            wallpaperTintEnabled = resolvedWallpaperTintEnabled,
+            wallpaperTintEnabled = useWallpaperInfoBacking,
             isDarkTheme = isDarkCardTheme,
             defaultOnSurface = defaultOnSurface,
             defaultOnSurfaceVariant = defaultOnSurfaceVariant,
@@ -1012,6 +1026,10 @@ internal fun ElegantVideoCard(
         sharedElementSourceRoute ?: localSharedElementSourceRoute
     }
 
+    // ⋮ 按钮入口额外提供源图层：玻璃菜单从按钮本身形变展开并跟随按住拖拽；
+    // 长按入口（pressOffset 非空）不接此 source，继续走按点锚点。原生路径不读取。
+    val overflowMenuSource = rememberAppGlassMenuSource()
+    var menuFromOverflowButton by remember { mutableStateOf(false) }
     val openDismissMenu: (LayoutCoordinates?, Offset?) -> Unit = { anchorCoords, pressOffset ->
         menuOffset = resolveVideoCardMenuOffset(
             rootBoundsInRoot = cardCoordsRef.value?.takeIf { it.isAttached }?.boundsInRoot(),
@@ -1019,8 +1037,13 @@ internal fun ElegantVideoCard(
             density = screenMetrics.density,
             pressOffsetInAnchorPx = pressOffset
         )
+        // 按钮入口 pressOffset 为 null：玻璃菜单从 ⋮ 源控件形变展开；长按走按点锚点。
+        menuFromOverflowButton = pressOffset == null
         showDismissMenu = true
     }
+    // 液态玻璃同窗菜单使用真实控件边界作为锚点，弹窗按设置页行为覆盖住三点按钮；
+    // 长按入口没有具名控件，保持 null 走按点小锚点，原生菜单路径不读取该状态。
+    var menuGlassAnchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val hasOverflowMenu = onDismiss != null || onWatchLater != null
     val hasTrailingCardAction = onUnfavorite != null || hasOverflowMenu
     val nativeCardLayer = rememberNativeVideoCardLayer()
@@ -1028,15 +1051,16 @@ internal fun ElegantVideoCard(
     val nativeCoverOverlayLayer = rememberNativeVideoCardLayer()
     val freezeNativeCardLayer = remember(video.bvid) { mutableStateOf(false) }
 
-    val infoBaseContainerColor = AppSurfaceTokens.cardContainer()
+    // 玻璃底色显式选择材质分支，原生卡片不借用玻璃透明度或布局参数。
+    val infoBaseContainerColor = AppSurfaceTokens.videoCardContainer(glassEnabled = useCardEffectSurface)
     fun resolvedInfoBackingColor(yFraction: Float): Color =
-        if (resolvedWallpaperTintEnabled && wallpaperPalette != null) {
+        if (useWallpaperInfoBacking && wallpaperPalette != null) {
             interpolateWallpaperColor(wallpaperPalette, yFraction).copy(alpha = 1f)
         } else {
             infoBaseContainerColor.copy(alpha = 1f)
         }
 
-    val triggerCardClick = {
+    val triggerCardClick by rememberUpdatedState(appActionWithFeedback {
         cardCoordsRef.value?.takeIf { it.isAttached }?.videoCardSourceBoundsInRoot()?.let { bounds ->
             val sourceCoverBounds = coverCoordsRef.value
                 ?.takeIf { it.isAttached }
@@ -1096,7 +1120,9 @@ internal fun ElegantVideoCard(
                                 isDataSaverActive = isDataSaverActive,
                                 frostedGlassEnabled = homeCardFrostedGlassEnabled,
                                 dynamicTintEnabled = homeCardDynamicTintEnabled,
-                            ).containerColor
+                            ).containerColor.let { color ->
+                                if (!homeCardDynamicTintEnabled && !hasRealtimeInfoBlur) color.copy(alpha = 1f) else color
+                            }
                         }
                         plate.compositeOver(backing)
                     } else null,
@@ -1168,7 +1194,7 @@ internal fun ElegantVideoCard(
             }
         }
         onClick(video.bvid, video.cid)
-    }
+    })
     val homeCardScrolling = LocalHomeCardScrolling.current
     val enterAnimationEnabledAtMount = remember(video.bvid) {
         resolveHomeCardEnterAnimationEnabledAtMount(
@@ -1313,7 +1339,7 @@ internal fun ElegantVideoCard(
             val cardShellBaseColor = if (useCardEffectSurface) {
                 Color.Transparent
             } else {
-                AppSurfaceTokens.cardContainer()
+                AppSurfaceTokens.videoCardContainer()
             }
             Box(
                 modifier = Modifier
@@ -1410,13 +1436,14 @@ internal fun ElegantVideoCard(
                         onLongPress = if (isLongPressEnabled && (hasPreviewAction || hasLongPressMenu)) {
                             { pressOffset ->
                                 if (hasPreviewAction) {
-                                    haptic(HapticType.HEAVY)
+                                    longPressHaptic(HapticType.HEAVY)
                                     onLongClick(video)
                                 } else if (shouldOpenLongPressMenu(hasPreviewAction, hasLongPressMenu)) {
-                                    haptic(HapticType.HEAVY)
+                                    longPressHaptic(HapticType.HEAVY)
                                     if (onUnfavorite != null && onDismiss == null && onWatchLater == null) {
                                         showUnfavoriteDialog = true
                                     } else {
+                                        menuGlassAnchorBounds = null
                                         openDismissMenu(coverCoordsRef.value, pressOffset)
                                     }
                                 }
@@ -1747,12 +1774,9 @@ internal fun ElegantVideoCard(
         }
         val infoContainerModifier = if (useCardEffectSurface) {
             // Wallpaper-only Haze for realtime blur (never main content HazeState).
-            val hazeModifier = if (
-                homeCardFrostedGlassEnabled &&
-                    infoSurfaceAppearance.useRealtimeHaze && wallpaperHazeState != null
-            ) {
+            val hazeModifier = if (useRealtimeInfoHaze) {
                 Modifier.unifiedBlur(
-                    hazeState = wallpaperHazeState,
+                    hazeState = requireNotNull(wallpaperHazeState),
                     shape = infoSurfaceShape,
                     surfaceType = BlurSurfaceType.BOTTOM_BAR,
                     isScrolling = LocalHomeCardScrolling.current?.value == true,
@@ -1779,7 +1803,7 @@ internal fun ElegantVideoCard(
             } else {
                 Modifier
             }
-            val baseContainerColor = AppSurfaceTokens.cardContainer()
+            val baseContainerColor = AppSurfaceTokens.videoCardContainer(glassEnabled = true)
             val baseBorderColor = MediaContrastPalette.Foreground
             Modifier
                 .fillMaxWidth()
@@ -1787,7 +1811,7 @@ internal fun ElegantVideoCard(
                 // Include the wallpaper in the recorded native pixels before freezing on click.
                 // A translucent plate alone would blend with the detail page during handoff.
                 .then(
-                    if (resolvedWallpaperTintEnabled) {
+                    if (useWallpaperInfoBacking) {
                         Modifier.sharedGlobalWallpaperBackground(
                             fallbackColor = resolvedInfoBackingColor(0.5f),
                             fallbackColorProvider = {
@@ -1854,7 +1878,9 @@ internal fun ElegantVideoCard(
                             val realtimeAlpha = if (isDarkCardTheme) 0.44f else 0.36f
                             drawRect(
                                 color = baseContainerColor.copy(
-                                    alpha = if (useRealtimeWallpaperBackdrop) {
+                                    alpha = if (!homeCardDynamicTintEnabled && !hasRealtimeInfoBlur) {
+                                        1f
+                                    } else if (useRealtimeWallpaperBackdrop) {
                                         realtimeAlpha
                                     } else if (homeCardFrostedGlassEnabled) {
                                         neutralGlassAlpha
@@ -1968,13 +1994,14 @@ internal fun ElegantVideoCard(
                         onLongPress = if (isLongPressEnabled && (hasPreviewAction || hasLongPressMenu)) {
                             { pressOffset ->
                                 if (hasPreviewAction) {
-                                    haptic(HapticType.HEAVY)
+                                    longPressHaptic(HapticType.HEAVY)
                                     onLongClick(video)
                                 } else if (shouldOpenLongPressMenu(hasPreviewAction, hasLongPressMenu)) {
-                                    haptic(HapticType.HEAVY)
+                                    longPressHaptic(HapticType.HEAVY)
                                     if (onUnfavorite != null && onDismiss == null && onWatchLater == null) {
                                         showUnfavoriteDialog = true
                                     } else {
+                                        menuGlassAnchorBounds = null
                                         openDismissMenu(titleCoordsRef.value, pressOffset)
                                     }
                                 }
@@ -2078,7 +2105,7 @@ internal fun ElegantVideoCard(
                     Box(
                         modifier = Modifier
                             .size(AppChromeSizeTokens.MinimumTouchTarget)
-                            .clickable {
+                            .appActionClickable {
                                 haptic(HapticType.MEDIUM)
                                 showUnfavoriteDialog = true
                             },
@@ -2103,8 +2130,15 @@ internal fun ElegantVideoCard(
                             .onPlaced { coordinates ->
                                 menuButtonCoordsRef.value = coordinates
                             }
-                            .clickable {
+                            // 玻璃开启时按住即从按钮源图层展开菜单；关闭时 source 短路，仅剩 clickable。
+                            .appGlassMenuSource(overflowMenuSource, onOpen = {
                                 haptic(HapticType.LIGHT)
+                                menuGlassAnchorBounds = null
+                                openDismissMenu(menuButtonCoordsRef.value, null)
+                            })
+                            .appActionClickable {
+                                haptic(HapticType.LIGHT)
+                                menuGlassAnchorBounds = null
                                 openDismissMenu(menuButtonCoordsRef.value, null)
                             },
                         contentAlignment = Alignment.BottomEnd
@@ -2148,6 +2182,8 @@ internal fun ElegantVideoCard(
                     expanded = showDismissMenu,
                     onDismissRequest = { showDismissMenu = false },
                     offset = DpOffset.Zero,
+                    glassAnchorBounds = menuGlassAnchorBounds,
+                    glassSource = overflowMenuSource.takeIf { menuFromOverflowButton },
                 ) {
                     // 以下扩展操作对齐 PiliPlus 的视频卡片菜单：BV 号、稍后再看、AI 总结、
                     // 访问 UP 主、不感兴趣、拉黑与无痕模式；取消收藏是本应用收藏页的既有入口。

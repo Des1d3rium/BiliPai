@@ -1,12 +1,27 @@
 package com.android.purebilibili.core.ui
 
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import com.android.purebilibili.core.theme.iOSSystemGray6
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AppSurfaceTokensTest {
+
+    @Test
+    fun videoCards_preserveThemeContainerAcrossMaterials() {
+        val light = lightColorScheme()
+        assertEquals(light.surfaceContainer, AppSurfaceTokens.resolveVideoCardContainer(light, false))
+        assertEquals(light.surfaceContainer, AppSurfaceTokens.resolveVideoCardContainer(light, true))
+        val dark = darkColorScheme(background = Color.Black, surfaceContainer = Color(0xFF252B38))
+        val native = AppSurfaceTokens.resolveVideoCardContainer(dark, false)
+        val glass = AppSurfaceTokens.resolveVideoCardContainer(dark, true)
+        assertEquals(dark.surfaceContainer, native)
+        assertEquals(dark.surfaceContainer, glass)
+        assertEquals(dark.surfaceContainer, AppSurfaceTokens.resolveCardContainer(dark))
+    }
 
     private val scheme = lightColorScheme(
         surface = Color.White,

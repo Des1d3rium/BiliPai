@@ -303,7 +303,7 @@ fun RelatedVideoItem(
     }
     // 排版对齐首页单列卡片:标题用 feed 紧凑级,统计用 labelSmall。
     val contentTypography = com.android.purebilibili.feature.home.components.cards.horizontalVideoCardTypography()
-    val moreHaptic = rememberHapticFeedback()
+    val moreHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
 
     Box(
         modifier = modifier

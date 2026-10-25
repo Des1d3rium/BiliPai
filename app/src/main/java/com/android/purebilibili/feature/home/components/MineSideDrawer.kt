@@ -48,6 +48,7 @@ import com.android.purebilibili.core.ui.components.AppSurface
 import com.android.purebilibili.core.ui.components.UserLevelBadge
 import com.android.purebilibili.core.ui.components.UserVipBadge
 import com.android.purebilibili.core.ui.components.resolveUserVipBadgeLabel
+import com.android.purebilibili.core.ui.popup.appGlassDrawerSurface
 import com.android.purebilibili.core.ui.blur.unifiedBlur
 import com.android.purebilibili.core.ui.rememberAppDrawerVisualPolicy
 import com.android.purebilibili.feature.home.UserState
@@ -178,12 +179,13 @@ fun MineSideDrawer(
             .width(drawerWidth)
             .then(
                 if (liquidGlassActive) {
-                    Modifier.biliPaiFloatingDockShell(
-                        backdrop = miuixBackdrop,
-                        containerColor = colorScheme.surfaceContainer,
-                        pressProgress = 0f,
+                    // 玻璃侧栏跟随弹窗材质；关闭时继续使用下方原生与普通模糊路径。
+                    Modifier.appGlassDrawerSurface(
+                        backdrop = requireNotNull(miuixBackdrop),
                         shape = drawerShape,
-                        liquidGlassTuning = liquidGlassTuning,
+                        darkTheme = isDark,
+                        tuning = liquidGlassTuning,
+                        forceLowBlurBudget = forceLowBlurBudget,
                     )
                 } else if (effectiveBlurActive) {
                     Modifier.unifiedBlur(

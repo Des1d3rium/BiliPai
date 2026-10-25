@@ -3,7 +3,7 @@ package com.android.purebilibili.feature.search
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -297,7 +297,7 @@ fun SearchSuggestionDropdown(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSuggestionClick(suggestion.keyword) }
+                        .appActionClickable { onSuggestionClick(suggestion.keyword) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -655,7 +655,7 @@ private fun SearchKeywordCell(
 ) {
     Row(
         modifier = modifier
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(vertical = 5.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -791,7 +791,7 @@ private fun SearchHistorySectionModern(
                         modifier = Modifier
                             .weight(1f)
                             .clip(AppShapes.container(ContainerLevel.Chip))
-                            .clickable { onItemClick(history.keyword) }
+                            .appActionClickable { onItemClick(history.keyword) }
                             .heightIn(min = 44.dp)
                             .padding(horizontal = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -808,7 +808,7 @@ private fun SearchHistorySectionModern(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(AppShapes.container(ContainerLevel.Chip))
-                                .clickable { onDelete(history) },
+                                .appActionClickable { onDelete(history) },
                             contentAlignment = Alignment.Center,
                         ) {
                             AppIcon(

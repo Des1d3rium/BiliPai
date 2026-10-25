@@ -5,7 +5,7 @@ import android.graphics.PixelFormat
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
 import android.view.Surface
-import com.android.purebilibili.feature.anime4k.Anime4KConfig
+import com.android.purebilibili.plugin.sdk.Anime4KConfig
 
 /** Anime4K 的可见输出 SurfaceView，解码器输入 Surface 由 renderer 异步提供。 */
 class Anime4KGLSurfaceView @JvmOverloads constructor(

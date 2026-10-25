@@ -22,9 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.android.purebilibili.core.plugin.CastPluginApi
-import com.android.purebilibili.core.plugin.CastDiscoveryRequirement
-import com.android.purebilibili.core.plugin.CastPluginRoute
+import com.android.purebilibili.plugin.sdk.CastPluginApi
+import com.android.purebilibili.core.plugin.BuiltinPlugin
+import com.android.purebilibili.plugin.sdk.CastDiscoveryRequirement
+import com.android.purebilibili.plugin.sdk.CastPluginRoute
 import com.android.purebilibili.core.plugin.PluginManager
 import kotlinx.coroutines.flow.combine
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +40,7 @@ import androidx.lifecycle.LifecycleEventObserver
 
 private data class PluginRouteEntry(
     val plugin: CastPluginApi,
+    val presentation: BuiltinPlugin,
     val route: CastPluginRoute
 )
 
@@ -103,7 +105,9 @@ fun DeviceListDialog(
         }
         combine(castPlugins.map { it.routes }) { arrays ->
             arrays.flatMapIndexed { index, routes ->
-                routes.map { PluginRouteEntry(castPlugins[index], it) }
+                val plugin = castPlugins[index]
+                val presentation = castPluginInfos.first { it.second === plugin }.first.plugin
+                routes.map { PluginRouteEntry(plugin, presentation, it) }
             }
         }.collect { value = it }
     }
@@ -275,7 +279,7 @@ fun DeviceListDialog(
                             AppListItem(
                                 headlineContent = { AppText(route.name) },
                                 supportingContent = { AppText(route.description ?: plugin.name) },
-                                leadingContent = { AppIcon(route.icon ?: plugin.icon ?: Icons.Rounded.Cast, null) },
+                                leadingContent = { AppIcon(entry.presentation.icon ?: Icons.Rounded.Cast, null) },
                                 modifier = Modifier
                                     .clickable { onPluginCastDeviceSelected(plugin, route) }
                                     .fillMaxWidth()

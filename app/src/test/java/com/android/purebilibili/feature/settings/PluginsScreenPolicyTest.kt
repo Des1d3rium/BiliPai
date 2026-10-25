@@ -1,52 +1,19 @@
 package com.android.purebilibili.feature.settings
 
 import com.android.purebilibili.core.plugin.ExternalPluginInstallDecision
-import com.android.purebilibili.core.plugin.PluginCapability
-import com.android.purebilibili.core.plugin.PluginCapabilityManifest
+import com.android.purebilibili.plugin.sdk.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapabilityManifest
 import com.android.purebilibili.core.plugin.kotlinpkg.InstalledExternalPluginPackage
 import com.android.purebilibili.core.plugin.skin.InstalledUiSkinPackage
 import com.android.purebilibili.core.plugin.skin.UiSkinAssets
 import com.android.purebilibili.core.plugin.skin.UiSkinManifest
 import com.android.purebilibili.core.plugin.skin.UiSkinPackagePreview
 import com.android.purebilibili.core.plugin.skin.UiSkinSurface
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PluginsScreenPolicyTest {
-
-    @Test
-    fun sponsorBlockToggle_routesThroughSettingsPath() = runTest {
-        var sponsorBlockToggleCount = 0
-        var genericToggleCount = 0
-
-        dispatchBuiltInPluginToggle(
-            pluginId = "sponsor_block",
-            enabled = true,
-            onSponsorBlockToggle = { sponsorBlockToggleCount += 1 },
-            onGenericPluginToggle = { _, _ -> genericToggleCount += 1 }
-        )
-
-        assertEquals(1, sponsorBlockToggleCount)
-        assertEquals(0, genericToggleCount)
-    }
-
-    @Test
-    fun nonSponsorBlockToggle_routesThroughGenericPluginPath() = runTest {
-        var sponsorBlockToggleCount = 0
-        var genericToggleCount = 0
-
-        dispatchBuiltInPluginToggle(
-            pluginId = "danmaku_enhance",
-            enabled = false,
-            onSponsorBlockToggle = { sponsorBlockToggleCount += 1 },
-            onGenericPluginToggle = { _, _ -> genericToggleCount += 1 }
-        )
-
-        assertEquals(0, sponsorBlockToggleCount)
-        assertEquals(1, genericToggleCount)
-    }
 
     @Test
     fun capabilityModels_markNetworkAndStorageAsSensitiveAuthorizationItems() {

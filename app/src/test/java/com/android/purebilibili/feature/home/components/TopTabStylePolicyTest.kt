@@ -62,7 +62,7 @@ class TopTabStylePolicyTest {
             "app/src/main/java/com/android/purebilibili/feature/home/components/" +
                 "HomeTopTabFloatingDock.kt"
         )
-        assertTrue(topDock.contains("HorizontalFloatingToolbar("))
+        assertTrue(topDock.contains("AppMaterial3Toolbar("))
         assertTrue(topDock.contains("FilledTonalButton("))
         assertTrue(topDock.contains("FilledTonalIconButton("))
         val topBar = sourceText("app/src/main/java/com/android/purebilibili/feature/home/components/TopBar.kt")

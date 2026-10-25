@@ -70,7 +70,7 @@ import com.android.purebilibili.feature.home.resolveHomeFeedPinchColumnBounds
 import com.android.purebilibili.feature.home.GridPinchColumnHudPill
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1832,7 +1832,7 @@ fun SearchScreen(
                                     var interactiveColumns by remember { mutableStateOf<Int?>(null) }
                                     var isPinchPillVisible by remember { mutableStateOf(false) }
                                     var pinchPillDismissJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-                                    val haptic = LocalHapticFeedback.current
+                                    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
                                     val requestedSearchGridColumns = interactiveColumns ?: actualGridColumns
                                     val effectiveSearchGridColumns = if (
                                         com.android.purebilibili.core.util.LocalAppWindowAdaptiveInfo.current.shouldAvoidHinge
@@ -1928,6 +1928,19 @@ fun SearchScreen(
                                     modifier = videoGridModifier
                         ) {
                                 if (targetSearchType == SearchType.ALL) {
+                                    pageResultState.matchResults.firstOrNull()?.let { featuredMatch ->
+                                        item(key = "all_match_${featuredMatch.id}", span = { GridItemSpan(maxLineSpan) }) {
+                                            MatchSearchResultCard(
+                                                item = featuredMatch,
+                                                appearance = genericResultCardAppearance,
+                                                onClick = {
+                                                    if (featuredMatch.id > 0L) {
+                                                        onNavigateSearchTarget(BilibiliNavigationTarget.Match(featuredMatch.id))
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    }
                                     if (pageResultState.upResults.isNotEmpty()) {
                                         itemsIndexed(pageResultState.upResults, key = { _, up -> "all_up_${up.mid}" }, span = { _, _ -> GridItemSpan(maxLineSpan) }) { _, up ->
                                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1935,6 +1948,7 @@ fun SearchScreen(
                                                     upItem = up,
                                                     appearance = genericResultCardAppearance,
                                                     onClick = { onUpClick(up.mid) },
+                                                    onLiveClick = { onLiveClick(up.room_id ?: 0L, up.uname, up.uname) },
                                                     onTransitionClick = onUpResultClick?.let { openResult ->
                                                         { key -> openResult(up.mid, key) }
                                                     },
@@ -1994,7 +2008,7 @@ fun SearchScreen(
                                         }
                                     }
                                     if (pageResultState.matchResults.isNotEmpty()) {
-                                        itemsIndexed(pageResultState.matchResults, key = { _, item -> "all_match_${item.id}" }, span = { _, _ -> GridItemSpan(maxLineSpan) }) { _, item ->
+                                        itemsIndexed(pageResultState.matchResults.drop(1), key = { _, item -> "all_match_${item.id}" }, span = { _, _ -> GridItemSpan(maxLineSpan) }) { _, item ->
                                             MatchSearchResultCard(
                                                 item = item,
                                                 appearance = genericResultCardAppearance,
@@ -2188,6 +2202,7 @@ fun SearchScreen(
                                             upItem = upItem,
                                             appearance = genericResultCardAppearance,
                                             onClick = { onUpClick(upItem.mid) },
+                                            onLiveClick = { onLiveClick(upItem.room_id ?: 0L, upItem.uname, upItem.uname) },
                                             onTransitionClick = onUpResultClick?.let { openResult ->
                                                 { transitionKey: String -> openResult(upItem.mid, transitionKey) }
                                             },
@@ -2972,12 +2987,9 @@ fun SearchTopBar(
         Modifier
     }
 
-    AppSurface(
-        modifier = modifier
-            .fillMaxWidth(),
-        color = Color.Transparent,
-        shadowElevation = 0.dp
-    ) {
+    // 外层只负责排列；MD3、Miuix 与玻璃控件都可把弹性绘制伸到布局边界外。
+    // 输入框与按钮自己保留圆角裁切，不用整个顶栏的 Surface 再裁一次。
+    Box(modifier = modifier.fillMaxWidth()) {
         Column {
             if (includeStatusBarPadding) {
                 Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
@@ -3275,7 +3287,7 @@ fun QuickCategory(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clickable { onClick() }
+            .appActionClickable { onClick() }
             .heightIn(min = 48.dp)
             .padding(8.dp)
     ) {
@@ -3339,7 +3351,7 @@ fun SearchDiscoverySection(
                 AppSurface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     shape = AppShapes.container(ContainerLevel.Chip),
-                    modifier = Modifier.clickable { onItemClick(keyword) }
+                    modifier = Modifier.appActionClickable { onItemClick(keyword) }
                 ) {
                     AppText(
                         keyword,
@@ -3433,7 +3445,7 @@ fun SearchHotSection(
                                 Row(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable { onItemClick(hotItem.keyword) },
+                                        .appActionClickable { onItemClick(hotItem.keyword) },
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // 排名序号
@@ -3584,7 +3596,10 @@ private fun SearchResultTypeTabRow(
                 }
             },
             modifier = if (useScrollableRail) {
-                Modifier.liquidDockViewport()
+                Modifier.liquidDockViewport(
+                    verticalOverflow = AppChromeSizeTokens.MinimumTouchTarget,
+                    allowNativeOverflow = true,
+                )
             } else {
                 Modifier.fillMaxWidth()
             },
@@ -3706,7 +3721,7 @@ fun SearchFilterBar(
                 verticalArrangement = Arrangement.spacedBy(if (useMiuixPresentation) AppSpacingTokens.Small else 8.dp)
             ) {
                 if (SearchFilterControl.VIDEO_ORDER in filterControls) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showOrderMenu = true }) {
                     FilterMenuChip(
                         text = localizedSearchOrderLabel(currentOrder),
                         highlighted = currentOrder != SearchOrder.TOTALRANK,
@@ -3730,7 +3745,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.VIDEO_DURATION in filterControls) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showDurationMenu = true }) {
                     FilterMenuChip(
                         text = resolveSearchDurationFilterLabel(currentDurations),
                         highlighted = currentDurations.isNotEmpty(),
@@ -3748,6 +3763,7 @@ fun SearchFilterBar(
                             }
                             AppDropdownMenuItem(
                                 text = { AppText(duration.displayName) },
+                                dismissOnClick = false,
                                 leadingIcon = {
                                     AppCheckbox(
                                         checked = selected,
@@ -3764,7 +3780,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.VIDEO_TID in filterControls) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showVideoTidMenu = true }) {
                     FilterMenuChip(
                         text = selectedVideoTidName,
                         highlighted = currentVideoTid != 0,
@@ -3788,7 +3804,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.UP_ORDER in filterControls) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showUpOrderMenu = true }) {
                     FilterMenuChip(
                         text = currentUpOrder.displayName,
                         highlighted = currentUpOrder != SearchUpOrder.DEFAULT,
@@ -3801,6 +3817,7 @@ fun SearchFilterBar(
                         SearchUpOrder.entries.forEach { order ->
                             AppDropdownMenuItem(
                                 text = { AppText(order.displayName) },
+                                selected = order == currentUpOrder,
                                 onClick = {
                                     onUpOrderChange(order)
                                     showUpOrderMenu = false
@@ -3812,7 +3829,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.UP_ORDER_SORT in filterControls) {
-                    Box {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showUpOrderSortMenu = true }) {
                         FilterMenuChip(
                             text = currentUpOrderSort.displayName,
                             highlighted = true,
@@ -3836,7 +3853,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.UP_USER_TYPE in filterControls) {
-                Box {
+                com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showUpUserTypeMenu = true }) {
                     FilterMenuChip(
                         text = resolveSearchUpUserTypeFilterLabel(currentUpUserType),
                         highlighted = currentUpUserType != SearchUserType.ALL,
@@ -3860,7 +3877,7 @@ fun SearchFilterBar(
                 }
 
                 if (SearchFilterControl.LIVE_ORDER in filterControls) {
-                    Box {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showLiveOrderMenu = true }) {
                         FilterMenuChip(
                             text = currentLiveOrder.displayName,
                             highlighted = currentLiveOrder != SearchLiveOrder.ONLINE,
@@ -3873,6 +3890,7 @@ fun SearchFilterBar(
                             SearchLiveOrder.entries.forEach { order ->
                                 AppDropdownMenuItem(
                                     text = { AppText(order.displayName) },
+                                    selected = order == currentLiveOrder,
                                     onClick = {
                                         onLiveOrderChange(order)
                                         showLiveOrderMenu = false
@@ -3940,7 +3958,7 @@ private fun SearchOrderMenu(
     onExpandedChange: (Boolean) -> Unit,
     onSelected: (SearchOrder) -> Unit
 ) {
-    Box {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { onExpandedChange(true) }) {
         FilterMenuChip(
             text = current.displayName,
             highlighted = current != SearchOrder.TOTALRANK,
@@ -3950,6 +3968,7 @@ private fun SearchOrderMenu(
             options.forEach { order ->
                 AppDropdownMenuItem(
                     text = { AppText(order.displayName) },
+                    selected = order == current,
                     onClick = {
                         onSelected(order)
                         onExpandedChange(false)
@@ -3969,7 +3988,7 @@ private fun SearchCategoryMenu(
     onExpandedChange: (Boolean) -> Unit,
     onSelected: (Int) -> Unit
 ) {
-    Box {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { onExpandedChange(true) }) {
         FilterMenuChip(label, highlighted) { onExpandedChange(true) }
         AppDropdownMenu(expanded = expanded, onDismissRequest = { onExpandedChange(false) }) {
             options.forEachIndexed { index, option ->
@@ -4141,7 +4160,7 @@ fun SearchResultCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppShapes.container(ContainerLevel.Card))
-            .clickable { onClick(video.bvid) }
+            .appActionClickable { onClick(video.bvid) }
             .padding(bottom = if (useMiuixPresentation) AppSpacingTokens.Small else 8.dp)
     ) {
         // 封面
@@ -4288,9 +4307,10 @@ internal fun UpSearchResultCard(
     appearance: SearchResultCardAppearance,
     onClick: () -> Unit,
     onTransitionClick: ((String) -> Unit)? = null,
+    onLiveClick: (() -> Unit)? = null,
 ) {
     val useMiuixPresentation = LocalAppUiStyle.current == AppUiStyle.MIUIX
-    val cleanedItem = remember(upItem.mid) { upItem.cleanupFields() }
+    val cleanedItem = remember(upItem) { upItem.cleanupFields() }
     val transitionKey = rememberSaveable(upItem.mid) {
         "${searchUpContainerKey(upItem.mid)}:${java.util.UUID.randomUUID()}"
     }
@@ -4338,7 +4358,24 @@ internal fun UpSearchResultCard(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentScale = ContentScale.Crop
                 )
-                if (verifyBadge != null) {
+                if (cleanedItem.is_live == 1) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(18.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        com.android.purebilibili.core.ui.components.PlaybackBarsIndicator(
+                            isPlaying = true,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            contentDescription = "正在直播",
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
+                } else if (verifyBadge != null) {
                     OfficialVerifyAvatarBadge(
                         badge = verifyBadge,
                         modifier = Modifier.align(Alignment.BottomEnd)
@@ -4383,6 +4420,26 @@ internal fun UpSearchResultCard(
                         level = cleanedItem.level,
                         isSeniorMember = cleanedItem.is_senior_member == 1
                     )
+                    if (cleanedItem.is_live == 1) {
+                        AppSurface(
+                            modifier = Modifier.appActionClickable(
+                                enabled = (cleanedItem.room_id ?: 0L) > 0L && onLiveClick != null,
+                                onClickLabel = "进入直播间",
+                                onClick = { onLiveClick?.invoke() },
+                            ),
+                            shape = AppShapes.container(ContainerLevel.Tag),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ) {
+                            SearchResultText(
+                                text = "直播中",
+                                role = SearchResultTextRole.BADGE,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
                 }
 
                 Spacer(
@@ -4829,7 +4886,7 @@ private fun SearchNativeMessageState(
                 replayKey = replayKey,
                 modifier = Modifier
                     .size(com.android.purebilibili.core.ui.maidStateIllustrationSize())
-                    .clickable(
+                    .appActionClickable(
                         role = androidx.compose.ui.semantics.Role.Button,
                         onClickLabel = "重播蓝雪女仆动画"
                     ) { replayKey++ }

@@ -1,6 +1,6 @@
 package com.android.purebilibili.feature.dynamic.components
 
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -68,7 +68,7 @@ internal fun DynamicAuthorSearchDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onAuthorSelected(user.uid) }
+                                .appActionClickable { onAuthorSelected(user.uid) }
                                 .padding(vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,

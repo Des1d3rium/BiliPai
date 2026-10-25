@@ -1,6 +1,7 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
 import androidx.compose.foundation.combinedClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,12 +63,19 @@ internal fun Modifier.playerActionBounds(onBounds: (IntRect) -> Unit): Modifier 
 @Composable
 internal fun PiliPlayerBar(
     modifier: Modifier = Modifier,
+    groupGlassControls: Boolean = false,
     left: @Composable () -> Unit,
     right: @Composable () -> Unit,
 ) {
+    val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    val spacing = if (glass) 4.dp else 0.dp
     Layout(content = {
-        Row(verticalAlignment = Alignment.CenterVertically) { left() }
-        Row(verticalAlignment = Alignment.CenterVertically) { right() }
+        PlayerControlGlassGroup(enabled = groupGlassControls) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { left() }
+        }
+        PlayerControlGlassGroup(enabled = groupGlassControls) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { right() }
+        }
     }, modifier = modifier) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
         val leftGroup = measurables[0].measure(loose)
@@ -129,14 +137,14 @@ internal fun PlayerControlIconAction(
     PlayerControlGlassDock(
         enabled = true,
         modifier = modifier.width(width).height(height),
-        shape = RoundedCornerShape(8.dp),
+        shape = if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) RoundedCornerShape(50) else RoundedCornerShape(8.dp),
     ) {
         AppExactTouchTargets {
             Box(
                 modifier = Modifier.fillMaxSize().semantics {
                     contentDescription = description
                     this.selected = selected
-                }.combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick),
+                }.combinedClickable(role = Role.Button, onClick = appActionWithFeedback(onClick), onLongClick = onLongClick),
                 contentAlignment = Alignment.Center,
             ) {
                 AppIcon(
@@ -160,13 +168,13 @@ internal fun PlayerControlTextAction(
     fontSp: Int = 13,
     height: Dp = 30.dp,
 ) {
-    PlayerControlGlassDock(enabled = true, modifier = modifier, shape = RoundedCornerShape(8.dp)) {
+    PlayerControlGlassDock(enabled = true, modifier = modifier, shape = if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) RoundedCornerShape(50) else RoundedCornerShape(8.dp)) {
         AppExactTouchTargets {
             Box(
                 modifier = Modifier.height(height).semantics {
                     contentDescription = description
                     this.selected = selected
-                }.combinedClickable(role = Role.Button, onClick = onClick)
+                }.combinedClickable(role = Role.Button, onClick = appActionWithFeedback(onClick))
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {

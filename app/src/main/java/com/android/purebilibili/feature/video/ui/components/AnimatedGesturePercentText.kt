@@ -104,7 +104,7 @@ fun AnimatedGesturePercentText(
     val blurEffectCache = remember { GesturePercentBlurEffectCache() }
     var initialized by remember { mutableStateOf(false) }
     var previousPercent by remember { mutableIntStateOf(normalizedPercent) }
-    val haptic = rememberHapticFeedback()
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_GESTURES)
 
     LaunchedEffect(normalizedPercent, enableHaptic) {
         if (!initialized) {

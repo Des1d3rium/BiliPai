@@ -1,7 +1,7 @@
 package com.android.purebilibili.feature.dynamic.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,7 +67,7 @@ internal fun DynamicCommentEntryBar(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(if (liquidChromeActive) Color.Transparent else containerColor)
-                    .clickable(role = Role.Button, onClick = onClick)
+                    .appActionClickable(role = Role.Button, onClick = onClick)
                     .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -86,7 +86,7 @@ internal fun DynamicCommentEntryBar(
                 .appElasticPress()
                 .clip(AppShapes.container(ContainerLevel.Card))
                 .background(containerColor)
-                .clickable(role = Role.Button, onClick = onClick)
+                .appActionClickable(role = Role.Button, onClick = onClick)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {

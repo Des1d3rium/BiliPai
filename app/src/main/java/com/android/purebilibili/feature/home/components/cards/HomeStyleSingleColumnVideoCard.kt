@@ -10,7 +10,8 @@ import com.android.purebilibili.core.ui.MediaContrastPalette
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -174,7 +175,7 @@ internal fun HomeStyleSingleColumnVideoCard(
             .diskCacheKey(stationaryCoverUrl)
             .build()
     }
-    val triggerClick = {
+    val triggerClick by rememberUpdatedState(appActionWithFeedback {
         cardBounds.value?.let { bounds ->
             val sourceCoverBounds = coverBounds.value
             CardPositionManager.recordVideoCardPosition(
@@ -229,8 +230,8 @@ internal fun HomeStyleSingleColumnVideoCard(
             latestOnClick.value()
         }
         Unit
-    }
-    val moreHaptic = rememberHapticFeedback()
+    })
+    val moreHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     HorizontalVideoCardFrame(
         coverAspectRatio = coverAspectRatio,
         modifier = modifier
@@ -250,7 +251,12 @@ internal fun HomeStyleSingleColumnVideoCard(
             )
             .then(nativeCardSnapshot.modifier)
             .clip(cardShape)
-            .wallpaperAwareMediaCardBackground(AppSurfaceTokens.cardContainer(), cardShape)
+            .wallpaperAwareMediaCardBackground(
+                AppSurfaceTokens.videoCardContainer(
+                    glassEnabled = LocalHomeCardDynamicTintEnabled.current || LocalHomeCardFrostedGlassEnabled.current,
+                ),
+                cardShape,
+            )
             .combinedClickable(
                 onClick = triggerClick,
                 onLongClick = if (isLongPressEnabled) onLongClick else null,
@@ -375,7 +381,7 @@ internal fun HomeStyleSingleColumnVideoCard(
                             .size(AppChromeSizeTokens.MinimumTouchTarget)
                             .clip(CircleShape)
                             .semantics { contentDescription = "更多操作" }
-                            .clickable(
+                            .appActionClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                             ) {

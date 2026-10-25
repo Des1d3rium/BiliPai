@@ -931,7 +931,7 @@ private fun NavEntryHost(
         Modifier.transformEntry(transitionScope)
     }
 
-    val clipModifier = if ((depthBuckets and DEPTH_BUCKET_CLIP_CORNERS) != 0) {
+    val clipModifier = if (!activeTransition.handlesOwnClipping && (depthBuckets and DEPTH_BUCKET_CLIP_CORNERS) != 0) {
         // Squircle-clip the transitioning top entry. The radius comes from the effects, so callers
         // can follow the platform screen corner (e.g. rememberNavSystemCornerRadius); the corner
         // set follows the effects' clip mode. absoluteSquircleClip uses physical corners (never

@@ -165,6 +165,7 @@ class PureApplication : Application(), SingletonImageLoader.Factory, ComponentCa
         val diskCacheBytes = 100L * 1024 * 1024
         return ImageLoader.Builder(this)
             .components {
+                add(com.android.purebilibili.core.util.BiliImageQualityInterceptor())
                 // 共享网络客户端及 DNS 策略，保留 HTTP 缓存头语义。
                 add(
                     OkHttpNetworkFetcherFactory(
@@ -197,8 +198,8 @@ class PureApplication : Application(), SingletonImageLoader.Factory, ComponentCa
             //  优先使用缓存
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
-            //  允许适用图片使用 RGB_565，降低内存占用
-            .allowRgb565(true)
+            // 保留完整颜色精度；内存由按显示尺寸采样和缓存预算控制。
+            .allowRgb565(false)
             .crossfade(true)
             .build()
             .also { _imageLoader = it }  // 保存引用
@@ -460,7 +461,7 @@ class PureApplication : Application(), SingletonImageLoader.Factory, ComponentCa
         //  [BiliPai 移植] 推荐流过滤(默认关闭, 可在插件中心启用)
         PluginManager.register(com.android.purebilibili.feature.plugin.BiliPaiFeedFilterPlugin())
         PluginManager.register(com.android.purebilibili.feature.plugin.SubscriptionFeedPlugin())
-        Logger.d(PureApplicationRuntimeConfig.TAG, " Plugin system initialized with 11 built-in plugins")
+        Logger.d(PureApplicationRuntimeConfig.TAG, " Plugin system initialized with 12 built-in plugins")
 
         AppScope.ioScope.launch {
             com.android.purebilibili.core.plugin.json.JsonPluginManager.initialize(this@PureApplication)
@@ -473,12 +474,6 @@ class PureApplication : Application(), SingletonImageLoader.Factory, ComponentCa
         }
 
         AppScope.ioScope.launch {
-            val sponsorBlockEnabled = com.android.purebilibili.core.store.SettingsManager
-                .getSponsorBlockEnabled(this@PureApplication)
-                .first()
-            PluginManager.setEnabled("sponsor_block", sponsorBlockEnabled)
-            Logger.d(PureApplicationRuntimeConfig.TAG, " SponsorBlock plugin synced: enabled=$sponsorBlockEnabled")
-
             SettingsManager.forceDanmakuDefaults(this@PureApplication)
         }
 

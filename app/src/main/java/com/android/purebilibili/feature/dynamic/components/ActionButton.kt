@@ -22,7 +22,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -193,7 +193,7 @@ fun ActionButton(
                         Modifier
                     }
                 )
-                .clickable(
+                .appActionClickable(
                     enabled = enabled,
                     interactionSource = interactionSource,
                     indication = null

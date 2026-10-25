@@ -79,4 +79,24 @@ class VideoPlayerBufferPolicyTest {
             )
         )
     }
+    @Test
+    fun earlyLimitAlwaysAllowsStartupAndRebufferAtSupportedSpeeds() {
+        listOf(true, false).forEach { wifi ->
+            val policy = resolvePlayerBufferPolicy(wifi)
+            listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { speed ->
+                val limitUs = resolveEarlyPlaybackBufferLimitUs(
+                    policy.earlyPlaybackMaxBufferMs,
+                    policy.bufferForPlaybackMs,
+                    policy.bufferForPlaybackAfterRebufferMs,
+                    speed,
+                )
+                val startupUs = policy.bufferForPlaybackMs * 1_000.0 * speed
+                val rebufferUs = policy.bufferForPlaybackAfterRebufferMs * 1_000.0 * speed
+                assertTrue(limitUs > startupUs, "startup wifi=$wifi speed=$speed")
+                assertTrue(limitUs > rebufferUs, "rebuffer wifi=$wifi speed=$speed")
+                assertTrue(limitUs >= policy.earlyPlaybackMaxBufferMs * 1_000L)
+            }
+        }
+    }
+
 }

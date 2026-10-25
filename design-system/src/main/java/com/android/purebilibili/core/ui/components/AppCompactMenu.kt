@@ -40,7 +40,7 @@ fun AppCompactMenuColumn(
     scrollState: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val scrollModifier = if (scrollable) {
+    val scrollModifier = if (scrollable && LocalAppGlassMenuScope.current == null) {
         if (overscrollEnabled) {
             Modifier.verticalScroll(scrollState)
         } else {
@@ -70,7 +70,11 @@ fun AppCompactMenuItem(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
+    dismissOnClick: Boolean = true,
 ) {
+    val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
+    val glassScope = LocalAppGlassMenuScope.current
+    val menuModifier = modifier.glassMenuItem(enabled, dismissOnClick, feedbackClick).glassMenuSelectedItem(selected)
     val contentColor = when {
         !enabled -> AppContentColors.disabled()
         selected -> AppContentColors.accent()
@@ -79,9 +83,13 @@ fun AppCompactMenuItem(
     val summaryColor = if (enabled) AppContentColors.secondaryText() else contentColor
     AppExactTouchTargets {
         AppSurface(
-            onClick = { if (enabled) onClick() },
+            onClick = {
+                if (enabled) {
+                    if (glassScope != null) glassScope.dispatch(feedbackClick, dismissOnClick) else feedbackClick()
+                }
+            },
             enabled = enabled,
-            modifier = modifier
+            modifier = menuModifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) { this.selected = selected },
             color = Color.Transparent,

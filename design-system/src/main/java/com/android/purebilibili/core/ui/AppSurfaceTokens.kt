@@ -29,6 +29,17 @@ object AppSurfaceTokens {
 
     fun resolveCardContainer(colorScheme: ColorScheme): Color = colorScheme.surfaceContainer
 
+    /** 视频卡片保留主题容器色；玻璃的透明度与采样由卡片材质层独立处理。 */
+    fun resolveVideoCardContainer(
+        colorScheme: ColorScheme,
+        @Suppress("UNUSED_PARAMETER") glassEnabled: Boolean,
+    ): Color = resolveCardContainer(colorScheme)
+
+    @Composable
+    @ReadOnlyComposable
+    fun videoCardContainer(glassEnabled: Boolean = false): Color =
+        resolveVideoCardContainer(MaterialTheme.colorScheme, glassEnabled)
+
     fun resolveBackground(colorScheme: ColorScheme): Color = colorScheme.background
 
     fun resolveGroupedListContainer(colorScheme: ColorScheme): Color = resolveBackground(colorScheme)

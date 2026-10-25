@@ -14,7 +14,7 @@ import com.android.purebilibili.core.util.NetworkUtils
 import com.android.purebilibili.data.model.response.PlayUrlData
 import com.android.purebilibili.data.model.response.ViewInfo
 import com.android.purebilibili.data.repository.VideoRepository
-import com.android.purebilibili.feature.plugin.PlaybackCdnPlugin
+import com.android.purebilibili.plugin.sdk.PlaybackCdnPlugin
 import com.android.purebilibili.feature.video.playback.audio.collectAudioStreamCandidates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

@@ -48,8 +48,26 @@ internal fun DanmakuSettingsPanelHost(
     layoutPolicy: DanmakuSettingsPanelLayoutPolicy,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    scrollState: androidx.compose.foundation.ScrollState = androidx.compose.foundation.rememberScrollState(),
     content: @Composable (requestDismiss: () -> Unit) -> Unit,
 ) {
+    // 同窗玻璃面板保留原生子控件手势与内部滚动；无同窗宿主时沿用原有 Dialog。
+    if (com.android.purebilibili.core.ui.components.AppGlassMenu(
+            expanded = true,
+            onDismissRequest = onDismiss,
+            title = "弹幕设置",
+            placement = if (com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource.current?.isAvailable == true) {
+                com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END
+            } else if (isFullscreen) {
+                com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END
+            } else com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.CENTER,
+            minWidth = layoutPolicy.minWidthDp.dp,
+            maxWidth = layoutPolicy.maxWidthDp.dp,
+            maxHeight = layoutPolicy.maxHeightDp.dp,
+            modifier = modifier,
+            interactiveContent = true,
+            scrollState = scrollState,
+        ) { content(onDismiss) }) return
     val reduceMotion = rememberSystemReduceMotion()
     // Only the fullscreen glass end panel gets a moving host. All other presentations
     // keep the original dialog anchor, dimensions, scrim and immediate dismissal.

@@ -165,33 +165,55 @@ internal fun PortraitPagerControls(
             onRatioSelected = { actions.onAspectRatioChange(it); menu = null },
             onDismiss = { menu = null },
         )
-        PortraitControlMenu.SUBTITLE -> PortraitSubtitlePanel(
-            modifier = Modifier.padding(end = 12.dp, bottom = (
-                com.android.purebilibili.feature.video.ui.overlay.resolvePortraitSubtitleBottomPaddingDp(
-                    controlsVisible = state.isVisible && !state.subtitleControlState.positionLocked,
-                    commentExpansionProgress = commentExpansionProgress,
-                ) + 8
-            ).dp),
-            displayMode = state.subtitleControlState.displayMode,
-            primaryLabel = state.subtitleControlState.primaryLabel,
-            secondaryLabel = state.subtitleControlState.secondaryLabel,
-            primaryAvailable = state.subtitleControlState.primaryAvailable,
-            secondaryAvailable = state.subtitleControlState.secondaryAvailable,
-            trackOptions = state.subtitleControlState.trackOptions,
-            largeTextEnabled = state.subtitleControlState.largeTextEnabled,
-            positionLocked = state.subtitleControlState.positionLocked,
-            onDismiss = { menu = null },
-            onDisplayModeChange = {
-                actions.subtitleControlCallbacks.onDisplayModeChange(it)
-                menu = null
-            },
-            onTrackSelected = {
-                actions.subtitleControlCallbacks.onTrackSelected(it)
-                menu = null
-            },
-            onLargeTextChange = actions.subtitleControlCallbacks.onLargeTextChange,
-            onPositionLockedChange = actions.subtitleControlCallbacks.onPositionLockedChange,
-        )
+        PortraitControlMenu.SUBTITLE -> {
+            // 玻璃宿主可用时字幕菜单与同排倍速、画质等菜单共用统一玻璃弹窗；
+            // 关闭玻璃或所在窗口无宿主时保持原有深色面板，两条路径互不影响。
+            if (com.android.purebilibili.core.ui.components.appGlassMenuAvailable()) {
+                PortraitSubtitleGlassMenu(
+                    displayMode = state.subtitleControlState.displayMode,
+                    primaryLabel = state.subtitleControlState.primaryLabel,
+                    secondaryLabel = state.subtitleControlState.secondaryLabel,
+                    primaryAvailable = state.subtitleControlState.primaryAvailable,
+                    secondaryAvailable = state.subtitleControlState.secondaryAvailable,
+                    trackOptions = state.subtitleControlState.trackOptions,
+                    largeTextEnabled = state.subtitleControlState.largeTextEnabled,
+                    positionLocked = state.subtitleControlState.positionLocked,
+                    onDismiss = { menu = null },
+                    onDisplayModeChange = { actions.subtitleControlCallbacks.onDisplayModeChange(it) },
+                    onTrackSelected = { actions.subtitleControlCallbacks.onTrackSelected(it) },
+                    onLargeTextChange = actions.subtitleControlCallbacks.onLargeTextChange,
+                    onPositionLockedChange = actions.subtitleControlCallbacks.onPositionLockedChange,
+                )
+            } else {
+                PortraitSubtitlePanel(
+                    modifier = Modifier.padding(end = 12.dp, bottom = (
+                        com.android.purebilibili.feature.video.ui.overlay.resolvePortraitSubtitleBottomPaddingDp(
+                            controlsVisible = state.isVisible && !state.subtitleControlState.positionLocked,
+                            commentExpansionProgress = commentExpansionProgress,
+                        ) + 8
+                    ).dp),
+                    displayMode = state.subtitleControlState.displayMode,
+                    primaryLabel = state.subtitleControlState.primaryLabel,
+                    secondaryLabel = state.subtitleControlState.secondaryLabel,
+                    primaryAvailable = state.subtitleControlState.primaryAvailable,
+                    secondaryAvailable = state.subtitleControlState.secondaryAvailable,
+                    trackOptions = state.subtitleControlState.trackOptions,
+                    largeTextEnabled = state.subtitleControlState.largeTextEnabled,
+                    positionLocked = state.subtitleControlState.positionLocked,
+                    onDismiss = { menu = null },
+                    onDisplayModeChange = {
+                        actions.subtitleControlCallbacks.onDisplayModeChange(it)
+                        menu = null
+                    },
+                    onTrackSelected = {
+                        actions.subtitleControlCallbacks.onTrackSelected(it)
+                        menu = null
+                    },
+                    onLargeTextChange = actions.subtitleControlCallbacks.onLargeTextChange,
+                    onPositionLockedChange = actions.subtitleControlCallbacks.onPositionLockedChange,
+                )
+            }
+        }
         null -> Unit
     }
     if (state.danmakuComposerVisible) {

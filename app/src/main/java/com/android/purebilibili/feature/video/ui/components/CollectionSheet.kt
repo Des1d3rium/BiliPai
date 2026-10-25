@@ -134,12 +134,11 @@ fun CollectionSheet(
         committedBackProgress = backProgress.value
         sheetVisible = false
     }
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     val sheetMaxHeight = episodeSheetMaxHeight()
     val context = LocalContext.current
     val clearIcon = rememberAppClearIcon()
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
     val collectionSubscriptionId = remember(ugcSeason) { resolveCollectionSubscriptionId(ugcSeason) }
 
     val sections = remember(ugcSeason.sections) { ugcSeason.sections }
@@ -182,13 +181,10 @@ fun CollectionSheet(
         currentCid = currentCid
     )
 
-    // 打开或切换分区时自动滚动定位到当前集：先与面板展开动画并行动身，
-    // 再以动画滚动收尾，避免瞬时跳转让面板“先落位又闪跳”。
-    LaunchedEffect(selectedSectionIndex, currentIndex) {
-        if (currentIndex > 0) {
-            kotlinx.coroutines.delay(100)
-            listState.animateScrollToItem(currentIndex)
-        }
+    // 首帧直接定位当前集，面板位移不叠加列表滚动；手动定位按钮仍使用滚动动画。
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex.coerceAtLeast(0))
+    LaunchedEffect(selectedSectionIndex, currentIndex, sortMode) {
+        listState.scrollToItem(currentIndex.coerceAtLeast(0))
     }
 
     fun scrollToEpisode(index: Int) {
@@ -213,6 +209,7 @@ fun CollectionSheet(
     AppModalBottomSheet(
         onDismissRequest = onDismiss,
         visible = sheetVisible,
+        useTimedSlideMotion = true,
         dismissOnBackPress = false,
         // 返回由合集所在窗口接管；完成后交给各材质的原生收起动画。
         modifier = Modifier.graphicsLayer {
@@ -389,11 +386,13 @@ fun CollectionSheet(
             // 液态玻璃开启时由 AppThemeAdaptiveTabRow 委托底栏同款玻璃分段控件
             // （胶囊指示器/拖拽选档/按压折射），关闭时回落主题原生样式
             if (sections.size > 1) {
+                val glassTabsEnabled = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
                 AppThemeAdaptiveTabRow(
                     // Glass indicator fills the measured slot; native geometry keeps its defaults.
-                    liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
+                    liquidGlassAdaptIndicatorToLabel = !glassTabsEnabled,
                     role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
-                    centerContent = false,
+                    // 玻璃分组栏内容放得下时居中，超宽时沿用可滚动轨道；原生保持左对齐。
+                    centerContent = glassTabsEnabled,
                     options = sections.mapIndexed { index, section ->
                         AppSegmentOption(index, section.title.ifBlank { "第${index + 1}季" })
                     },
@@ -485,7 +484,7 @@ internal fun CollectionEpisodeRow(
                 arc?.pic?.takeIf { it.isNotBlank() }?.let { pic ->
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(FormatUtils.resolveVideoCoverUrl(pic, useLowQuality = true))
+                            .data(FormatUtils.resolveVideoCoverUrl(pic, useLowQuality = false))
                             .crossfade(true)
                             .build(),
                         contentDescription = episode.title,

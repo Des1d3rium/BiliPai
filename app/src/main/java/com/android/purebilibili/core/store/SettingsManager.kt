@@ -26,6 +26,7 @@ import com.android.purebilibili.core.ui.transition.VideoSharedTransitionSpeed
 import com.android.purebilibili.core.ui.transition.normalizeVideoSharedTransitionCustomDurationMillis
 import com.android.purebilibili.core.store.home.HomeSettingsStore
 import com.android.purebilibili.core.store.home.dynamicCommentPreviewVisiblePreferencesKey
+import com.android.purebilibili.core.store.home.glassPopupPalettePreferencesKey
 import com.android.purebilibili.core.store.home.liquidGlassReadabilityModePreferencesKey
 import com.android.purebilibili.core.store.navigation.NavigationSettingsStore
 import com.android.purebilibili.core.store.navigation.bottomBarItemLabelsPreferencesKey
@@ -1061,6 +1062,8 @@ data class AppNavigationSettings(
     val videoSharedReturnGestureFollowEnabled: Boolean = true,
     val videoSharedReturnGestureTranslationEnabled: Boolean = true,
     val videoReturnContentFollowProgressEnabled: Boolean = true,
+    val settingsContainerMorphEnabled: Boolean = true,
+    val settingsContainerRealtimeBlurEnabled: Boolean = false,
     val liquidIndicatorWobbleEnabled: Boolean = true,
     // 编辑器保留原始配置，不能用运行时过滤后的可见项或生效策略反写用户选择。
     val bottomBarOrder: List<String> = listOf("HOME", "DYNAMIC", "HISTORY", "LISTEN_VIDEO", "PROFILE"),
@@ -1423,6 +1426,7 @@ object SettingsManager {
         stringPreferencesKey("single_choice_presentation")
     private val KEY_BG_PLAY = booleanPreferencesKey("bg_play")
     //  [新增] 触感反馈 (默认开启)
+    private val KEY_HAPTIC_SCENES_DISABLED = intPreferencesKey("haptic_scenes_disabled")
     private val KEY_HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
     private val KEY_GLOBAL_TEXT_TAP_COPY_ENABLED =
         booleanPreferencesKey("global_text_tap_copy_enabled")
@@ -2879,6 +2883,18 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
     fun getHapticFeedbackEnabled(context: Context): Flow<Boolean> = context.settingsDataStore.data
         .map { preferences -> preferences[KEY_HAPTIC_FEEDBACK_ENABLED] ?: true } // 默认开启
 
+    fun getHapticSettings(context: Context): Flow<com.android.purebilibili.core.ui.AppHapticSettings> =
+        context.settingsDataStore.data.map {
+            com.android.purebilibili.core.ui.AppHapticSettings(it[KEY_HAPTIC_SCENES_DISABLED] ?: 0)
+        }
+
+    suspend fun setHapticSceneEnabled(context: Context, scene: com.android.purebilibili.core.ui.AppHapticScene, enabled: Boolean) {
+        context.settingsDataStore.edit { preferences ->
+            val current = com.android.purebilibili.core.ui.AppHapticSettings(preferences[KEY_HAPTIC_SCENES_DISABLED] ?: 0)
+            preferences[KEY_HAPTIC_SCENES_DISABLED] = current.withEnabled(scene, enabled).disabledMask
+        }
+    }
+
     suspend fun setHapticFeedbackEnabled(context: Context, value: Boolean) {
         context.settingsDataStore.edit { preferences -> preferences[KEY_HAPTIC_FEEDBACK_ENABLED] = value }
         // 同步到 SharedPreferences，供同步读取 (例如 modifier 中)
@@ -2901,7 +2917,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
         }
     }
 
-    /** 播放地址返回上次观看的分P时，播放器内展示「上次看到第 N P」提示；镜像 SP 供同步读取。 */
+    /** 播放器信息返回上次观看的分P时，播放器内展示「上次看到第 N P」提示；镜像 SP 供同步读取。 */
     fun getShowContinuePartNoticeSync(context: Context): Boolean =
         context.getSharedPreferences("playback_notice_cache", Context.MODE_PRIVATE)
             .getBoolean("show_continue_part_notice", true)
@@ -6704,9 +6720,13 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
         .map { preferences -> preferences[KEY_SPONSOR_BLOCK_ENABLED] ?: false }  // 默认关闭
 
     suspend fun setSponsorBlockEnabled(context: Context, value: Boolean) {
+        com.android.purebilibili.core.plugin.PluginManager.setEnabled(
+            com.android.purebilibili.core.plugin.BuiltinPluginIds.SPONSOR_BLOCK, value
+        )
+    }
+
+    internal suspend fun persistSponsorBlockEnabled(context: Context, value: Boolean) {
         context.settingsDataStore.edit { preferences -> preferences[KEY_SPONSOR_BLOCK_ENABLED] = value }
-        //  [修复] 同步到PluginStore，使插件系统能正确识别空降助手状态
-        com.android.purebilibili.core.plugin.PluginManager.setEnabled("sponsor_block", value)
     }
     
     // --- 自动跳过（true=自动跳过, false=显示提示按钮）---
@@ -8307,6 +8327,10 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
                 preferences[KEY_VIDEO_SHARED_RETURN_GESTURE_FOLLOW_ENABLED] ?: true,
             videoReturnContentFollowProgressEnabled =
                 preferences[booleanPreferencesKey("video_return_content_follow_progress_enabled")] ?: true,
+            settingsContainerMorphEnabled =
+                preferences[booleanPreferencesKey("settings_container_morph_enabled")] ?: true,
+            settingsContainerRealtimeBlurEnabled =
+                preferences[booleanPreferencesKey("settings_container_realtime_blur_enabled")] ?: false,
             videoSharedReturnGestureTranslationEnabled =
                 preferences[KEY_VIDEO_SHARED_RETURN_GESTURE_TRANSLATION_ENABLED] ?: true,
         )
@@ -8368,6 +8392,20 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
 
     suspend fun setVideoReturnContentFollowProgressEnabled(context: Context, enabled: Boolean) {
         NavigationSettingsStore.setVideoReturnContentFollowProgressEnabled(context, enabled)
+    }
+
+    fun getSettingsContainerRealtimeBlurEnabled(context: Context): Flow<Boolean> =
+        NavigationSettingsStore.getSettingsContainerRealtimeBlurEnabled(context)
+
+    suspend fun setSettingsContainerRealtimeBlurEnabled(context: Context, enabled: Boolean) {
+        NavigationSettingsStore.setSettingsContainerRealtimeBlurEnabled(context, enabled)
+    }
+
+    fun getSettingsContainerMorphEnabled(context: Context): Flow<Boolean> =
+        NavigationSettingsStore.getSettingsContainerMorphEnabled(context)
+
+    suspend fun setSettingsContainerMorphEnabled(context: Context, enabled: Boolean) {
+        NavigationSettingsStore.setSettingsContainerMorphEnabled(context, enabled)
     }
 
     suspend fun setVideoSharedReturnGestureTranslationEnabled(context: Context, enabled: Boolean) {
@@ -8674,6 +8712,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
                 liquidGlassReadabilityModePreferencesKey,
                 SettingsShareSection.APPEARANCE,
             ),
+            IntShareablePreferenceDefinition(glassPopupPalettePreferencesKey, SettingsShareSection.APPEARANCE),
             FloatShareablePreferenceDefinition(
                 KEY_LIQUID_GLASS_CONTENT_READABILITY,
                 SettingsShareSection.APPEARANCE,
@@ -8718,6 +8757,10 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
             BooleanShareablePreferenceDefinition(
                 KEY_LIVE_SURFACE_CARD_TRANSITION_ENABLED,
                 SettingsShareSection.APPEARANCE
+            ),
+            BooleanShareablePreferenceDefinition(
+                booleanPreferencesKey("settings_container_realtime_blur_enabled"),
+                SettingsShareSection.APPEARANCE,
             ),
             BooleanShareablePreferenceDefinition(
                 KEY_VIDEO_TRANSITION_REALTIME_BLUR_ENABLED,
@@ -8845,6 +8888,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
             IntShareablePreferenceDefinition(KEY_COMMENT_COLLAPSED_REPLY_PREVIEW_LIMIT, SettingsShareSection.PLAYBACK),
 
             BooleanShareablePreferenceDefinition(KEY_HAPTIC_FEEDBACK_ENABLED, SettingsShareSection.GESTURE),
+            IntShareablePreferenceDefinition(KEY_HAPTIC_SCENES_DISABLED, SettingsShareSection.GESTURE),
             BooleanShareablePreferenceDefinition(
                 KEY_GLOBAL_TEXT_TAP_COPY_ENABLED,
                 SettingsShareSection.GESTURE,
@@ -8988,6 +9032,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
             KEY_LIQUID_GLASS_PROGRESSIVE_BLUR_EXTENT.name,
             KEY_LIQUID_GLASS_PROGRESSIVE_BLUR_CURVE.name,
             liquidGlassReadabilityModePreferencesKey.name,
+            glassPopupPalettePreferencesKey.name,
             KEY_LIQUID_GLASS_CONTENT_READABILITY.name,
             KEY_LIQUID_GLASS_CHROMATIC_ABERRATION.name,
             KEY_LIQUID_GLASS_CONTENT_DISTORTION.name,
@@ -9069,6 +9114,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
             KEY_LIQUID_GLASS_PROGRESSIVE_BLUR_CURVE.name to JsonPrimitive(
                 advancedSettings.progressiveBlurCurve
             ),
+            glassPopupPalettePreferencesKey.name to JsonPrimitive(preferences[glassPopupPalettePreferencesKey] ?: 0),
             liquidGlassReadabilityModePreferencesKey.name to JsonPrimitive(
                 preferences[liquidGlassReadabilityModePreferencesKey]
                     ?: LiquidGlassReadabilityMode.STABLE.value

@@ -7,7 +7,7 @@ import com.android.purebilibili.core.ui.components.appElasticPress
 import coil3.request.crossfade
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -442,7 +442,7 @@ private fun TopicParticipateButton(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(AppShapes.container(ContainerLevel.Pill))
-                    .clickable(onClick = onClick)
+                    .appActionClickable(onClick = onClick)
                     .padding(horizontal = AppSpacingTokens.Medium),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -584,7 +584,7 @@ private fun TopicHeaderCard(
                         .size(34.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable(enabled = (creator?.uid ?: 0L) > 0L) {
+                        .appActionClickable(enabled = (creator?.uid ?: 0L) > 0L) {
                             onUserClick(creator?.uid ?: 0L)
                         },
                     contentScale = ContentScale.Crop

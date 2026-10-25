@@ -1,12 +1,22 @@
 package com.android.purebilibili.core.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ColorScheme
+import androidx.compose.runtime.staticCompositionLocalOf
 import com.android.purebilibili.core.store.ThemeRoleOverrides
 import com.android.purebilibili.core.store.WallpaperPaletteOverrides
 import com.android.purebilibili.feature.settings.Md3ColorSource
 import com.materialkolor.Contrast
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
+
+/** 复用主题宿主读取的壁纸色板，避免预览回退预设色或重新读取动画中的颜色。 */
+internal data class ThemeWallpaperPreviewSchemes(
+    val light: ColorScheme? = null,
+    val dark: ColorScheme? = null,
+)
+
+internal val LocalThemeWallpaperPreviewSchemes = staticCompositionLocalOf { ThemeWallpaperPreviewSchemes() }
 
 internal data class ThemePreviewConfiguration(
     val uiStyle: AppUiStyle = AppUiStyle.MATERIAL3,
@@ -16,6 +26,7 @@ internal data class ThemePreviewConfiguration(
     val roleOverrides: ThemeRoleOverrides = ThemeRoleOverrides(),
     val wallpaperOverrides: WallpaperPaletteOverrides = WallpaperPaletteOverrides(),
     val syncControlAccentToSeed: Boolean = false,
+    val wallpaperSchemes: ThemeWallpaperPreviewSchemes = ThemeWallpaperPreviewSchemes(),
 )
 
 /** Matches saving a candidate: generation, saved edits, glass selection, wallpaper edits,
@@ -32,6 +43,9 @@ internal fun resolveThemePreviewPalette(
     val base = createBiliPaiStyleColorScheme(
         seed, darkTheme, configuration.amoledDarkTheme, style, spec,
         uiStyle = configuration.uiStyle, colorContrast = contrast, seedPaletteStyle = seedStyle,
+        dynamicBaseScheme = if (configuration.source == Md3ColorSource.FOLLOW_WALLPAPER) {
+            if (darkTheme) configuration.wallpaperSchemes.dark else configuration.wallpaperSchemes.light
+        } else null,
     )
     val overrides = resolveEffectiveThemeRoleOverrides(configuration.source, configuration.roleOverrides, configuration.uiStyle)
         .let { if (seedStyle.enabled) it.copy(enabled = false) else it }

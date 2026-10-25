@@ -335,6 +335,7 @@ internal fun BottomBarFloatingSegmentedControl(
                 .height(effectiveHeight)
         }
         FloatingBottomBar(
+            enabled = enabled,
             selectedIndex = { selectedIndexState.value },
             onSelected = { index ->
                 if (enabledState.value && index in items.indices) onSelectedState.value(index)
@@ -392,6 +393,7 @@ internal fun BottomBarFloatingSegmentedControl(
             items.forEachIndexed { index, label ->
                 val selected = index == safeSelectedIndex
                 FloatingBottomBarItem(
+                    enabled = enabled,
                     onClick = {
                         if (enabled) onSelected(index)
                     },

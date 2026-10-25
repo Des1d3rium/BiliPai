@@ -38,7 +38,7 @@ internal fun CollectionSubscriptionButton(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val subscriptionHaptic = rememberHapticFeedback()
+    val subscriptionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val cachedIsSubscribed by SettingsManager
         .isCollectionSubscribed(context, collectionId)
         .collectAsStateWithLifecycle(initialValue = false

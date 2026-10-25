@@ -2,7 +2,6 @@ package com.android.purebilibili.feature.home.components
 
 import com.android.purebilibili.core.ui.AppContentColors
 import com.android.purebilibili.core.ui.components.liquidDockViewport
-import com.android.purebilibili.core.ui.components.appElasticPress
 
 
 import androidx.compose.foundation.layout.Box
@@ -16,8 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.HorizontalFloatingToolbar
+import com.android.purebilibili.core.ui.components.AppMaterial3Toolbar
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +45,7 @@ import com.android.purebilibili.core.ui.blur.currentUnifiedBlurIntensity
 import com.android.purebilibili.core.ui.blur.unifiedBlur
 import com.android.purebilibili.core.ui.components.AppIcon
 import com.android.purebilibili.core.ui.components.AppText
+import com.android.purebilibili.core.ui.appTextStyleWithLineHeightStyle
 import com.android.purebilibili.core.store.BottomBarLiquidGlassPreset
 import dev.chrisbanes.haze.HazeState
 import top.yukonga.miuix.kmp.blur.Backdrop
@@ -162,10 +161,8 @@ internal fun HomeTopTabFloatingDock(
         )
     ) {
         val useBlur = backdropBlurEnabled && hazeState != null
-        val toolbarShape = FloatingToolbarDefaults.ContainerShape
-        val toolbarColors = FloatingToolbarDefaults.standardFloatingToolbarColors(
-            toolbarContainerColor = if (useBlur) Color.Transparent else Color.Unspecified,
-        )
+        val toolbarShape = MaterialTheme.shapes.extraLarge
+        val toolbarContainerColor = if (useBlur) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
         val toolbarModifier = if (backdropBlurEnabled && hazeState != null) {
             Modifier.unifiedBlur(
                 hazeState = hazeState,
@@ -208,27 +205,25 @@ internal fun HomeTopTabFloatingDock(
                         showIcon && showText && selected -> FilledTonalButton(
                             onClick = onClick,
                             contentPadding = PaddingValues(horizontal = 16.dp),
-                            modifier = Modifier.appElasticPress(),
                         ) {
                             icon()
                             Spacer(modifier = Modifier.width(AppSpacingTokens.Small))
                             AppText(text = label, maxLines = 1, tapToCopyEnabled = false)
                         }
-                        showIcon && selected -> FilledTonalIconButton(onClick = onClick, modifier = Modifier.appElasticPress()) { icon() }
-                        showIcon -> IconButton(onClick = onClick, modifier = Modifier.appElasticPress()) { icon() }
-                        selected -> FilledTonalButton(onClick = onClick, modifier = Modifier.appElasticPress()) {
+                        showIcon && selected -> FilledTonalIconButton(onClick = onClick) { icon() }
+                        showIcon -> IconButton(onClick = onClick) { icon() }
+                        selected -> FilledTonalButton(onClick = onClick) {
                             AppText(text = label, maxLines = 1, tapToCopyEnabled = false)
                         }
-                        else -> TextButton(onClick = onClick, modifier = Modifier.appElasticPress()) {
+                        else -> TextButton(onClick = onClick) {
                             AppText(text = label, maxLines = 1, tapToCopyEnabled = false)
                         }
                     }
                 }
             }
-            HorizontalFloatingToolbar(
-                expanded = true,
+            AppMaterial3Toolbar(
                 modifier = toolbarModifier,
-                colors = toolbarColors,
+                containerColor = toolbarContainerColor,
                 shape = toolbarShape,
                 content = toolbarContent,
             )
@@ -368,6 +363,7 @@ internal fun HomeTopTabFloatingDock(
                     text = label,
                     modifier = Modifier.fillMaxWidth(),
                     color = contentColor,
+                    style = appTextStyleWithLineHeightStyle(DockLabelLineHeightStyle),
                     fontSize = labelFontSize,
                     lineHeight = resolveFloatingDockLabelLineHeight(
                         showIcon = showIcon,

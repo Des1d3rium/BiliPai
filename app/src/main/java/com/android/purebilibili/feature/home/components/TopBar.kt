@@ -49,7 +49,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.BorderStroke
@@ -798,7 +798,7 @@ fun Modifier.premiumClickable(onClick: () -> Unit): Modifier = composed {
     )
     this
         .scale(scale)
-        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+        .appActionClickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
 /**
@@ -889,7 +889,7 @@ fun FluidHomeTopBar(
                         .height(AppSpacingTokens.DoubleExtraLarge + AppSpacingTokens.ExtraSmall)
                         .clip(AppShapes.container(ContainerLevel.Pill))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable(
+                        .appActionClickable(
                             interactionSource = searchClickInteractionSource,
                             indication = null
                         ) {
@@ -1105,7 +1105,7 @@ private fun LightweightHomeTopTabs(
         state = adaptiveReadabilityState,
         enabled = adaptiveReadabilityEnabled,
     )
-    val haptic = com.android.purebilibili.core.util.rememberHapticFeedback()
+    val haptic = com.android.purebilibili.core.util.rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
     val scrollChannel = com.android.purebilibili.feature.home.LocalHomeScrollChannel.current
     val normalizedLabelMode = normalizeTopTabLabelMode(labelMode)
     val topTabIconFamily = resolveTopTabIconFamily(
@@ -2350,7 +2350,7 @@ private fun LightweightHomeTopTabs(
                                 Modifier.clip(RoundedCornerShape(actionButtonCorner))
                             }
                         )
-                        .clickable(
+                        .appActionClickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = LocalIndication.current
                         ) {
@@ -2746,7 +2746,7 @@ private fun BoxScope.LightweightTopTabIndicatorOverlay(
                 .width(indicatorGestureWidth)
                 .height(dockIndicatorHeight)
                 .zIndex(3f)
-                .clickable(
+                .appActionClickable(
                     interactionSource = indicatorInteractionSource,
                     indication = null
                 ) {
@@ -2969,7 +2969,7 @@ private fun LightweightTopTabItem(
             )
             .clip(itemShape)
             .background(containerColor, itemShape)
-            .clickable(
+            .appActionClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = if (useClickIndication) LocalIndication.current else null,
                 onClick = onClick
@@ -3529,7 +3529,7 @@ fun CategoryTabItem(
      // This is acceptable as it doesn't happen every frame.
      val fontWeight = if (selectionFraction > 0.6f) FontWeight.SemiBold else FontWeight.Medium
 
-     val haptic = com.android.purebilibili.core.util.rememberHapticFeedback()
+     val haptic = com.android.purebilibili.core.util.rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
 
      Box(
          modifier = Modifier
@@ -3539,8 +3539,8 @@ fun CategoryTabItem(
                      Modifier.combinedClickable(
                          interactionSource = remember { MutableInteractionSource() },
                          indication = null,
-                         onClick = { onClick() },
-                         onDoubleClick = onDoubleTap
+                         onClick = com.android.purebilibili.core.ui.components.appActionWithFeedback { onClick() },
+                         onDoubleClick = com.android.purebilibili.core.ui.components.appActionWithFeedback(onDoubleTap)
                      )
                  } else {
                      Modifier

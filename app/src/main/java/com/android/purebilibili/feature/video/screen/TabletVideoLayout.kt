@@ -533,6 +533,7 @@ internal fun TabletVideoLayout(
                 // Tabletop 把简介移到铰链下方；普通平板仍在播放器下方展示。
                 if (contentState != null && !layoutPolicy.useTabletopLayout) {
                     TabletVideoInfoPane(
+                        currentPositionMsProvider = { playerState.player.currentPosition },
                         success = contentState,
                         engagementState = engagementState,
                         downloadProgress = downloadProgress,
@@ -608,6 +609,7 @@ internal fun TabletVideoLayout(
                             introContent = if (layoutPolicy.useTabletopLayout) {
                                 {
                                     TabletVideoInfoPane(
+                                        currentPositionMsProvider = { playerState.player.currentPosition },
                                         success = success,
                                         engagementState = engagementState,
                                         downloadProgress = downloadProgress,
@@ -682,6 +684,7 @@ internal fun TabletVideoLayout(
 
 @Composable
 internal fun TabletVideoInfoPane(
+    currentPositionMsProvider: () -> Long = { 0L },
     success: VideoPlaybackUiState.Success,
     engagementState: VideoEngagementUiState,
     downloadProgress: androidx.compose.runtime.State<Float>,
@@ -742,6 +745,9 @@ internal fun TabletVideoInfoPane(
             pendingVideoShare = buildVideoSharePayload(
                 title = success.info.title,
                 bvid = success.info.bvid,
+                page = success.info.pages.indexOfFirst { it.cid == success.info.cid }.coerceAtLeast(0) + 1,
+                positionMs = currentPositionMsProvider().coerceAtLeast(0L),
+                authorId = success.info.owner.mid,
                 coverUrl = success.info.pic,
                 upName = success.info.owner.name,
                 playCountText = com.android.purebilibili.core.util.FormatUtils
@@ -1373,6 +1379,9 @@ internal fun TabletSecondaryContent(
                                 pendingVideoShare = buildVideoSharePayload(
                                     title = success.info.title,
                                     bvid = success.info.bvid,
+                                    page = success.info.pages.indexOfFirst { it.cid == success.info.cid }.coerceAtLeast(0) + 1,
+                                    positionMs = playerState.player.currentPosition.coerceAtLeast(0L),
+                                    authorId = success.info.owner.mid,
                                     coverUrl = success.info.pic,
                                     upName = success.info.owner.name,
                                     playCountText = com.android.purebilibili.core.util.FormatUtils
@@ -1531,7 +1540,7 @@ private fun TabletCollectionPane(
     currentAid: Long,
     onEpisodeClick: (com.android.purebilibili.data.model.response.UgcEpisode) -> Unit
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     val episodes = remember(ugcSeason.sections) { ugcSeason.sections.flatMap { it.episodes } }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1750,6 +1759,7 @@ private fun ScrollableVideoInfoSection(
             ) {
                 UpInfoSection(
                     info = info,
+                    onOpenLiveRoom = onOpenBilibiliLink,
                     isFollowing = isFollowing,
                     followStatusKnown = followStatusKnown,
                     onFollowClick = onFollowClick,

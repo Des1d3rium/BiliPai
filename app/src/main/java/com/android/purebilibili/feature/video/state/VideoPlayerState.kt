@@ -109,6 +109,18 @@ internal fun resolvePlayerBufferPolicy(isOnWifi: Boolean): PlayerBufferPolicy {
     }
 }
 
+/** 前段限流必须覆盖按倍速折算后的起播及恢复门槛，并留出测量余量。 */
+internal fun resolveEarlyPlaybackBufferLimitUs(
+    earlyPlaybackMaxBufferMs: Int,
+    bufferForPlaybackMs: Int,
+    bufferForPlaybackAfterRebufferMs: Int,
+    playbackSpeed: Float,
+): Long {
+    val speed = playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
+    val requiredUs = (maxOf(bufferForPlaybackMs, bufferForPlaybackAfterRebufferMs) * 1_000.0 * speed).toLong()
+    return maxOf(earlyPlaybackMaxBufferMs * 1_000L, requiredUs + 250_000L)
+}
+
 /**
  * Avoid downloading far ahead until the viewer has committed to the first quarter of a VOD.
  *
@@ -143,7 +155,9 @@ internal fun shouldLimitEarlyPlaybackBufferForPeriod(
  */
 private class FirstQuarterAwareLoadControl(
     private val delegate: LoadControl,
-    private val earlyPlaybackMaxBufferMs: Int
+    private val earlyPlaybackMaxBufferMs: Int,
+    private val bufferForPlaybackMs: Int,
+    private val bufferForPlaybackAfterRebufferMs: Int,
 ) : LoadControl by delegate {
     private val period = androidx.media3.common.Timeline.Period()
 
@@ -193,7 +207,12 @@ private class FirstQuarterAwareLoadControl(
             mediaPeriodDurationUs = periodDurationUs
         )
         return if (limitEarlyBuffer) {
-            parameters.bufferedDurationUs < earlyPlaybackMaxBufferMs * 1_000L
+            parameters.bufferedDurationUs < resolveEarlyPlaybackBufferLimitUs(
+                earlyPlaybackMaxBufferMs = earlyPlaybackMaxBufferMs,
+                bufferForPlaybackMs = bufferForPlaybackMs,
+                bufferForPlaybackAfterRebufferMs = bufferForPlaybackAfterRebufferMs,
+                playbackSpeed = parameters.playbackSpeed,
+            )
         } else {
             delegate.shouldContinueLoading(parameters)
         }
@@ -1095,7 +1114,9 @@ fun rememberVideoPlayerState(
                             )
                             .setPrioritizeTimeOverSizeThresholds(true)
                             .build(),
-                        earlyPlaybackMaxBufferMs = bufferPolicy.earlyPlaybackMaxBufferMs
+                        earlyPlaybackMaxBufferMs = bufferPolicy.earlyPlaybackMaxBufferMs,
+                        bufferForPlaybackMs = bufferPolicy.bufferForPlaybackMs,
+                        bufferForPlaybackAfterRebufferMs = bufferPolicy.bufferForPlaybackAfterRebufferMs,
                     )
                 )
                 //  [性能优化] 快速 Seek：跳转到最近的关键帧而非精确位置
@@ -1525,7 +1546,7 @@ fun rememberVideoPlayerState(
         isLeavingByNavigation = miniPlayerManager.isLeavingByNavigation,
         isAudioNowPlayingActive = audioNowPlayingActive,
     )
-    LaunchedEffect(playbackSessionActive, player, ownedByPlaybackHandoff) {
+    LaunchedEffect(playbackSessionActive, player, ownedByPlaybackHandoff, entryTransitionFinished) {
         if (
             shouldSuspendLocalPlaybackWhenSessionInactive(
                 playbackSessionActive = playbackSessionActive,
@@ -1536,8 +1557,10 @@ fun rememberVideoPlayerState(
                 player.playWhenReady ||
                 player.mediaItemCount > 0
             if (likelyActive) {
-                wasPlayingBeforeSessionSuspend =
-                    player.isPlaying || player.playWhenReady
+                // 重复的非活跃通知不能覆盖第一次挂起时保存的播放意图。
+                if (!suspendedByInactiveSession) {
+                    wasPlayingBeforeSessionSuspend = player.isPlaying || player.playWhenReady
+                }
                 player.volume = 0f
                 player.playWhenReady = false
                 if (player.isPlaying) {
@@ -1557,10 +1580,10 @@ fun rememberVideoPlayerState(
             PlayerVolumeController.applyPreferredVolume(player)
             holder.recordDiagnosticEvent("playbackHandoffOwnsSession -> restoreVolume")
         }
-        if (suspendedByInactiveSession && playbackSessionActive) {
+        if (suspendedByInactiveSession && playbackSessionActive && entryTransitionFinished) {
             com.android.purebilibili.core.player.PlayerVolumeController
                 .applyPreferredVolume(player)
-            if (wasPlayingBeforeSessionSuspend && entryTransitionFinished) {
+            if (wasPlayingBeforeSessionSuspend) {
                 player.playWhenReady = true
                 player.play()
                 holder.recordDiagnosticEvent("sessionActive -> resumeAfterSuspend")

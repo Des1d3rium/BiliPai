@@ -30,7 +30,6 @@ private const val PART_RESUME_DISMISS_THRESHOLD_PX = 96f
 
 /**
  * 「上次看到第 N P，点击跳转」提示条：点击跳到上次观看的分P，向左滑出移除。
- * 与 PiliPlus 的继续播放分P提示对齐。
  */
 @Composable
 internal fun PartResumeNoticeChip(
@@ -39,15 +38,15 @@ internal fun PartResumeNoticeChip(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = rememberHapticFeedback()
-    var offsetX by remember { mutableFloatStateOf(0f) }
+    val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_SEEK)
+    var offsetX by remember(notice.requestToken, notice.mediaKey) { mutableFloatStateOf(0f) }
     Text(
         text = buildPartResumeNoticeMessage(notice.partNumber),
         color = Color.White,
         fontSize = 13.sp,
         modifier = modifier
             .offset { IntOffset(offsetX.roundToInt(), 0) }
-            .pointerInput(Unit) {
+            .pointerInput(notice.requestToken, notice.mediaKey) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
                         if (offsetX <= -PART_RESUME_DISMISS_THRESHOLD_PX) {

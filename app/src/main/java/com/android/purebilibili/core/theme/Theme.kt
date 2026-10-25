@@ -1077,7 +1077,11 @@ fun PureBiliBiliTheme(
         }
     }
 
+    val wallpaperPreviewSchemes = remember(dynamicLightBaseScheme, dynamicDarkBaseScheme) {
+        ThemeWallpaperPreviewSchemes(dynamicLightBaseScheme, dynamicDarkBaseScheme)
+    }
     CompositionLocalProvider(
+        LocalThemeWallpaperPreviewSchemes provides wallpaperPreviewSchemes,
         LocalAppUiStyle provides uiStyle,
         LocalDynamicColorActive provides isDynamicColorActive,
         LocalWallpaperColorCompatibility provides wallpaperCompatibility,

@@ -9,7 +9,7 @@ import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.core.ui.rememberAppDynamicIcon
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +65,7 @@ internal fun DynamicLinkCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(AppShapes.container(ContainerLevel.Card))
-                .clickable(enabled = enabled, onClick = onClick),
+                .appActionClickable(enabled = enabled, onClick = onClick),
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = AppSpacingTokens.None,
             shape = AppShapes.container(ContainerLevel.Card)
@@ -122,7 +122,7 @@ internal fun DynamicLinkCard(
                                     Modifier
                                         .heightIn(min = AppChromeSizeTokens.MinimumTouchTarget)
                                         .semantics { contentDescription = "操作：${card.badgeText}" }
-                                        .clickable(enabled = actionEnabled, onClick = onReserveAction)
+                                        .appActionClickable(enabled = actionEnabled, onClick = onReserveAction)
                                 } else {
                                     Modifier
                                 }

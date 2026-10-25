@@ -271,6 +271,7 @@ fun AppModalBottomSheet(
     backgroundBlurBehind: Boolean = false,
     visible: Boolean = true,
     onDismissStarted: () -> Unit = {},
+    useTimedSlideMotion: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     // Controlled callers keep this host in composition while native sheets finish hiding.
@@ -302,6 +303,32 @@ fun AppModalBottomSheet(
     val resolvedColor = if (containerColor == MaterialTheme.colorScheme.surface) {
         if (miuix) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerLow
     } else containerColor
+    // 仅背景模糊已获调用方启用的玻璃面板透出下层；原生拖动与清晰背景策略保持原样。
+    val glassWindowMaterial = LocalAppThemeConfig.current.liquidGlassEnabled && blurBehind &&
+        android.os.Build.VERSION.SDK_INT >= 33
+    val windowColor = if (glassWindowMaterial) {
+        resolvedColor.copy(alpha = resolvedColor.alpha * if (isAppInDarkTheme()) 0.84f else 0.88f)
+    } else resolvedColor
+
+    // 合集显式选择整面板位移；居中及铰链安全弹窗、其他原生面板不改变过渡。
+    if (useTimedSlideMotion && !centered && hingeSafeRegions == null) {
+        AppTimedSlideSheet(
+            visible = visible,
+            onDismissStarted = { latestDismissStarted() },
+            onDismissFinished = finishDismiss,
+            modifier = modifier,
+            shape = shape ?: if (miuix) RoundedCornerShape(28.dp) else BottomSheetDefaults.ExpandedShape,
+            containerColor = windowColor,
+            contentColor = contentColor,
+            scrimColor = scrimColor,
+            dismissOnBackPress = dismissOnBackPress,
+            dragHandle = dragHandle,
+            windowInsets = windowInsets,
+            sheetSurfaceModifier = sheetSurfaceModifier,
+            content = content,
+        )
+        return
+    }
 
     if (miuix && hingeSafeRegions == null) {
         var show by remember { mutableStateOf(true) }
@@ -322,7 +349,7 @@ fun AppModalBottomSheet(
             WindowDialog(
                 show = show,
                 modifier = modifier.heightIn(max = (configuration.screenHeightDp * layoutSpec.maxHeightFraction).dp),
-                backgroundColor = resolvedColor,
+                backgroundColor = windowColor,
                 maxWidth = layoutSpec.maxWidthDp.dp,
                 largeScreen = true,
                 insideMargin = DpSize(0.dp, 0.dp),
@@ -334,7 +361,7 @@ fun AppModalBottomSheet(
             WindowBottomSheet(
                 show = show,
                 modifier = modifier,
-                backgroundColor = resolvedColor,
+                backgroundColor = windowColor,
                 insideMargin = DpSize(0.dp, 0.dp),
                 onDismissRequest = { latestDismissStarted(); show = false },
                 onDismissFinished = { if (!show) finishDismiss() },
@@ -356,44 +383,47 @@ fun AppModalBottomSheet(
             ),
         ) {
             ModalWindowBlurBehindEffect(enabled = blurBehind)
-            ModalSheetNavigationHost(dismissOnBackPress, onDismissRequest) { backModifier ->
-                val surface: @Composable () -> Unit = {
-                    BoxWithConstraints {
-                        val surfaceModifier = modifier.then(backModifier).widthIn(max = layoutSpec.maxWidthDp.dp)
-                            .heightIn(max = minOf(maxHeight, (configuration.screenHeightDp * layoutSpec.maxHeightFraction).dp))
-                            .fillMaxWidth().pointerInput(Unit) { detectTapGestures { } }
-                        val surfaceContent: @Composable () -> Unit = {
-                            Column(Modifier.then(sheetSurfaceModifier), content = content)
-                        }
-                        if (miuix) {
-                            AppPopupSurface(
-                                type = AppPopupSurfaceType.DIALOG,
-                                modifier = surfaceModifier,
-                                shape = shape ?: RoundedCornerShape(28.dp),
-                                containerColor = resolvedColor,
-                                contentColor = contentColor,
-                                content = surfaceContent,
-                            )
-                        } else {
-                            Surface(
-                                modifier = surfaceModifier,
-                                shape = shape ?: MaterialTheme.shapes.extraLarge,
-                                color = resolvedColor,
-                                contentColor = contentColor,
-                                tonalElevation = tonalElevation,
-                                content = surfaceContent,
-                            )
+            AppPopupWindowHost(enableWindowMaterial = blurBehind) {
+                ModalSheetNavigationHost(dismissOnBackPress, onDismissRequest) { backModifier ->
+                    val surface: @Composable () -> Unit = {
+                        BoxWithConstraints {
+                            val surfaceModifier = modifier.then(backModifier).widthIn(max = layoutSpec.maxWidthDp.dp)
+                                .heightIn(max = minOf(maxHeight, (configuration.screenHeightDp * layoutSpec.maxHeightFraction).dp))
+                                .fillMaxWidth().pointerInput(Unit) { detectTapGestures { } }
+                            val surfaceContent: @Composable () -> Unit = {
+                                Column(Modifier.then(sheetSurfaceModifier), content = content)
+                            }
+                            if (miuix || glassWindowMaterial) {
+                                AppPopupSurface(
+                                    type = AppPopupSurfaceType.DIALOG,
+                                    modifier = surfaceModifier,
+                                    shape = shape ?: if (miuix) RoundedCornerShape(28.dp) else MaterialTheme.shapes.extraLarge,
+                                    containerColor = resolvedColor,
+                                    contentColor = contentColor,
+                                    tonalElevation = if (miuix) 0.dp else tonalElevation,
+                                    content = surfaceContent,
+                                )
+                            } else {
+                                Surface(
+                                    modifier = surfaceModifier,
+                                    shape = shape ?: MaterialTheme.shapes.extraLarge,
+                                    color = resolvedColor,
+                                    contentColor = contentColor,
+                                    tonalElevation = tonalElevation,
+                                    content = surfaceContent,
+                                )
+                            }
                         }
                     }
-                }
-                if (hingeSafeRegions != null) {
-                    HingeSafeOverlayHost(
-                        regionProvider = hingeSafeRegions,
-                        modifier = Modifier.fillMaxSize().imePadding(),
-                        onDismissRequest = onDismissRequest,
-                    ) { surface() }
-                } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { surface() }
+                    if (hingeSafeRegions != null) {
+                        HingeSafeOverlayHost(
+                            regionProvider = hingeSafeRegions,
+                            modifier = Modifier.fillMaxSize().imePadding(),
+                            onDismissRequest = onDismissRequest,
+                        ) { surface() }
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { surface() }
+                    }
                 }
             }
         }
@@ -423,7 +453,7 @@ fun AppModalBottomSheet(
         // Comment/reply callers opt out and keep their window-scoped back handlers.
         properties = ModalBottomSheetProperties(shouldDismissOnBackPress = dismissOnBackPress),
         shape = shape ?: BottomSheetDefaults.ExpandedShape,
-        containerColor = resolvedColor,
+        containerColor = windowColor,
         contentColor = contentColor,
         tonalElevation = tonalElevation,
         scrimColor = scrimColor,

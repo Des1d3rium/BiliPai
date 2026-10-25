@@ -57,7 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.android.purebilibili.core.plugin.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapability
 import com.android.purebilibili.core.plugin.js.BiliPaiJsLayouts
 import com.android.purebilibili.core.plugin.js.BiliPaiJsMediaItem
 import com.android.purebilibili.core.plugin.js.BiliPaiJsModule

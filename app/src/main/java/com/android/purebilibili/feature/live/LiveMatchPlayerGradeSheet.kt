@@ -62,7 +62,7 @@ internal fun LiveMatchPlayerGradeSheet(
             item {
                 AppText(if (player.rated) "我的评分：${player.userScore ?: "—"} 分" else "尚未评分", color = AppContentColors.secondaryText())
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) {
+                    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(Modifier.weight(1f), onOpen = { scoreMenu = true }, enabled = loggedIn && !state.submitting) {
                         AppTextButton(enabled = loggedIn && !state.submitting, onClick = { scoreMenu = true }) {
                             AppText(if (score < 0) "选择分数" else "$score 分")
                         }
@@ -90,7 +90,7 @@ internal fun LiveMatchPlayerGradeSheet(
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AppText("选手评分评论", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        Box {
+                        com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { sortMenu = true }, enabled = !comments.loading) {
                             AppTextButton(enabled = !comments.loading, onClick = { sortMenu = true }) { AppText(if (comments.mode == 2) "最新" else "热门") }
                             AppDropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                                 listOf(3 to "热门", 2 to "最新").forEach { (mode, label) ->

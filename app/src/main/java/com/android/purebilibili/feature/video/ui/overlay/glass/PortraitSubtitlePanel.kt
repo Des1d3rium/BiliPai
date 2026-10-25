@@ -3,6 +3,7 @@ package com.android.purebilibili.feature.video.ui.overlay.glass
 import com.android.purebilibili.feature.video.ui.overlay.*
 
 import com.android.purebilibili.core.ui.AppContentColors
+import com.android.purebilibili.core.ui.components.AppDropdownMenuItem
 import com.android.purebilibili.core.ui.components.AppHorizontalDivider
 
 import androidx.compose.foundation.background
@@ -73,6 +74,8 @@ import com.android.purebilibili.feature.video.subtitle.shouldKeepSubtitleOverlay
 import com.android.purebilibili.feature.video.subtitle.shouldRenderPrimarySubtitle
 import com.android.purebilibili.feature.video.subtitle.shouldRenderSecondarySubtitle
 import com.android.purebilibili.feature.video.subtitle.SubtitleAutoPreference
+import com.android.purebilibili.feature.video.ui.components.PlayerSelectionItem
+import com.android.purebilibili.feature.video.ui.components.PlayerSelectionPopup
 import com.android.purebilibili.feature.video.ui.section.resolveSubtitleLanguageLabel
 import com.android.purebilibili.feature.video.viewmodel.VideoPlaybackUiState
 import kotlinx.coroutines.delay
@@ -253,5 +256,71 @@ internal fun PortraitSubtitlePanel(
                 }
             }
         }
+    }
+}
+
+/**
+ * 玻璃宿主可用时的字幕菜单：与同排倍速、画质、音质菜单共用统一玻璃弹窗。
+ * 玻璃关闭或所在窗口没有同窗宿主时，调用方继续使用 [PortraitSubtitlePanel] 原生深色面板。
+ */
+@Composable
+internal fun PortraitSubtitleGlassMenu(
+    displayMode: SubtitleDisplayMode,
+    primaryLabel: String,
+    secondaryLabel: String,
+    primaryAvailable: Boolean,
+    secondaryAvailable: Boolean,
+    trackOptions: List<SubtitleTrackOption>,
+    largeTextEnabled: Boolean,
+    positionLocked: Boolean,
+    onDismiss: () -> Unit,
+    onDisplayModeChange: (SubtitleDisplayMode) -> Unit,
+    onTrackSelected: (String) -> Unit,
+    onLargeTextChange: (Boolean) -> Unit,
+    onPositionLockedChange: (Boolean) -> Unit,
+) {
+    PlayerSelectionPopup(
+        title = "字幕",
+        onDismissRequest = onDismiss,
+        minWidth = 148.dp,
+    ) {
+        resolveSubtitleDisplayOptions(
+            primaryLabel = primaryLabel,
+            secondaryLabel = secondaryLabel,
+            hasPrimaryTrack = primaryAvailable,
+            hasSecondaryTrack = secondaryAvailable
+        ).forEach { option ->
+            PlayerSelectionItem(
+                text = option.label,
+                selected = displayMode == option.mode,
+                enabled = option.enabled,
+                onClick = { onDisplayModeChange(option.mode) },
+            )
+        }
+        if (trackOptions.isNotEmpty()) {
+            trackOptions.forEach { option ->
+                PlayerSelectionItem(
+                    text = option.label,
+                    selected = option.selected,
+                    onClick = {
+                        onTrackSelected(option.trackKey)
+                        onDisplayModeChange(SubtitleDisplayMode.PRIMARY_ONLY)
+                    },
+                )
+            }
+        }
+        // 开关行点按整行切换且不关闭菜单，可在菜单内连续调整后点空白退出。
+        AppDropdownMenuItem(
+            text = { AppText("大字号", color = AppContentColors.primaryText()) },
+            trailingIcon = { AppSwitch(checked = largeTextEnabled, onCheckedChange = null) },
+            onClick = { onLargeTextChange(!largeTextEnabled) },
+            dismissOnClick = false,
+        )
+        AppDropdownMenuItem(
+            text = { AppText("锁定位置", color = AppContentColors.primaryText()) },
+            trailingIcon = { AppSwitch(checked = positionLocked, onCheckedChange = null) },
+            onClick = { onPositionLockedChange(!positionLocked) },
+            dismissOnClick = false,
+        )
     }
 }

@@ -32,8 +32,23 @@ internal class PiliPlayerSleepTimer private constructor(player: Player, context:
         }
     var exitApp: Boolean = false
     private val endedListener = object : Player.Listener {
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (waiting && playbackState == Player.STATE_ENDED) finish()
+        override fun onEvents(player: Player, events: Player.Events) {
+            // 到点后暂停、空闲、错误或自然结束都不再无限等待。
+            if (waiting && !shouldWaitForSleepTimerEnd(
+                    waitForEnd = true,
+                    playWhenReady = player.playWhenReady,
+                    playbackState = player.playbackState,
+                    hasError = player.playerError != null,
+                )) finish()
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            // 单集循环不发送 ENDED；自动换集或循环回起点同样视为本集结束。
+            if (waiting && reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) finish()
         }
     }
 
@@ -48,7 +63,12 @@ internal class PiliPlayerSleepTimer private constructor(player: Player, context:
             delay((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
             val player = playerRef.get()
             if (player == null) { cancel(); return@launch }
-            if (waitForEnd && player.playbackState != Player.STATE_ENDED) {
+            if (shouldWaitForSleepTimerEnd(
+                    waitForEnd = waitForEnd,
+                    playWhenReady = player.playWhenReady,
+                    playbackState = player.playbackState,
+                    hasError = player.playerError != null,
+                )) {
                 waiting = true
                 player.addListener(endedListener)
             } else finish()
@@ -64,8 +84,10 @@ internal class PiliPlayerSleepTimer private constructor(player: Player, context:
     }
 
     private fun finish() {
-        playerRef.get()?.pause()
+        // 先清理等待监听，再暂停，避免播放状态回调重入 finish。
+        val player = playerRef.get()
         cancel()
+        player?.pause()
         if (exitApp) activityRef.get()?.finishAffinity()
         else Toast.makeText(appContext, "定时结束，已暂停播放", Toast.LENGTH_SHORT).show()
     }
@@ -77,3 +99,12 @@ internal class PiliPlayerSleepTimer private constructor(player: Player, context:
             sessions.getOrPut(player) { PiliPlayerSleepTimer(player, context) }
     }
 }
+
+/** 仅对仍请求播放且能够继续到结尾的会话等待本集结束。 */
+internal fun shouldWaitForSleepTimerEnd(
+    waitForEnd: Boolean,
+    playWhenReady: Boolean,
+    playbackState: Int,
+    hasError: Boolean,
+): Boolean = waitForEnd && playWhenReady && !hasError &&
+    (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)

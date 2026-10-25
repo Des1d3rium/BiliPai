@@ -7,6 +7,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
 import top.yukonga.miuix.kmp.theme.LocalContentColor as MiuixLocalContentColor
@@ -29,6 +30,16 @@ internal fun currentAppTextStyle(): TextStyle = when (LocalAppUiStyle.current) {
 fun appIconGlyphTextStyle(): TextStyle = currentAppTextStyle().copy(
     platformStyle = PlatformTextStyle(includeFontPadding = false),
 )
+
+/**
+ * Shared text style with the given line height style applied on top of the current
+ * UI path's base style, for label texts whose line boxes must hug the glyphs
+ * (for example single-line dock labels in fixed, equally divided slots).
+ */
+@Composable
+@ReadOnlyComposable
+fun appTextStyleWithLineHeightStyle(lineHeightStyle: LineHeightStyle): TextStyle =
+    currentAppTextStyle().copy(lineHeightStyle = lineHeightStyle)
 
 /** Resolves the content color from the active native component tree. */
 @Composable

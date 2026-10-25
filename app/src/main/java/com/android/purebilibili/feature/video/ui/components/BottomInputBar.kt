@@ -1,5 +1,8 @@
 package com.android.purebilibili.feature.video.ui.components
 
+import com.android.purebilibili.core.ui.components.appActionClickable
+import com.android.purebilibili.core.ui.components.appActionWithFeedback
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.animation.AnimatedVisibility
@@ -9,7 +12,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -418,7 +420,7 @@ private fun FloatingLiquidBottomInputBar(
                         textStyle = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(role = Role.Button) { onCommentClick() }
+                            .appActionClickable(role = Role.Button) { onCommentClick() }
                             .padding(horizontal = if (showActionButtons) 12.dp else 16.dp),
                     )
                 }
@@ -501,7 +503,7 @@ private fun BottomInputBarContentRow(
                     .appElasticPress()
                     .clip(AppShapes.container(ContainerLevel.Card))
                     .background(inputContainerColor)
-                    .clickable(role = Role.Button) { onCommentClick() }
+                    .appActionClickable(role = Role.Button) { onCommentClick() }
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -642,11 +644,11 @@ private fun IconActionButton(
                         Modifier.combinedClickable(
                             enabled = enabled,
                             role = Role.Button,
-                            onClick = onClick,
+                            onClick = appActionWithFeedback(onClick),
                             onLongClick = onLongClick,
                         )
                     } else {
-                        Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                        Modifier.appActionClickable(enabled = enabled, role = Role.Button, onClick = onClick)
                     }
                 )
                 .padding(4.dp)

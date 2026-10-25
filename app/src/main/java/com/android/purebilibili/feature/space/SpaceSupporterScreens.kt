@@ -6,7 +6,7 @@ import com.android.purebilibili.core.ui.components.AppSurface
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -177,7 +177,7 @@ private fun SpaceUpowerRankRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -355,7 +355,7 @@ private fun SpaceGuardPodium(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .clickable(enabled = member.uid > 0) { onUserClick(member.uid) }
+                    .appActionClickable(enabled = member.uid > 0) { onUserClick(member.uid) }
                     .padding(horizontal = 16.dp),
             ) {
                 Box {
@@ -400,7 +400,7 @@ private fun SpaceGuardMemberRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .appActionClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

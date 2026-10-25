@@ -15,7 +15,7 @@ import org.xmlpull.v1.XmlPullParser
 import com.android.purebilibili.core.plugin.ExternalPluginInstallDecision
 import com.android.purebilibili.core.plugin.evaluateExternalPluginInstall
 import com.android.purebilibili.core.plugin.kotlinpkg.ExternalKotlinPluginPackagePreview
-import com.android.purebilibili.core.plugin.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapability
 import com.android.purebilibili.core.plugin.json.JsonPluginManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

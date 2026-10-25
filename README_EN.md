@@ -65,7 +65,11 @@ Get APKs and release notes from the [Telegram channel](https://t.me/bilipai666).
 
 ## Plugins
 
-Built-in plugins cover sponsor skipping, ad filtering, Anime4K, danmaku, eye care, recommendations and casting. Import JSON / `.bp` rules by URL. Source plugins require compilation; external `.bpplugin` execution remains in preview.
+The 12 built-in plugins cover sponsor skipping, ad filtering, Anime4K, danmaku, eye care, recommendations and casting. Import JSON / `.bp` rules by URL. Source plugins require compilation; external `.bpplugin` packages currently support preview, saving and authorization records only, without loading or executing external code.
+
+- `plugin-sdk` is the single source of execution contracts and shared models. The app's `BuiltinPlugin` adds presentation and settings UI only; `PluginManager` owns registration, capability queries and enable/disable transitions.
+- `PlayerPluginApi.createSession()` creates independent state for each player and video. Feed and recommendation capabilities accept the host's video objects through generics. Danmaku style colors are ARGB integers, with `null` meaning unspecified.
+- This is a source-breaking change to `0.1.0-SNAPSHOT`: plugin authors must migrate the base interface, player sessions and recommendation generics, then recompile. No aliases retain the former host contracts. Standalone SDK examples are in `plugins/samples/watch-compass` and `plugins/samples/today-watch-remix`; both use the local SDK and match the main project's AGP 9.3.2 / Kotlin 2.4.0 toolchain.
 
 Review the source and declared permissions before importing third-party plugins.
 

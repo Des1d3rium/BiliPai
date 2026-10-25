@@ -58,10 +58,14 @@ class BiliPaiReturnSessionStateTest {
         sourceRoute: String,
         sourceKey: String,
         left: Float = 10f,
+        sourceInstanceId: Long? = null,
     ) = VideoCardTransitionSession.create(
         bvid = bvid,
         source = BiliPaiVideoSource(route = sourceRoute, key = sourceKey),
         recordedSourceKey = sourceKey,
+        sourcePixelOwner = sourceInstanceId?.let {
+            com.android.purebilibili.core.util.VideoCardPixelOwner(sourceKey, it)
+        },
         cardBounds = Rect(left, 20f, left + 100f, 180f),
         sourceCornerDp = 12,
         cardSourceDirection = BiliPaiNavCardSourceDirection.SOURCE_LEFT,
@@ -337,5 +341,160 @@ class BiliPaiReturnSessionStateTest {
         assertEquals(homeToVideo, restored.transitionSession)
         assertEquals("home", restored.lastVideoSourceRoute)
         assertEquals("home:BV_A", restored.lastVideoSourceKey)
+    }
+
+    @Test
+    fun onlySuccessfulPrefixPopsConsumeSourcesIncludingReturnToRoot() {
+        val a = BiliPaiNavKey.VideoDetail(bvid = "BV_A")
+        val b = BiliPaiNavKey.VideoDetail(bvid = "BV_B")
+        val c = BiliPaiNavKey.VideoDetail(bvid = "BV_C")
+        val stack = listOf(BiliPaiNavKey.MainHost, a, b, c)
+        assertEquals(1, countSuccessfulVideoDetailPops(stack, stack.dropLast(1)))
+        assertEquals(2, countSuccessfulVideoDetailPops(stack, stack.dropLast(2)))
+        assertEquals(3, countSuccessfulVideoDetailPops(stack, listOf(BiliPaiNavKey.MainHost)))
+        assertEquals(0, countSuccessfulVideoDetailPops(stack, stack)) // Preview cancellation.
+        assertEquals(0, countSuccessfulVideoDetailPops(stack, stack + BiliPaiNavKey.SearchTrending))
+        assertEquals(0, countSuccessfulVideoDetailPops(stack, listOf(BiliPaiNavKey.MainHost, c)))
+        assertEquals(0, countSuccessfulVideoDetailPops(stack, emptyList()))
+        assertEquals(0, countSuccessfulVideoDetailPops(
+            stack + BiliPaiNavKey.SearchTrending, stack,
+        ))
+    }
+
+    @Test
+    fun twoCommittedPopsInOneAnimationRestoreTwoSourcesExactlyOnce() {
+        val homeToA = transitionSession("BV_A", "home", "home:BV_A")
+        val aToB = transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B")
+        val bToC = transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C")
+        val pending = BiliPaiReturnSessionState()
+            .recordTransitionSession(homeToA)
+            .recordTransitionSession(aToB)
+            .recordTransitionSession(bToC)
+            .recordSuccessfulVideoDetailPop()
+            .recordSuccessfulVideoDetailPop()
+
+        assertEquals(2, pending.pendingRelatedReturnCount)
+        assertEquals(bToC, pending.transitionSession) // Outgoing geometry stays frozen.
+        val restored = pending.restorePendingRelatedReturns(pending.sourceGeneration)
+        assertEquals(homeToA, restored.transitionSession)
+        assertEquals("home:BV_A", restored.lastVideoSourceKey)
+        assertEquals(0, restored.pendingRelatedReturnCount)
+        assertTrue(restored.previousTransitionSessions.isEmpty())
+        assertTrue(restored.previousVideoSources.isEmpty())
+        assertEquals(restored, restored.restorePendingRelatedReturns(pending.sourceGeneration))
+    }
+
+    @Test
+    fun sequentialAnimatedAndUnanimatedPopsHaveTheSameParentResult() {
+        val homeToA = transitionSession("BV_A", "home", "home:BV_A")
+        val aToB = transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B")
+        val bToC = transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C")
+        val atC = BiliPaiReturnSessionState()
+            .recordTransitionSession(homeToA)
+            .recordTransitionSession(aToB)
+            .recordTransitionSession(bToC)
+        val atB = atC.recordSuccessfulVideoDetailPop().restorePendingRelatedReturns()
+        assertEquals(aToB, atB.transitionSession)
+        assertEquals(0, atB.pendingRelatedReturnCount)
+        val atA = atB.recordSuccessfulVideoDetailPop().restorePendingRelatedReturns()
+        assertEquals(homeToA, atA.transitionSession)
+        val combined = atC.recordSuccessfulVideoDetailPop().recordSuccessfulVideoDetailPop()
+            .restorePendingRelatedReturns()
+        assertEquals(atA, combined)
+    }
+
+    @Test
+    fun pushDuringPendingReturnStartsFromActualParentAndRejectsOldCompletion() {
+        val homeToA = transitionSession("BV_A", "home", "home:BV_A")
+        val aToB = transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B")
+        val bToC = transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C")
+        val bToD = transitionSession("BV_D", "video/BV_B", "video/BV_B:BV_D")
+        val pending = BiliPaiReturnSessionState()
+            .recordTransitionSession(homeToA)
+            .recordTransitionSession(aToB)
+            .recordTransitionSession(bToC)
+            .recordSuccessfulVideoDetailPop()
+        val newPush = pending.recordTransitionSession(bToD)
+        assertEquals(listOf(homeToA, aToB), newPush.previousTransitionSessions)
+        assertEquals(0, newPush.pendingRelatedReturnCount)
+        assertEquals(bToD, newPush.transitionSession)
+        val newerReturn = newPush.recordSuccessfulVideoDetailPop()
+        assertEquals(newerReturn, newerReturn.restorePendingRelatedReturns(pending.sourceGeneration))
+        assertEquals(aToB, newerReturn.restorePendingRelatedReturns().transitionSession)
+    }
+
+    @Test
+    fun returnToRootCannotQueueMoreRestoresThanThereAreParentSources() {
+        val homeToA = transitionSession("BV_A", "home", "home:BV_A")
+        val aToB = transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B")
+        val bToC = transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C")
+        val pending = BiliPaiReturnSessionState()
+            .recordTransitionSession(homeToA)
+            .recordTransitionSession(aToB)
+            .recordTransitionSession(bToC)
+            .recordSuccessfulVideoDetailPop()
+            .recordSuccessfulVideoDetailPop()
+            .recordSuccessfulVideoDetailPop()
+        assertEquals(2, pending.pendingRelatedReturnCount)
+        assertEquals(homeToA, pending.restorePendingRelatedReturns().transitionSession)
+    }
+
+    @Test
+    fun sourceReplacementInvalidatesPendingCompletionEvenForTheSameBvid() {
+        val pending = BiliPaiReturnSessionState()
+            .recordTransitionSession(transitionSession("BV_A", "home", "home:BV_A"))
+            .recordTransitionSession(transitionSession("BV_A", "space/123", "space:BV_A"), true)
+            .recordSuccessfulVideoDetailPop()
+        val replacement = pending.recordVideoSourceRoute("history")
+        assertEquals(0, replacement.pendingRelatedReturnCount)
+        assertEquals(replacement, replacement.restorePendingRelatedReturns(pending.sourceGeneration))
+        assertEquals("history", replacement.lastVideoSourceRoute)
+    }
+
+    @Test
+    fun sourceInstanceIdentityIsFrozenAndRestoredWithItsOwnSourceSession() {
+        val home = transitionSession("BVsame", "home", "home:BVsame", sourceInstanceId = 101L)
+        val space = transitionSession("BVsame", "space/123", "space/123:BVsame", sourceInstanceId = 202L)
+        val nested = BiliPaiReturnSessionState()
+            .recordTransitionSession(home)
+            .recordTransitionSession(space, preserveCurrentSession = true)
+        assertEquals(202L, nested.transitionSession?.sourceInstanceId)
+        val restored = nested.recordSuccessfulVideoDetailPop().restorePendingRelatedReturns()
+        assertEquals(101L, restored.transitionSession?.sourceInstanceId)
+        assertEquals("home:BVsame", restored.lastVideoSourceKey)
+    }
+
+    @Test
+    fun consecutiveImmediateReturnsKeepDistinctRequestsEvenWhenPendingCountRepeats() {
+        val homeToA = transitionSession("BV_A", "home", "home:BV_A")
+        val aToB = transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B")
+        val bToC = transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C")
+        val first = BiliPaiReturnSessionState()
+            .recordTransitionSession(homeToA)
+            .recordTransitionSession(aToB)
+            .recordTransitionSession(bToC)
+            .recordSuccessfulVideoDetailPop()
+        val firstSettled = first.restorePendingRelatedReturns()
+        val second = firstSettled.recordSuccessfulVideoDetailPop()
+        assertEquals(first.pendingRelatedReturnCount, second.pendingRelatedReturnCount)
+        assertTrue(first.relatedReturnRequestId != second.relatedReturnRequestId)
+        assertEquals(second, second.restorePendingRelatedReturns(
+            first.sourceGeneration, first.relatedReturnRequestId,
+        ))
+        assertEquals(homeToA, second.restorePendingRelatedReturns().transitionSession)
+    }
+
+    @Test
+    fun olderIdleCompletionCannotConsumeANewerPopInTheSameSession() {
+        val pending = BiliPaiReturnSessionState()
+            .recordTransitionSession(transitionSession("BV_A", "home", "home:BV_A"))
+            .recordTransitionSession(transitionSession("BV_B", "video/BV_A", "video/BV_A:BV_B"))
+            .recordTransitionSession(transitionSession("BV_C", "video/BV_B", "video/BV_B:BV_C"))
+            .recordSuccessfulVideoDetailPop()
+        val next = pending.recordSuccessfulVideoDetailPop()
+        assertEquals(next, next.restorePendingRelatedReturns(
+            pending.sourceGeneration, pending.relatedReturnRequestId,
+        ))
+        assertEquals("home:BV_A", next.restorePendingRelatedReturns().lastVideoSourceKey)
     }
 }

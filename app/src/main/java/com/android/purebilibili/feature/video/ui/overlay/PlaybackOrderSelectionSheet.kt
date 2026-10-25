@@ -21,7 +21,7 @@ internal fun PlaybackOrderSelectionSheet(
     placement: PlayerListPopupPlacement = if (isFullscreen) PlayerListPopupPlacement.END else PlayerListPopupPlacement.CENTER,
     anchorBounds: IntRect? = null,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     PlayerSelectionPopup(title = "选择播放顺序", showTitle = false,
         onDismissRequest = onDismiss, placement = placement, anchorBounds = anchorBounds) {
         playerPlaybackOrderOptions.forEachIndexed { index, behavior ->

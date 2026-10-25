@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -56,11 +55,10 @@ class AndroidNativeVariantThemePolicyTest {
     }
 
     @Test
-    fun material3Variant_usesExpressiveMotionScheme() {
+    fun material3Variant_usesStandardMotionScheme() {
         val motionScheme = resolveMaterialMotionScheme(AppUiStyle.MATERIAL3)
 
-        assertSame(MotionScheme.expressive(), motionScheme)
-        assertNotSame(MotionScheme.standard(), motionScheme)
+        assertSame(MotionScheme.standard(), motionScheme)
     }
 
     @Test

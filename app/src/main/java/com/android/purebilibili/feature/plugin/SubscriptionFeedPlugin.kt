@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.plugin
 
+import com.android.purebilibili.core.plugin.BuiltinPluginIds
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.android.purebilibili.core.plugin.Plugin
+import com.android.purebilibili.core.plugin.BuiltinPlugin
 import com.android.purebilibili.core.plugin.feed.FeedConditionalStore
 import com.android.purebilibili.core.plugin.feed.SavedSubscriptionFeed
 import com.android.purebilibili.core.plugin.feed.SubscriptionFeedStore
@@ -42,14 +44,14 @@ import com.android.purebilibili.core.ui.components.AppTextButton
 import com.android.purebilibili.plugin.sdk.PluginCapability
 import com.android.purebilibili.plugin.sdk.PluginCapabilityManifest
 
-class SubscriptionFeedPlugin : Plugin {
-    override val id: String = PLUGIN_ID
+class SubscriptionFeedPlugin : BuiltinPlugin {
+    override val id: String = BuiltinPluginIds.SUBSCRIPTION_FEED
     override val name: String = "订阅"
     override val description: String = "关注喜欢的网站，在首页集中阅读更新；支持 RSS、Atom 和 OPML 导入。"
     override val version: String = "1.0.0"
     override val author: String = "BiliPai"
     override val capabilityManifest: PluginCapabilityManifest = PluginCapabilityManifest(
-        pluginId = PLUGIN_ID,
+        pluginId = BuiltinPluginIds.SUBSCRIPTION_FEED,
         displayName = name,
         version = version,
         apiVersion = 1,
@@ -69,10 +71,6 @@ class SubscriptionFeedPlugin : Plugin {
     @Composable
     override fun SettingsContent(modifier: Modifier) {
         SubscriptionFeedSettings(modifier)
-    }
-
-    companion object {
-        const val PLUGIN_ID = "subscription_feed"
     }
 }
 

@@ -102,6 +102,9 @@ internal fun LinkedBottomDock(
     navigationContent: @Composable () -> Unit,
 ) {
     com.android.purebilibili.core.ui.components.ProvideAppElasticFeedback {
+        val searchHaptic = com.android.purebilibili.core.util.rememberHapticFeedback(
+            com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION,
+        )
         val hasAudio = nowPlayingContent != null
         var keepSlotComposed by remember { mutableStateOf(hasAudio) }
         val useNavigationCompact = shouldUseScrollCompactNavigation(
@@ -348,9 +351,13 @@ internal fun LinkedBottomDock(
                 verticalGap = 4.dp.roundToPx()
             }
             val searchHeight = button
-            // 容器高度固定为两行。小横条行收放只改变上方透明区，morph 进度不再进入
-            // 容器 measure，导航行/首按钮/搜索胶囊不会被拖动每帧重测量（官方 deferred
-            // reads 规范：帧率状态读取只应触发 placement/绘制）。
+            val expandedGlassSearchHeight = with(density) { 48.dp.roundToPx() }
+            // 玻璃合体搜索从圆按钮过渡到 48dp 输入框；原生路径保持原有高度。
+            fun searchVisualHeight(): Int = if (glassEnabled) {
+                (searchHeight + (expandedGlassSearchHeight - searchHeight) * search.value.coerceIn(0f, 1f)).roundToInt()
+            } else searchHeight
+            // 两行宿主与导航行高度固定；搜索框仅在自身测量、放置阶段读取展开进度，
+            // 不把搜索框高度变化传回页面组合或整条底栏的测量。
             val containerHeight = barHeight + verticalGap + barHeight
             val navRowY = containerHeight - barHeight
             val controlRowY = navRowY + (barHeight - controlHeight) / 2
@@ -662,7 +669,7 @@ internal fun LinkedBottomDock(
                                     mergeProgress = merge.value,
                                     searchProgress = search.value,
                                 ),
-                                controlRowY,
+                                controlRowY + (controlHeight - searchVisualHeight()) / 2,
                             )
                         }
                         .layout { measurable, _ ->
@@ -678,9 +685,9 @@ internal fun LinkedBottomDock(
                                 verticalGap = verticalGap,
                             )
                             val placeable = measurable.measure(
-                                Constraints.fixed(geometry.searchWidth, searchHeight)
+                                Constraints.fixed(geometry.searchWidth, searchVisualHeight())
                             )
-                            layout(geometry.searchWidth, searchHeight) {
+                            layout(geometry.searchWidth, searchVisualHeight()) {
                                 placeable.placeRelative(0, 0)
                             }
                         },
@@ -725,6 +732,7 @@ internal fun LinkedBottomDock(
                                     .then(
                                         if (phase != LinkedDockPhase.Search) {
                                             Modifier.clickable(role = Role.Button) {
+                                                searchHaptic(com.android.purebilibili.core.util.HapticType.LIGHT)
                                                 phaseBeforeSearch = phase
                                                 pendingUserImeRequest = true
                                                 updatePhase(LinkedDockPhase.Search)
@@ -761,6 +769,7 @@ internal fun LinkedBottomDock(
                                     fieldAlpha = searchProgressProvider,
                                     interactive = phase == LinkedDockPhase.Search,
                                     iconStyle = iconStyle,
+                                    glassSearchVisuals = glassEnabled,
                                     pendingUserImeRequest = pendingUserImeRequest,
                                     onUserImeRequestConsumed = { pendingUserImeRequest = false },
                                 )

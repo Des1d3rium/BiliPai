@@ -802,7 +802,7 @@ internal fun ExternalPlaylistQueueSheetContent(
     onVideoSelected: (Int, PlaylistItem) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val selectionHaptic = rememberHapticFeedback()
+    val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = currentIndex.coerceIn(0, playlist.lastIndex.coerceAtLeast(0)),
     )

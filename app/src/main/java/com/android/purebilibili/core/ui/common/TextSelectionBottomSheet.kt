@@ -72,7 +72,7 @@ fun TextSelectionBottomSheet(
     if (!TextSelectionPolicy.shouldShowActions(text)) return
 
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
+    val haptic = com.android.purebilibili.core.ui.rememberAppHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.TEXT)
     val resolvedTitle = TextSelectionPolicy.resolveTitle(title)
     val focusRequester = remember { FocusRequester() }
 

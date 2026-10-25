@@ -4,7 +4,7 @@ import com.android.purebilibili.core.util.LocalWindowSizeClass
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.clickable
+import com.android.purebilibili.core.ui.components.appActionClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,7 +106,7 @@ fun SearchVideoFilterBar(
                     .clip(com.android.purebilibili.core.ui.AppShapes.container(
                         com.android.purebilibili.core.ui.ContainerLevel.Tag
                     ))
-                    .clickable(role = Role.Button, onClick = { onOrderChange(order) })
+                    .appActionClickable(role = Role.Button, onClick = { onOrderChange(order) })
                     .padding(horizontal = 11.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -172,7 +172,7 @@ fun SearchVideoFilterActions(
                 modifier = Modifier
                     .size(actionSize)
                     .clip(CircleShape)
-                    .clickable(
+                    .appActionClickable(
                         interactionSource = filterInteraction,
                         indication = if (liquidChromeActive) null else ripple(
                             bounded = false,

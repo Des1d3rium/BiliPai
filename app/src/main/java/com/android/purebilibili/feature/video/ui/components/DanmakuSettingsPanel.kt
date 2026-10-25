@@ -402,7 +402,7 @@ fun DanmakuSettingsPanel(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) { },
-                color = panelColors.panelColor,
+                color = if (LocalPlayerGlassSettingsSurface.current) Color.Transparent else panelColors.panelColor,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,

@@ -123,11 +123,11 @@ internal fun LivePlaybackPreferencesDialog(onDismiss: () -> Unit, onQualityChang
 private fun LiveQualityPreferenceRow(title: String, quality: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val label = livePreferredQualityOptions.firstOrNull { it.first == quality }?.second ?: "画质 $quality"
-    Box {
+    com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { expanded = true }, enabled = enabled) {
         AppTextButton(enabled = enabled, onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { AppText("$title：$label") }
         AppDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             livePreferredQualityOptions.forEach { (code, name) ->
-                AppDropdownMenuItem(text = { AppText(if (code == quality) "$name · 当前" else name) }, onClick = { expanded = false; onSelect(code) })
+                AppDropdownMenuItem(selected = code == quality, text = { AppText(if (code == quality) "$name · 当前" else name) }, onClick = { expanded = false; onSelect(code) })
             }
         }
     }
