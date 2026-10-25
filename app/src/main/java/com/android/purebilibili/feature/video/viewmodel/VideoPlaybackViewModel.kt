@@ -2302,6 +2302,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     
     @SuppressLint("UnsafeOptInUsageError")
     fun attachPlayer(player: ExoPlayer) {
+        com.android.purebilibili.btr.BtrPlaybackMonitor.attach(player)
         val changed = exoPlayer !== player
         if (changed) playbackRecoveryGeneration++
         val previousPlayer = exoPlayer
@@ -9146,6 +9147,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             .getEnabledPlugins(PlaybackCdnPlugin::class)
             .firstOrNull()
         val cdnRewrite = cdnPlugin?.rewritePlaybackCandidates(rawVideoUrls, rawAudioUrls)
+        com.android.purebilibili.btr.BtrTransport.registerTracks(listOf(rawVideoUrls), listOf(rawAudioUrls))
 
         val preferredCandidates = applyPlaybackCdnPreference(
             candidates = cdnRewrite?.candidates ?: originalCandidates,

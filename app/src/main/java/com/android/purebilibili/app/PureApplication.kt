@@ -64,6 +64,7 @@ import com.android.purebilibili.feature.settings.resolveThemeModePreference
 import com.android.purebilibili.feature.plugin.AdFilterPlugin
 import com.android.purebilibili.feature.plugin.Anime4KPlugin
 import com.android.purebilibili.feature.plugin.CdnRegionPlugin
+import com.android.purebilibili.feature.plugin.btr.BtrPlugin
 import com.android.purebilibili.feature.plugin.DanmakuEnhancePlugin
 import com.android.purebilibili.feature.plugin.EyeProtectionPlugin
 import com.android.purebilibili.feature.plugin.HomeFeedAnonymizerPlugin
@@ -452,6 +453,7 @@ class PureApplication : Application(), SingletonImageLoader.Factory, ComponentCa
         PluginManager.register(EyeProtectionPlugin())
         PluginManager.register(TodayWatchPlugin())
         PluginManager.register(CdnRegionPlugin())
+        PluginManager.register(BtrPlugin())
         PluginManager.register(HomeFeedAnonymizerPlugin())
         PluginManager.register(DlnaCastPlugin())
         PluginManager.register(GoogleCastPlugin())
