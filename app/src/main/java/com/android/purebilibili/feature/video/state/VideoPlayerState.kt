@@ -1068,7 +1068,18 @@ fun rememberVideoPlayerState(
             val audioFocusEnabled = SettingsManager.getAudioFocusEnabledSync(context)
             val bufferPolicy = resolvePlayerBufferPolicy(
                 isOnWifi = NetworkUtils.isWifi(context)
-            )
+            ).let { base ->
+                // Fork: BTR's anti-jitter buffer only ever deepens the host's policy.
+                com.android.purebilibili.btr.BtrTransport.bufferFloor()?.let { floor ->
+                    base.copy(
+                        minBufferMs = maxOf(base.minBufferMs, floor.minBufferMs),
+                        maxBufferMs = maxOf(base.maxBufferMs, floor.maxBufferMs),
+                        bufferForPlaybackMs = maxOf(base.bufferForPlaybackMs, floor.bufferForPlaybackMs),
+                        bufferForPlaybackAfterRebufferMs = maxOf(base.bufferForPlaybackAfterRebufferMs, floor.bufferForPlaybackAfterRebufferMs),
+                        earlyPlaybackMaxBufferMs = maxOf(base.earlyPlaybackMaxBufferMs, floor.earlyPlaybackMaxBufferMs)
+                    )
+                } ?: base
+            }
             Logger.d(
                 "VideoPlayerState",
                 "🎬 BufferPolicy: min=${bufferPolicy.minBufferMs}, max=${bufferPolicy.maxBufferMs}, " +

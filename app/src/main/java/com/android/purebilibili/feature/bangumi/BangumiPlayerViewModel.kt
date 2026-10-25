@@ -605,6 +605,10 @@ class BangumiPlayerViewModel : BasePlayerViewModel() {
                     audioUrl = audio?.backupUrl?.firstOrNull()
                 }
 
+                com.android.purebilibili.btr.BtrTransport.registerTracks(
+                    listOf(listOfNotNull(videoUrl) + video?.backupUrl.orEmpty()),
+                    listOf(listOfNotNull(audioUrl) + audio?.backupUrl.orEmpty())
+                )
                 // Keep the complete signed playurl candidates intact. The CDN plugin may only
                 // reorder these addresses in its safe mode; it never synthesizes a new host.
                 PluginManager.getEnabledPlugins(PlaybackCdnPlugin::class).firstOrNull()

@@ -81,9 +81,11 @@ internal object PlaybackMediaCache {
         // shared cache only when playback/prefetch first asks for a data source.
         val delegate: DataSource.Factory by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             val monitoredUpstreamFactory = DataSource.Factory {
-                CdnPlaybackDataSource(upstreamFactory.createDataSource()).apply {
+                val host = CdnPlaybackDataSource(upstreamFactory.createDataSource()).apply {
                     addTransferListener(upstreamTransferListener)
                 }
+                // Fork: BTR downloads registered DASH ranges and falls back to the host path.
+                com.android.purebilibili.btr.BtrDataSource(host).apply { addTransferListener(upstreamTransferListener) }
             }
             val cache = getOrCreateCache(appContext)
             if (cache == null) {

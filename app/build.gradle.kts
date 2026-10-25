@@ -416,6 +416,7 @@ dependencies {
     implementation(project(":plugin-sdk"))
     implementation(project(":design-system"))
     implementation(project(":danmaku-engine"))
+    implementation(project(":btr-transport"))
 
     // Baseline profile 生成模块：generateBaselineProfile 时在真机/托管设备上跑
     // :baselineprofile 的宏基准并把产物合并进 release/dev 变体。

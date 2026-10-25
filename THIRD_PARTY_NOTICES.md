@@ -93,3 +93,13 @@ GPL-2.0-or-later; Nagram modifications by Nagram contributors, distributed under
 This Compose adaptation is distributed under this repository's [GPL-3.0 license](LICENSE).
 It uses BiliPai account data, colors, badges, editing and navigation actions.
 See [port details](docs/nagram-profile-header-port.md).
+
+## Bilibili-thread-ripper
+
+`btr-transport/` ports the range downloader of
+[Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thread-ripper) at commit
+`bbf4d3dee502a16e424232ae6a51705f52b0e60d` (`src/range-core.js`, `src/cdn-resolver.js`,
+`src/idm-downloader.js`) to Kotlin, with a Media3 data source in place of the browser player.
+Copyright (c) 2026 Bilibili-thread-ripper contributors, MIT License; see
+[btr-transport/LICENSE-BTR.txt](btr-transport/LICENSE-BTR.txt). This port is not an official
+release of the original authors.

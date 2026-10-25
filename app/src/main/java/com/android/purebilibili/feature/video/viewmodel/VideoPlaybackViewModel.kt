@@ -2310,6 +2310,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     
     @SuppressLint("UnsafeOptInUsageError")
     fun attachPlayer(player: ExoPlayer) {
+        com.android.purebilibili.btr.BtrPlaybackMonitor.attach(player)
+        com.android.purebilibili.btr.BtrTransport.addressRefresher = btrAddressRefresher
         val changed = exoPlayer !== player
         if (changed) playbackRecoveryGeneration++
         val previousPlayer = exoPlayer
@@ -9213,6 +9215,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             .getEnabledPlugins(PlaybackCdnPlugin::class)
             .firstOrNull()
         val cdnRewrite = cdnPlugin?.rewritePlaybackCandidates(rawVideoUrls, rawAudioUrls)
+        com.android.purebilibili.btr.BtrTransport.registerTracks(listOf(rawVideoUrls), listOf(rawAudioUrls))
 
         val preferredCandidates = applyPlaybackCdnPreference(
             candidates = cdnRewrite?.candidates ?: originalCandidates,
@@ -9667,7 +9670,24 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
     
     @SuppressLint("UnsafeOptInUsageError")
+    // Fork: fetch the playing video's playurl again and hand BTR the fresh signatures, without
+    // reloading the player.
+    private val btrAddressRefresher: suspend () -> Unit = refresher@{
+        val bvid = currentBvid.takeIf { it.isNotBlank() } ?: return@refresher
+        val cid = currentCid.takeIf { it > 0 } ?: return@refresher
+        val quality = (_uiState.value as? VideoPlaybackUiState.Success)?.currentQuality ?: return@refresher
+        PlayUrlCache.invalidate(bvid, cid)
+        val dash = VideoRepository.getPlayUrlData(bvid, cid, quality)?.dash ?: return@refresher
+        com.android.purebilibili.btr.BtrTransport.registerTracks(
+            dash.video.map { listOf(it.baseUrl) + it.backupUrl.orEmpty() },
+            dash.audio.orEmpty().map { listOf(it.baseUrl) + it.backupUrl.orEmpty() }
+        )
+    }
+
     override fun onCleared() {
+        if (com.android.purebilibili.btr.BtrTransport.addressRefresher === btrAddressRefresher) {
+            com.android.purebilibili.btr.BtrTransport.addressRefresher = null
+        }
         finishQualitySwitchTelemetry("canceled", "screen_closed")
         cancelPendingVideoLoad()
         exoPlayer?.removeAnalyticsListener(videoBandwidthListener)

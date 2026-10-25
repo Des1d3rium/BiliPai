@@ -336,6 +336,7 @@ internal fun resolvePortraitPlaybackCdnUrls(
         cachedDashAudios = cachedDashAudios
     )
     val rewrite = cdnPlugin?.rewritePlaybackCandidates(rawVideoUrls, rawAudioUrls)
+    com.android.purebilibili.btr.BtrTransport.registerTracks(listOf(rawVideoUrls), listOf(rawAudioUrls))
     return PortraitPlaybackStreamUrls(
         videoUrl = rewrite?.videoUrls?.firstOrNull()?.takeIf { it.isNotBlank() }
             ?: streamUrls.videoUrl,
