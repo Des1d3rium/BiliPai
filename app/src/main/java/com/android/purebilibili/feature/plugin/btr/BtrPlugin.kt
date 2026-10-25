@@ -40,7 +40,9 @@ internal data class BtrPluginConfig(
     val autoConcurrency: Boolean = true,
     val wifiOnly: Boolean = true,
     /** Null follows the mode: on for overseas nodes, which stall often. */
-    val stableBuffer: Boolean? = null
+    val stableBuffer: Boolean? = null,
+    /** BTR's multi-node download; the anti-jitter buffer works without it. */
+    val transfer: Boolean = true
 ) {
     fun stableBufferEnabled(): Boolean = stableBuffer ?: (normalized().mode == BtrCdnMode.OVERSEAS.name)
 
@@ -55,7 +57,8 @@ internal data class BtrPluginConfig(
         customHosts = customHosts,
         concurrency = concurrency,
         autoConcurrency = autoConcurrency,
-        stableBuffer = stableBufferEnabled()
+        stableBuffer = stableBufferEnabled(),
+        transfer = transfer
     ).normalized()
 }
 

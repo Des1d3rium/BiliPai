@@ -49,6 +49,14 @@ internal fun BtrSettingsContent(
             style = MaterialTheme.typography.bodySmall
         )
 
+        AppSwitchPreference(
+            title = "多线程传输",
+            subtitle = "关闭后仍用 BiliPai 原来的单连接下载，只保留下面的抗波动缓冲。",
+            checked = config.transfer,
+            enabled = !saving,
+            onCheckedChange = { onChange(config.copy(transfer = it)) }
+        )
+
         AppText("CDN", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MODE_LABELS.forEach { (mode, label) ->

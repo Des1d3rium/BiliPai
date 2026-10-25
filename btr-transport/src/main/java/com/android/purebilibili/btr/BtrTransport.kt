@@ -133,7 +133,7 @@ object BtrTransport {
     /** Floors for the next player the host builds, or null to keep the host's own policy. */
     fun bufferFloor(): BtrBufferFloor? = if (settings.enabled && settings.stableBuffer) BtrBufferFloor() else null
 
-    internal fun isActive(): Boolean = settings.enabled && downloader != null && runCatching { networkAllowed() }.getOrDefault(false)
+    internal fun isActive(): Boolean = settings.enabled && settings.transfer && downloader != null && runCatching { networkAllowed() }.getOrDefault(false)
 
     /**
      * Registers one playback's tracks: each list is one track's base URL followed by its backups.

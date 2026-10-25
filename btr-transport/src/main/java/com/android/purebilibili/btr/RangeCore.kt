@@ -82,6 +82,8 @@ data class BtrSettings(
     val autoConcurrency: Boolean = false,
     /** Ask the host player for a deeper buffer, so a node that stalls for seconds is not a stall. */
     val stableBuffer: Boolean = false,
+    /** Download through BTR; off leaves every read on the host's single connection. */
+    val transfer: Boolean = true,
     val minChunkBytes: Long = 64L * 1024,
     val firstByteTimeoutMs: Long = 5_500,
     val stallTimeoutMs: Long = 4_000,
