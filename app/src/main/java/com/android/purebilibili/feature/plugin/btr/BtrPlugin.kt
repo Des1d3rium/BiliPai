@@ -15,9 +15,9 @@ import com.android.purebilibili.btr.BtrCdnMode
 import com.android.purebilibili.btr.BtrSettings
 import com.android.purebilibili.btr.BtrTransport
 import com.android.purebilibili.core.network.NetworkModule
-import com.android.purebilibili.core.plugin.Plugin
-import com.android.purebilibili.core.plugin.PluginCapability
-import com.android.purebilibili.core.plugin.PluginCapabilityManifest
+import com.android.purebilibili.core.plugin.BuiltinPlugin
+import com.android.purebilibili.plugin.sdk.PluginCapability
+import com.android.purebilibili.plugin.sdk.PluginCapabilityManifest
 import com.android.purebilibili.core.plugin.PluginManager
 import com.android.purebilibili.core.plugin.PluginStore
 import com.android.purebilibili.core.util.NetworkUtils
@@ -63,7 +63,7 @@ internal data class BtrPluginConfig(
 }
 
 /** Bilibili-thread-ripper's downloader for on-demand DASH playback; see :btr-transport. */
-class BtrPlugin : Plugin {
+class BtrPlugin : BuiltinPlugin {
     override val id = BTR_PLUGIN_ID
     override val name = "线程撕裂者"
     override val description = "按 BTR 原版移植：多节点分片并发、对冲补救、断点续传、自动线程数"
