@@ -126,4 +126,25 @@ class CdnResolverTest {
         now += BtrNodeStats.PRIOR_TTL_MS
         assertEquals(0.0, second.speed(candidates.first()))
     }
+
+    @Test
+    fun nodeSpeedsSurviveARestartWhileFresh() {
+        var now = 10_000_000L
+        val before = BtrNodeStats { now }
+        before.record("upos-sz-mirrorcosov.bilivideo.com", 6_000_000.0, success = true)
+        before.record("upos-hz-mirrorakam.akamaized.net", 2_000_000.0, success = true)
+        val saved = before.encode() + "\nnot a line\nevil.example.com\t9\t1\t1"
+
+        now += 30 * 60_000L
+        val after = BtrNodeStats { now }
+        after.restore(saved)
+        assertEquals(6_000_000.0, after.get("upos-sz-mirrorcosov.bilivideo.com")?.bps)
+        assertEquals(2_000_000.0, after.get("upos-hz-mirrorakam.akamaized.net")?.bps)
+
+        now += BtrNodeStats.PRIOR_TTL_MS
+        val tooLate = BtrNodeStats { now }
+        tooLate.restore(saved)
+        assertEquals(null, tooLate.get("upos-sz-mirrorcosov.bilivideo.com"))
+        assertEquals("", tooLate.encode())
+    }
 }

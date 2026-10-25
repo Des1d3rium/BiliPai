@@ -112,6 +112,14 @@ internal fun BtrSettingsContent(
             )
         }
         AppSwitchPreference(
+            title = "抗波动缓冲",
+            subtitle = "播放器多缓冲一些（开头 15 秒、之后至少 20 秒），节点卡顿几秒时不会停下。" +
+                "海外 CDN 默认开启。下一个打开的视频生效。",
+            checked = config.stableBufferEnabled(),
+            enabled = !saving,
+            onCheckedChange = { onChange(config.copy(stableBuffer = it)) }
+        )
+        AppSwitchPreference(
             title = "仅 Wi-Fi",
             subtitle = "关闭后移动网络也会并发下载，流量与耗电会增加。",
             checked = config.wifiOnly,

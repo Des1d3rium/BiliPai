@@ -37,9 +37,13 @@ internal data class BtrPluginConfig(
     val mode: String = BtrCdnMode.MAINLAND.name,
     val customHosts: List<String> = emptyList(),
     val concurrency: Int = 8,
-    val autoConcurrency: Boolean = false,
-    val wifiOnly: Boolean = true
+    val autoConcurrency: Boolean = true,
+    val wifiOnly: Boolean = true,
+    /** Null follows the mode: on for overseas nodes, which stall often. */
+    val stableBuffer: Boolean? = null
 ) {
+    fun stableBufferEnabled(): Boolean = stableBuffer ?: (normalized().mode == BtrCdnMode.OVERSEAS.name)
+
     fun normalized(): BtrPluginConfig = copy(
         mode = runCatching { BtrCdnMode.valueOf(mode).name }.getOrDefault(BtrCdnMode.MAINLAND.name),
         concurrency = concurrency.takeIf { it in BtrSettings.ALLOWED_CONCURRENCY } ?: 8
@@ -50,7 +54,8 @@ internal data class BtrPluginConfig(
         mode = BtrCdnMode.valueOf(normalized().mode),
         customHosts = customHosts,
         concurrency = concurrency,
-        autoConcurrency = autoConcurrency
+        autoConcurrency = autoConcurrency,
+        stableBuffer = stableBufferEnabled()
     ).normalized()
 }
 
@@ -89,9 +94,11 @@ class BtrPlugin : Plugin {
 
     private fun apply(next: BtrPluginConfig) {
         val context = PluginManager.getContext().applicationContext
-        BtrTransport.configure(next.toSettings(enabled = running), NetworkModule.playbackOkHttpClient) {
-            !next.wifiOnly || NetworkUtils.isWifi(context)
-        }
+        BtrTransport.configure(
+            next.toSettings(enabled = running), NetworkModule.playbackOkHttpClient,
+            allowNetwork = { !next.wifiOnly || NetworkUtils.isWifi(context) },
+            storageDir = context.filesDir
+        )
     }
 
     private suspend fun update(next: BtrPluginConfig) = mutex.withLock {

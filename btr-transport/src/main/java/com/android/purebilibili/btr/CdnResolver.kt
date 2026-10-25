@@ -153,9 +153,14 @@ class BtrNodeStats(private val clock: () -> Long = System::currentTimeMillis) {
 
     private val nodes = HashMap<String, Sample>()
 
+    /** Bumped on every change, so a saver writes only when something new was measured. */
+    @Volatile var version = 0L
+        private set
+
     @Synchronized
     fun record(host: String, bps: Double, success: Boolean) {
         if (host.isEmpty()) return
+        version += 1
         val now = clock()
         val old = nodes[host]
         val measured = bps > 0
@@ -172,11 +177,36 @@ class BtrNodeStats(private val clock: () -> Long = System::currentTimeMillis) {
         sample.measuredAt?.let { clock() - it < PRIOR_TTL_MS } == true
     }
 
-    @Synchronized fun clear() = nodes.clear()
+    @Synchronized fun clear() { nodes.clear(); version += 1 }
+
+    /** One node per line: host, speed, measured and last-success times. Hosts only, never URLs. */
+    @Synchronized
+    fun encode(): String {
+        val now = clock()
+        return nodes.filterValues { sample -> sample.measuredAt?.let { now - it < PRIOR_TTL_MS } == true }
+            .entries.joinToString("\n") { (host, s) -> "$host\t${s.bps}\t${s.measuredAt}\t${s.lastSuccessAt}" }
+    }
+
+    /** Restores what [encode] wrote; lines that do not parse, or are no longer fresh, are skipped. */
+    @Synchronized
+    fun restore(text: String) {
+        val now = clock()
+        for (line in text.lineSequence()) {
+            val parts = line.split('\t')
+            if (parts.size != 4) continue
+            val host = normalizeBtrCdnHost(parts[0]).takeIf { it == parts[0] } ?: continue
+            val bps = parts[1].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+            val measuredAt = parts[2].toLongOrNull()?.takeIf { now - it in 0 until PRIOR_TTL_MS } ?: continue
+            val lastSuccessAt = parts[3].toLongOrNull() ?: 0
+            // A newer in-memory measurement wins over the saved one.
+            if ((nodes[host]?.measuredAt ?: Long.MIN_VALUE) < measuredAt) nodes[host] = Sample(bps, measuredAt, lastSuccessAt)
+        }
+    }
 
     companion object {
-        // Longer than a track's own lifetime: a node fast ten minutes ago is the best first guess.
-        const val PRIOR_TTL_MS = 10 * 60_000L
+        // A node fast within the last hour, also before the app restarted, is the best first guess;
+        // a track's own fresh measurement replaces it after the first transfer.
+        const val PRIOR_TTL_MS = 60 * 60_000L
     }
 }
 

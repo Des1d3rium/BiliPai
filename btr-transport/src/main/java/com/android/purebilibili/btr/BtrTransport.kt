@@ -7,11 +7,25 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Buffer floors for the host player when [BtrSettings.stableBuffer] is on: a deeper buffer rides out
+ * the overseas nodes' frequent stalls of a few seconds. Durations in milliseconds; start stays quick.
+ */
+data class BtrBufferFloor(
+    val minBufferMs: Int = 20_000,
+    val maxBufferMs: Int = 50_000,
+    val bufferForPlaybackMs: Int = 0,
+    val bufferForPlaybackAfterRebufferMs: Int = 2_500,
+    /** The host buffers only this far ahead in a video's first quarter. */
+    val earlyPlaybackMaxBufferMs: Int = 15_000
+)
 
 /** Process-wide diagnostics; never holds signed URLs. */
 data class BtrStats(
@@ -52,8 +66,32 @@ object BtrTransport {
     }
     private fun newBanList() = BtrBanList { host, scope -> log("ban $scope host=$host") }
     private var bans = newBanList()
-    // Node speeds survive the session reset, so the next video starts from them.
+    // Node speeds survive the session reset, so the next video starts from them, and are saved so
+    // they also survive an app restart.
     private val nodeStats = BtrNodeStats()
+    private var statsFile: java.io.File? = null
+    private const val NODE_STATS_FILE = "btr_node_stats.tsv"
+    private const val NODE_STATS_SAVE_MS = 10_000L
+
+    private fun startNodeStatsPersistence(file: java.io.File) {
+        statsFile = file
+        scope.launch {
+            runCatching { if (file.isFile) nodeStats.restore(file.readText()) }
+                .onFailure { log("node stats not restored: ${it.message}") }
+            var saved = nodeStats.version
+            while (true) {
+                kotlinx.coroutines.delay(NODE_STATS_SAVE_MS)
+                val current = nodeStats.version
+                if (current == saved) continue
+                saved = current
+                runCatching {
+                    val temp = java.io.File(file.parentFile, "${file.name}.tmp")
+                    temp.writeText(nodeStats.encode())
+                    if (!temp.renameTo(file)) { file.delete(); temp.renameTo(file) }
+                }.onFailure { log("node stats not saved: ${it.message}") }
+            }
+        }
+    }
     private val tracks = LinkedHashMap<String, Track>()
     private var sessionPaths: Set<String> = emptySet()
 
@@ -73,9 +111,10 @@ object BtrTransport {
 
     /** Installs the transport. [client] should be the app's playback client (shared pool). */
     @Synchronized
-    fun configure(next: BtrSettings, client: OkHttpClient?, allowNetwork: () -> Boolean) {
+    fun configure(next: BtrSettings, client: OkHttpClient?, allowNetwork: () -> Boolean, storageDir: java.io.File? = null) {
         settings = next.normalized()
         networkAllowed = allowNetwork
+        if (storageDir != null && statsFile == null) startNodeStatsPersistence(java.io.File(storageDir, NODE_STATS_FILE))
         if (client != null && downloader == null) {
             downloader = BtrDownloader(OkHttpBtrRangeFetcher(client), { settings }, autoConcurrency, clock, ::onTransfer)
         }
@@ -90,6 +129,9 @@ object BtrTransport {
         sessionPaths = emptySet()
         publish()
     }
+
+    /** Floors for the next player the host builds, or null to keep the host's own policy. */
+    fun bufferFloor(): BtrBufferFloor? = if (settings.enabled && settings.stableBuffer) BtrBufferFloor() else null
 
     internal fun isActive(): Boolean = settings.enabled && downloader != null && runCatching { networkAllowed() }.getOrDefault(false)
 
