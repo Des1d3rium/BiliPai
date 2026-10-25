@@ -14,6 +14,15 @@ object BtrPlaybackMonitor {
     private var followed: WeakReference<Player>? = null
     private var handler: Handler? = null
     private var hasBeenReady = false
+    // Buffer trace for field measurements: one line a second for a while after each start.
+    private var traceStartedAt = 0L
+    private var traceTicks = 0
+    private const val TRACE_MS = 90_000L
+
+    private fun restartTrace() {
+        traceStartedAt = android.os.SystemClock.elapsedRealtime()
+        traceTicks = 0
+    }
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -29,23 +38,29 @@ object BtrPlaybackMonitor {
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                 hasBeenReady = false
+                restartTrace()
                 BtrTransport.seek()
             }
         }
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
             hasBeenReady = false
+            restartTrace()
         }
     }
 
     private val sample = object : Runnable {
         override fun run() {
             val player = followed?.get() ?: return
-            BtrTransport.playback(
-                player.bufferedPosition - player.currentPosition,
-                player.isPlaying,
-                player.playbackParameters.speed
-            )
+            val aheadMs = player.bufferedPosition - player.currentPosition
+            BtrTransport.playback(aheadMs, player.isPlaying, player.playbackParameters.speed)
+            val sinceStart = android.os.SystemClock.elapsedRealtime() - traceStartedAt
+            if (sinceStart < TRACE_MS && traceTicks++ % 4 == 0) {
+                BtrTransport.log(
+                    "buf t=${sinceStart / 1000.0}s ahead=${aheadMs / 1000.0}s pos=${player.currentPosition / 1000.0}s " +
+                        "state=${player.playbackState} playing=${player.isPlaying} btr=${BtrTransport.isActive()}"
+                )
+            }
             handler?.postDelayed(this, SAMPLE_MS)
         }
     }
@@ -56,6 +71,7 @@ object BtrPlaybackMonitor {
         detach()
         followed = WeakReference(player)
         hasBeenReady = player.playbackState == Player.STATE_READY
+        restartTrace()
         player.addListener(listener)
         handler = Handler(player.applicationLooper).also { it.post(sample) }
     }

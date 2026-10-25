@@ -47,8 +47,11 @@ object BtrTransport {
     @Volatile private var networkAllowed: () -> Boolean = { true }
     @Volatile private var downloader: BtrDownloader? = null
 
-    val autoConcurrency = BtrAutoConcurrency(clock)
-    private var bans = BtrBanList()
+    val autoConcurrency = BtrAutoConcurrency(clock).also { auto ->
+        auto.subscribe { threads -> log("auto threads=$threads reason=${auto.status().reason}") }
+    }
+    private fun newBanList() = BtrBanList { host, scope -> log("ban $scope host=$host") }
+    private var bans = newBanList()
     private val tracks = LinkedHashMap<String, Track>()
     private var sessionPaths: Set<String> = emptySet()
 
@@ -94,7 +97,8 @@ object BtrTransport {
      */
     @Synchronized
     fun registerTracks(videoTracks: List<List<String>>, audioTracks: List<List<String>>) {
-        if (!settings.enabled) return
+        // Registered even while disabled: the plugin is enabled asynchronously at startup, and a
+        // video opened from a link registers before that. Whether BTR serves a read is decided then.
         val incoming = videoTracks.map { BtrKind.VIDEO to it } + audioTracks.map { BtrKind.AUDIO to it }
         val byPath = incoming.mapNotNull { (kind, urls) ->
             val safe = urls.mapNotNull(::safeMediaUrl).distinct()
@@ -103,7 +107,7 @@ object BtrTransport {
         if (byPath.isEmpty()) return
         val isNewSession = byPath.keys.none { it in sessionPaths }
         if (isNewSession) {
-            bans = BtrBanList()
+            bans = newBanList()
             tracks.clear()
             sessionPaths = emptySet()
             autoConcurrency.newSession()
@@ -158,6 +162,11 @@ object BtrTransport {
     internal fun fellBack() {
         fallbackCount.incrementAndGet()
         publish()
+    }
+
+    /** One line per range for field measurements; hosts only, never signed URLs. */
+    internal fun log(message: String) {
+        runCatching { android.util.Log.i("BTR", message) }
     }
 
     internal fun rangeStarted() {
