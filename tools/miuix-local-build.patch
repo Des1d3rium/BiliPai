@@ -1,0 +1,24 @@
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 4e91c6cb..755e1074 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -1,5 +1,5 @@
+ [versions]
+-agp = "9.4.1"
++agp = "9.3.2"
+ kotlin = "2.4.21"
+ kotlinx-serialization = "1.12.0"
+ kotlinx-collections-immutable = "0.5.2"
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index dc04874b..551e1e01 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -6,8 +6,6 @@
+ rootProject.name = "compose-miuix-ui"
+ 
+ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+-enableFeaturePreview("NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS")
+-enableFeaturePreview("ENHANCED_GRAPH_ORDERING")
+ 
+ pluginManagement {
+     repositories {

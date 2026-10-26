@@ -47,10 +47,14 @@ git clone https://github.com/compose-miuix-ui/miuix.git ../miuix && git -C ../mi
 ./gradlew -Pbili.miuix.source=../miuix :btr-transport:testDebugUnitTest :app:assembleDev
 ```
 
-At `v0.6.1` the Miuix commit uses AGP 9.4.1 and Gradle 9.8 previews while BiliPai uses AGP 9.3.2 and
-Gradle 9.5. In the local Miuix checkout only, set `agp = "9.3.2"` in `gradle/libs.versions.toml` and
-drop the `NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS` and `ENHANCED_GRAPH_ORDERING` previews from its
-`settings.gradle.kts`.
+At `v0.6.1`/`v0.6.2` the Miuix commit uses AGP 9.4.1 and Gradle 9.8 previews while BiliPai uses
+AGP 9.3.2 and Gradle 9.5. In the local Miuix checkout only, apply `tools/miuix-local-build.patch`
+(sets `agp = "9.3.2"` and drops the `NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS` and
+`ENHANCED_GRAPH_ORDERING` previews).
+
+For daily use build `:app:assembleSmooth` (release behavior without R8, package `.dev`); `:app:assembleDev`
+adds R8 and needs well over 8 GB of RAM. Field-test scripts are in `tools/btr-fieldtest`, and the
+current state of the work is in `HANDOFF.md`.
 
 Upstream's own unit-test source set does not compile at `v0.6.1` (four stale tests), so run the
 fork's app tests with `--tests` filters only after setting those four aside, or run the module's tests.
