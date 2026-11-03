@@ -37,7 +37,7 @@ internal fun BindPlayerAmbient(
     val presentation = LocalAmbientPresentation.current ?: return
     val controller = LocalAmbientController.current ?: return
     val settings by SettingsManager.getVideoAmbientSettings(context).collectAsStateWithLifecycle(AmbientSettings())
-    val environment = rememberAmbientEnvironment(settings.enabled)
+    val environment = rememberAmbientEnvironment(settings.enabled || statusBar)
     val navTransition = LocalNavTransitionScope.current
     var refresh by remember(player) { mutableIntStateOf(0) }
     var playing by remember(player) { mutableStateOf(player.isPlaying) }
@@ -87,8 +87,10 @@ internal fun BindPlayerAmbient(
     // Observe existing draws; never install over Media3's SurfaceTextureListener and
     // never schedule a timer/draw just to rediscover the same texture.
     val glowAllowed = settings.enabled && !hdr && !anime4k && !environment.severe
+    val motionAllowed = com.android.purebilibili.core.ui.LocalComponentMotionEnabled.current &&
+        !com.android.purebilibili.core.ui.LocalSystemReduceMotion.current
     val visualActive = com.android.purebilibili.core.ui.rememberVisualWorkActive()
-    val surfaceObservationActive = visualActive && foreground && !excluded && (glowAllowed || statusBar)
+    val surfaceObservationActive = visualActive && motionAllowed && foreground && !excluded && (glowAllowed || statusBar)
     DisposableEffect(surface, surfaceObservationActive) {
         val texture = (surface as? TextureView)?.takeIf { surfaceObservationActive }
         val observer = texture?.viewTreeObserver
@@ -120,7 +122,7 @@ internal fun BindPlayerAmbient(
     }
     val latestPolicy = rememberUpdatedState {
         val moving = transitioning || navTransition.isRunning || kotlin.math.abs(navTransition.relativeDepth) > 0.001f
-        AmbientRunPolicy(active && !moving && seekReady, glowAllowed, playing,
+        AmbientRunPolicy(active && !moving && seekReady, glowAllowed, playing && motionAllowed,
             settings.powerSaving || environment.saving, refresh, diagnosticLogging)
     }
     val surfaceLocation = remember(surface) { IntArray(2) }

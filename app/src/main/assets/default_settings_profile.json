@@ -41,11 +41,12 @@
       "home_duration_style": 0,
       "liquid_glass_enabled": false,
       "card_animation_enabled": false,
-      "related_video_transition_enabled": true,
       "video_return_content_follow_progress_enabled": true,
       "video_shared_transition_speed": 1,
       "grid_column_count": 0,
       "grid_column_count_compact": 0,
+      "grid_column_customization_enabled": true,
+      "grid_columns_shared_across_pages": true,
       "home_hero_carousel_autoplay_enabled": false
     },
     "playback": {

@@ -47,6 +47,7 @@ dependencies {
     api(project(":design-tokens"))
     api(platform(libs.androidx.compose.bom))
     api("androidx.compose.ui:ui")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     api("androidx.compose.foundation:foundation")
     api("androidx.compose.animation:animation")
     api("androidx.compose.material:material-icons-extended")

@@ -7,6 +7,14 @@ import kotlin.test.assertEquals
 
 class HomeTopContentSpacingPolicyTest {
     @Test
+    fun scrollDistanceMatchesSearchVisibilityAndHiddenTabs() {
+        assertEquals(59.dp, resolveHomeTopSearchScrollDistance(48.dp, 6.dp, 5.dp, false))
+        assertEquals(53.dp, resolveHomeTopSearchScrollDistance(48.dp, 6.dp, 5.dp, true))
+        // 顶部搜索已迁到底栏时，旧的额外间距不再留下空收起区段。
+        assertEquals(0.dp, resolveHomeTopSearchScrollDistance(0.dp, 0.dp, 5.dp, false))
+    }
+
+    @Test
     fun bottomBarSearchRemovesTheHiddenTopSearchReservation() {
         assertEquals(
             HomeTopSearchRowMetrics(0.dp, 0.dp),

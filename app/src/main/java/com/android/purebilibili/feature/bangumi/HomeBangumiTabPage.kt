@@ -1,5 +1,6 @@
 package com.android.purebilibili.feature.bangumi
 
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -49,6 +50,7 @@ fun HomeBangumiTabPage(
     contentPadding: PaddingValues,
     onBangumiClick: (Long) -> Unit,
     onBangumiEpisodeClick: (Long, Long) -> Unit,
+    onPlayFollow: (Long) -> Unit,
     initialType: Int = 1,
     scrollToTopRequestId: Int = 0,
     viewModel: BangumiHubViewModel = viewModel(),
@@ -107,6 +109,7 @@ fun HomeBangumiTabPage(
                     onPrepareChannel = viewModel::prepareHomeChannel,
                     onBangumiClick = onBangumiClick,
                     onEpisodeClick = onBangumiEpisodeClick,
+                    onPlayFollow = onPlayFollow,
                     onRefreshHome = { viewModel.refreshHome() },
                     onLoadMoreHomeRecommendations = viewModel::loadMoreHomeRecommendations,
                     onLoadMoreHomeFollows = viewModel::loadMoreHomeFollows,
@@ -174,7 +177,7 @@ fun HomeBangumiTabPage(
                 options = channelOptions,
                 selectedValue = state.channel,
                 indicatorPositionProvider = if (state.page == BangumiHubPage.HOME) {
-                    { channelPager.currentPage + channelPager.currentPageOffsetFraction }
+                    { channelPager.tabIndicatorPosition }
                 } else null,
                 isScrollInProgressProvider = {
                     state.page == BangumiHubPage.HOME && channelPager.isScrollInProgress

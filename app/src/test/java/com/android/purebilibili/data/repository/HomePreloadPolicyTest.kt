@@ -25,6 +25,31 @@ import kotlin.test.assertFailsWith
 class HomePreloadPolicyTest {
 
     @Test
+    fun preloadKeepsSourceNoticeWithThePageAndRejectsChangedFeedSettings() = runTest {
+        var session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
+        val state = HomePreloadState<HomeFeedPage> { session }
+        val page = HomeFeedPage(listOf(VideoItem(bvid = "web")), setOf(HomeFeedSource.WEB), "手机端不可用")
+        state.start(backgroundScope) { Result.success(page) }
+        runCurrent()
+        assertEquals(page, state.consumeOrAwait(session)?.getOrThrow())
+
+        for (changed in listOf(
+            session.copy(feedApiType = SettingsManager.FeedApiType.MERGED),
+            session.copy(refreshCount = session.refreshCount + 1),
+            session.copy(anonymousWeb = true),
+        )) {
+            val cachedSession = session
+            val cached = HomePreloadState<HomeFeedPage> { session }
+            cached.start(backgroundScope) { Result.success(page) }
+            runCurrent()
+            session = changed
+            assertFalse(cached.isReady())
+            assertNull(cached.consumeOrAwait(session))
+            assertFailsWith<CancellationException> { cached.consumeOrAwait(cachedSession) }
+        }
+    }
+
+    @Test
     fun startsHomePreloadOnlyWhenNoCacheAndNoTaskExist() {
         assertTrue(
             shouldStartHomePreload(
@@ -110,7 +135,7 @@ class HomePreloadPolicyTest {
     @Test
     fun completedPreloadIsConsumedOnceAndNotRestartedForTheSameSession() = runTest {
         val session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val videos = listOf(VideoItem(bvid = "A"))
         var loads = 0
         assertTrue(state.start(backgroundScope) {
@@ -133,7 +158,7 @@ class HomePreloadPolicyTest {
     @Test
     fun concurrentRequestsShareOnePreloadButOnlyOneConsumesItsResult() = runTest {
         val session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val gate = CompletableDeferred<Unit>()
         val videos = listOf(VideoItem(bvid = "A"))
         var loads = 0
@@ -163,7 +188,7 @@ class HomePreloadPolicyTest {
     fun completedCacheAndReadinessAreInvalidatedBySwitchLogoutAndReturningGeneration() = runTest {
         val first = HomePreloadSession(AccountSessionIdentity(101L, 1L))
         var session = first
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         state.start(backgroundScope) { Result.success(listOf(VideoItem(bvid = "old A"))) }
         runCurrent()
         assertTrue(state.isReady())
@@ -187,7 +212,7 @@ class HomePreloadPolicyTest {
     fun returningToTheSameAccountCannotPublishItsEarlierInFlightGeneration() = runTest {
         val first = HomePreloadSession(AccountSessionIdentity(101L, 1L))
         var session = first
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val oldGate = CompletableDeferred<Unit>()
         val newGate = CompletableDeferred<Unit>()
         state.start(backgroundScope) {
@@ -219,7 +244,7 @@ class HomePreloadPolicyTest {
     @Test
     fun oldPreloadCleanupCannotCompleteOrClearTheReplacementTask() = runTest {
         var session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val cleanup = CompletableDeferred<Unit>()
         val oldFinished = CompletableDeferred<Unit>()
         val newGate = CompletableDeferred<Unit>()
@@ -257,7 +282,7 @@ class HomePreloadPolicyTest {
     fun accountChangeAfterDeferredCompletionStillRejectsTheWaitingRequest() = runTest {
         val first = HomePreloadSession(AccountSessionIdentity(101L, 1L))
         var session = first
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val gate = CompletableDeferred<Unit>()
         val preloadScope = CoroutineScope(
             backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)
@@ -283,7 +308,7 @@ class HomePreloadPolicyTest {
         val identity = AccountSessionIdentity(101L, 1L)
         var session = HomePreloadSession(identity, sessData = "session A", accessToken = "token A")
         val original = session
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         state.start(backgroundScope) { Result.success(listOf(VideoItem(bvid = "A"))) }
         runCurrent()
 
@@ -299,7 +324,7 @@ class HomePreloadPolicyTest {
     @Test
     fun cancellationIsNeverPublishedAsACompletedPreload() = runTest {
         val session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         state.start(backgroundScope) {
             Result.failure(CancellationException("Cancelled network request"))
         }
@@ -317,7 +342,7 @@ class HomePreloadPolicyTest {
     @Test
     fun logoutBeforePreloadCompletionPreventsPublicationWithoutAnyNewRequest() = runTest {
         var session = HomePreloadSession(AccountSessionIdentity(101L, 1L))
-        val state = HomePreloadState { session }
+        val state = HomePreloadState<List<VideoItem>> { session }
         val gate = CompletableDeferred<Unit>()
         state.start(backgroundScope) {
             gate.await()

@@ -5,7 +5,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
@@ -38,15 +38,21 @@ internal class FavoriteDragSelection(
 
 /** Runs on the grid, not on individual recycled cards: the original pointer owns the whole gesture. */
 internal fun Modifier.favoriteDragSelection(
-    state: LazyGridState,
+    state: LazyStaggeredGridState,
     contentPadding: PaddingValues,
-    // Render keys match LazyGridItemInfo.key; values are the stable resource selection keys.
+    // Render keys match LazyStaggeredGridItemInfo.key; values are the stable resource selection keys.
     resourceKeys: Map<String, String>,
+    rowResourceKeys: Map<String, List<String?>> = emptyMap(),
+    rowColumns: Int = 1,
+    rowSpacingPx: Float = 0f,
     selectedKeys: Set<String>,
     enabled: Boolean,
     onSelectionChange: (Set<String>) -> Unit,
 ): Modifier = composed {
     val currentResources by rememberUpdatedState(resourceKeys)
+    val currentRows by rememberUpdatedState(rowResourceKeys)
+    val currentColumns by rememberUpdatedState(rowColumns.coerceAtLeast(1))
+    val currentSpacing by rememberUpdatedState(rowSpacingPx)
     val currentSelection by rememberUpdatedState(selectedKeys)
     val currentOnSelectionChange by rememberUpdatedState(onSelectionChange)
     val density = LocalDensity.current
@@ -75,22 +81,28 @@ internal fun Modifier.favoriteDragSelection(
                 var nearestDistance = Float.POSITIVE_INFINITY
                 val layout = state.layoutInfo
                 for (item in layout.visibleItemsInfo) {
-                    val key = currentResources[item.key.toString()] ?: continue
-                    val right = item.offset.x + item.size.width
+                    val itemKey = item.key.toString()
+                    val slots = currentRows[itemKey] ?: listOf(currentResources[itemKey])
+                    val columns = if (itemKey in currentRows) currentColumns else 1
+                    val slotWidth = (item.size.width - currentSpacing * (columns - 1)) / columns
                     val bottom = item.offset.y + item.size.height
-                    if (point.x >= item.offset.x && point.x <= right &&
-                        point.y >= item.offset.y && point.y <= bottom) return key
-                    if (nearest) {
-                        val dy = when {
-                            point.y < item.offset.y -> item.offset.y - point.y
-                            point.y > bottom -> point.y - bottom
-                            else -> 0f
-                        }
-                        val distance = dy * layout.viewportSize.width +
-                            abs(point.x - item.offset.x - item.size.width / 2f)
-                        if (distance < nearestDistance) {
-                            nearestDistance = distance
-                            nearestKey = key
+                    slots.forEachIndexed { index, key ->
+                        if (key == null) return@forEachIndexed
+                        val visualIndex = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) columns - 1 - index else index
+                        val left = item.offset.x + visualIndex * (slotWidth + currentSpacing)
+                        val right = left + slotWidth
+                        if (point.x >= left && point.x <= right && point.y >= item.offset.y && point.y <= bottom) return key
+                        if (nearest) {
+                            val dy = when {
+                                point.y < item.offset.y -> item.offset.y - point.y
+                                point.y > bottom -> point.y - bottom
+                                else -> 0f
+                            }
+                            val distance = dy * layout.viewportSize.width + abs(point.x - (left + right) / 2f)
+                            if (distance < nearestDistance) {
+                                nearestDistance = distance
+                                nearestKey = key
+                            }
                         }
                     }
                 }

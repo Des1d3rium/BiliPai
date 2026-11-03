@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -51,8 +52,7 @@ import com.android.purebilibili.core.ui.blur.unifiedBlur
 import com.android.purebilibili.core.ui.rememberAppBackIcon
 import com.android.purebilibili.feature.home.components.BiliPaiImmersiveTopBar
 import com.android.purebilibili.feature.home.components.shouldUseBiliPaiProgressiveTopBlur
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import com.android.purebilibili.core.ui.blur.rememberChromeBackdropSource
 import com.android.purebilibili.core.util.AppFoldPosture
 import com.android.purebilibili.core.util.LocalAppWindowAdaptiveInfo
 import com.android.purebilibili.core.util.LocalWindowSizeClass
@@ -152,13 +152,18 @@ fun SettingsTabletShell(
                     hasBackdrop = true,
                 ) && !isLowBlurBudgetForced()
                 val fadeActive = config.progressiveTopFadeEnabled && !config.headerBlurEnabled
-                val tabletChromeBackdrop = if (progressive) rememberLayerBackdrop() else null
+                val tabletChromeSource = if (progressive) rememberChromeBackdropSource(
+                    recordingBackground = AppSurfaceTokens.groupedListContainer(),
+                ) else null
+                val tabletChromeBackdrop = tabletChromeSource?.takeIf { it.isReady }?.backdrop
                 val tabletHazeState = if (
                     config.headerBlurEnabled && !progressive &&
                         shouldAllowRenderEffectBackedHazeEffect(Build.VERSION.SDK_INT)
                 ) rememberRecoverableHazeState() else null
                 val tabletHazeReady = tabletHazeState?.let { recoverableBlurEnabled(it) } == true
                 BiliPaiImmersiveTopBar(
+                    // 双栏标题与搜索框上下排列；顶部特效不得外绘到下方独立搜索胶囊。
+                    modifier = if (progressive) Modifier.clipToBounds() else Modifier,
                     backdrop = tabletChromeBackdrop,
                     enabled = progressive,
                     headerBlurActive = tabletHazeReady,
@@ -198,14 +203,8 @@ fun SettingsTabletShell(
                 }
                 Column(
                     modifier = Modifier
-                    .weight(1f)
-                    .then(
-                            if (tabletChromeBackdrop != null) {
-                                Modifier.layerBackdrop(tabletChromeBackdrop)
-                            } else {
-                                Modifier
-                            }
-                        )
+                        .weight(1f)
+                        .then(tabletChromeSource?.modifier ?: Modifier)
                         .then(if (tabletHazeReady) Modifier.hazeSourceCompat(requireNotNull(tabletHazeState)) else Modifier)
                         .padding(horizontal = layoutPolicy.masterPanePaddingDp.dp),
                 ) {

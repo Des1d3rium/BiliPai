@@ -237,10 +237,15 @@ internal fun ThemeCustomColorPickerDialog(
                     if (exactRoleTitle == null) {
                         AppText("预览已应用当前高级覆盖色、表面与文字可读性修正。",
                             style = MaterialTheme.typography.bodySmall, color = AppContentColors.secondaryText())
-                        if (previewIssues.isNotEmpty()) {
-                            AppText("最终配色有 ${previewIssues.size} 组配对低于目标：" +
-                                previewIssues.take(3).joinToString("；") { "${it.label} %.2f:1（目标 %.1f:1）".format(it.ratio, it.required) },
-                                style = MaterialTheme.typography.bodySmall, color = AppContentColors.error())
+                        // 调色时警告数量与换行会变化；固定信息区域避免拖动中的选色板移位。
+                        Box(Modifier.fillMaxWidth().height(72.dp).verticalScroll(rememberScrollState())) {
+                            AppText(
+                                if (previewIssues.isEmpty()) "当前配色的对比度达到目标。" else
+                                    "最终配色有 ${previewIssues.size} 组配对低于目标：" +
+                                        previewIssues.take(3).joinToString("；") { "${it.label} %.2f:1（目标 %.1f:1）".format(it.ratio, it.required) },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (previewIssues.isEmpty()) AppContentColors.secondaryText() else AppContentColors.error(),
+                            )
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

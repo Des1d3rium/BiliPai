@@ -57,7 +57,10 @@ internal open class HiResCompatibleRenderersFactory(
         val preferences = context.getSharedPreferences("mini_player", Context.MODE_PRIVATE)
         val waveformAudioSink = com.android.purebilibili.core.player.waveform.WaveformAudioSink(
             delegate = audioSink,
-            enabled = { preferences.getBoolean("audio_spectrum_enabled", false) },
+            enabled = {
+                preferences.getBoolean("audio_spectrum_enabled", false) &&
+                    com.android.purebilibili.core.player.waveform.AudioWaveformSource.isAnalysisRequested()
+            },
         )
         val firstAudioRendererIndex = out.size
         super.buildAudioRenderers(

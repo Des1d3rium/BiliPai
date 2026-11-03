@@ -3,6 +3,16 @@ package com.android.purebilibili.feature.list
 import com.android.purebilibili.core.ui.components.appActionWithFeedback
 
 import com.android.purebilibili.core.ui.AppContentColors
+import com.android.purebilibili.core.ui.LocalComponentMotionEnabled
+import com.android.purebilibili.core.ui.LocalSystemReduceMotion
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 
 import androidx.compose.foundation.background
 import com.android.purebilibili.core.ui.components.appActionClickable
@@ -24,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
@@ -40,6 +51,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -160,6 +172,7 @@ private fun FavoriteFolderCard(
     selectionMode: Boolean,
     selected: Boolean,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val coverUrl = remember(folder.cover) {
         resolveFavoriteFolderPreviewCover(folder, emptyList())
@@ -170,24 +183,57 @@ private fun FavoriteFolderCard(
         append("个内容 · ")
         append(privacyLabel)
     }
+    val motionEnabled = LocalComponentMotionEnabled.current && !LocalSystemReduceMotion.current
+    val duration = if (motionEnabled) 160 else 0
+    val selectionColor by animateColorAsState(
+        targetValue = if (selected) AppContentColors.accent() else AppContentColors.secondaryText(),
+        animationSpec = tween(duration),
+        label = "favoriteFolderSelectionColor",
+    )
+    val checkProgress = animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(duration),
+        label = "favoriteFolderSelectionCheck",
+    )
 
     androidx.compose.foundation.layout.Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 96.dp)
             .clip(AppShapes.container(ContainerLevel.Card))
             .semantics { if (selectionMode) this.selected = selected }
             .combinedClickable(onClick = appActionWithFeedback(onClick), onLongClick = onLongClick)
             .padding(vertical = AppSpacingTokens.ExtraSmall),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Small + AppSpacingTokens.Micro),
+        horizontalArrangement = Arrangement.Start,
     ) {
-        if (selectionMode) {
-            AppIcon(
-                imageVector = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                contentDescription = if (selected) "已选择" else "未选择",
-                tint = if (selected) AppContentColors.accent() else AppContentColors.secondaryText(),
-                modifier = Modifier.align(Alignment.CenterVertically),
-            )
+        AnimatedVisibility(
+            visible = selectionMode,
+            modifier = Modifier.align(Alignment.CenterVertically),
+            enter = expandHorizontally(tween(duration), expandFrom = Alignment.Start) + fadeIn(tween(duration)),
+            exit = shrinkHorizontally(tween(duration), shrinkTowards = Alignment.Start) + fadeOut(tween(duration)),
+        ) {
+            Box(
+                Modifier
+                    .padding(end = AppSpacingTokens.Small + AppSpacingTokens.Micro)
+                    .size(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppIcon(
+                    imageVector = Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = if (selected) "已选择" else "未选择",
+                    tint = selectionColor,
+                )
+                AppIcon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = selectionColor,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = checkProgress.value
+                        scaleX = if (motionEnabled) 0.85f + 0.15f * checkProgress.value else 1f
+                        scaleY = scaleX
+                    },
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -212,6 +258,7 @@ private fun FavoriteFolderCard(
                 )
             }
         }
+        Spacer(Modifier.width(AppSpacingTokens.Small + AppSpacingTokens.Micro))
         Column(
             modifier = Modifier
                 .weight(1f)

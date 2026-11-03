@@ -1,6 +1,7 @@
 // File: feature/video/ui/overlay/TopControlBar.kt
 package com.android.purebilibili.feature.video.ui.overlay.glass
 
+import com.android.purebilibili.feature.video.ui.components.favoriteFolderMenuSource
 import com.android.purebilibili.core.util.HapticType
 import com.android.purebilibili.core.util.rememberHapticFeedback
 
@@ -27,6 +28,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -177,7 +179,11 @@ fun TopControlBar(
     showBatteryLevel: Boolean = false,
     showCurrentTime: Boolean = true,
     showInteractiveActions: Boolean = true,
+    likeCount: Long? = null,
+    favoriteCount: Long? = null,
+    commentCount: Long? = null,
     onBack: () -> Unit,
+    onHomeClick: (() -> Unit)? = null,
     // Interactions
     isLiked: Boolean = false,
     likeStatusKnown: Boolean,
@@ -186,6 +192,7 @@ fun TopControlBar(
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
     onCoinClick: () -> Unit = {},
+    shareMenuSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
     onShareClick: () -> Unit = {},
     onCommentClick: () -> Unit = {},
     onCastClick: () -> Unit = {}, // Added Cast callback
@@ -199,10 +206,16 @@ fun TopControlBar(
     onActionDockBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val visibleCounts = rememberVisibleFullscreenCounts()
+    val showCounts = isFullscreen
+    fun visibleCount(kind: com.android.purebilibili.core.store.FullscreenActionCount, value: Long?): Long? =
+        value.takeIf { showCounts && kind in visibleCounts }
     val context = LocalContext.current
     val displayCutoutInsets = WindowInsets.displayCutout
     val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS)
     val configuration = LocalConfiguration.current
+    val homeVisible = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+        onHomeClick != null
     val ambient = LocalAmbientPresentation.current
     var rowOrigin by remember { mutableStateOf<Offset?>(null) }
     var rowWidthPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -293,17 +306,10 @@ fun TopControlBar(
         modifier = modifier
             .fillMaxWidth()
             .then(if (isFullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)) else Modifier)
-            .then(
-                if (
-                    shouldApplyStatusBarPaddingToTopControlBar(
-                        isFullscreen = isFullscreen,
-                        statusBarVisible = statusBarVisible,
-                    )
-                ) {
-                    Modifier.statusBarsPadding()
-                } else {
-                    Modifier
-                }
+            .playerControlTopSafeArea(
+                isFullscreen = isFullscreen,
+                isPortrait = configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT,
+                statusBarVisible = statusBarVisible,
             )
             .padding(
                 horizontal = layoutPolicy.horizontalPaddingDp.dp,
@@ -371,13 +377,34 @@ fun TopControlBar(
                     }
                 }
 
+                if (homeVisible) {
+                    Spacer(Modifier.width(layoutPolicy.actionSpacingDp.dp))
+                    PlayerControlGlassDock(
+                        enabled = isFullscreen || glassControls,
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    ) {
+                        AppIconButton(
+                            onClick = requireNotNull(onHomeClick),
+                            modifier = Modifier.size(layoutPolicy.buttonSizeDp.dp),
+                        ) {
+                            AppIcon(
+                                imageVector = Icons.Outlined.Home,
+                                contentDescription = "返回首页",
+                                tint = Color.White,
+                                modifier = Modifier.size(layoutPolicy.iconSizeDp.dp),
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = if (separateGlassMore) Modifier.layout { _, constraints ->
                     val bounds = videoContentBounds.value
                     val origin = rowOrigin
                     val defaultGap = layoutPolicy.backToTitleSpacingDp.dp.roundToPx()
                     val titleStart = if (bounds != null && origin != null) {
                         kotlin.math.ceil(bounds.left + 12.dp.toPx() - origin.x -
-                            leftSectionStartOffset.toPx() - layoutPolicy.buttonSizeDp.dp.toPx()).toInt()
+                            leftSectionStartOffset.toPx() - layoutPolicy.buttonSizeDp.dp.toPx() -
+                            (if (homeVisible) (layoutPolicy.buttonSizeDp + layoutPolicy.actionSpacingDp).dp.toPx() else 0f)).toInt()
                     } else defaultGap
                     val gap = maxOf(defaultGap, titleStart).coerceIn(0, constraints.maxWidth)
                     layout(gap, 0) {}
@@ -426,6 +453,8 @@ fun TopControlBar(
                 Row(
                     modifier = if (isFullscreen || glassControls) Modifier
                         .horizontalScroll(rememberScrollState())
+                        // 在固定按钮行高度之外预留角标空间，避免滚动容器裁掉数字顶部。
+                        .padding(top = com.android.purebilibili.feature.video.ui.overlay.PlayerActionCountTopOverflow)
                         .padding(horizontal = 4.dp)
                         .then(alignedGlassDockHeight?.let { Modifier.height(it) } ?: Modifier)
                     else Modifier,
@@ -439,6 +468,7 @@ fun TopControlBar(
                                 glassEnabled = isFullscreen || glassControls,
                                 icon = if (likeStatusKnown && isLiked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                                 contentDescription = if (likeStatusKnown) "点赞" else "点赞状态尚未确认",
+                                count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.LIKE, likeCount),
                                 isActive = likeStatusKnown && isLiked,
                                 onClick = { haptic(HapticType.LIGHT); onLikeClick() },
                                 buttonSizeDp = layoutPolicy.buttonSizeDp,
@@ -476,6 +506,8 @@ fun TopControlBar(
                                 glassEnabled = isFullscreen || glassControls,
                                 icon = favoriteIcon,
                                 contentDescription = if (isFavorited) "已收藏，管理收藏夹" else "收藏",
+                                modifier = Modifier.favoriteFolderMenuSource(),
+                                count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.FAVORITE, favoriteCount),
                                 isActive = isFavorited,
                                 onClick = { haptic(HapticType.LIGHT); onFavoriteClick() },
                                 buttonSizeDp = layoutPolicy.buttonSizeDp,
@@ -501,6 +533,7 @@ fun TopControlBar(
                             glassEnabled = isFullscreen || glassControls,
                             icon = Icons.Outlined.Share,
                             contentDescription = "分享",
+                            modifier = shareMenuSource?.let { Modifier.appGlassMenuSource(it, onOpen = onShareClick) } ?: Modifier,
                             isActive = false,
                             onClick = onShareClick,
                             buttonSizeDp = layoutPolicy.buttonSizeDp,
@@ -524,6 +557,7 @@ fun TopControlBar(
                         glassEnabled = isFullscreen || glassControls,
                         icon = Icons.Outlined.Comment,
                         contentDescription = "评论区",
+                        count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.COMMENT, commentCount),
                         isActive = false,
                         onClick = onCommentClick,
                         buttonSizeDp = layoutPolicy.buttonSizeDp,
@@ -933,19 +967,23 @@ private fun ActionIcon(
     iconSizeDp: Int = 24,
     enabled: Boolean = true,
     glassEnabled: Boolean = false,
+    count: Long? = null,
+    modifier: Modifier = Modifier,
 ) {
-    PlayerControlGlassDock(enabled = glassEnabled && enabled, shape = androidx.compose.foundation.shape.CircleShape) {
-        AppIconButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier.size(buttonSizeDp.dp)
-        ) {
-            AppIcon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = if (!enabled) Color.White.copy(alpha = 0.38f) else if (isActive) AppContentColors.accent() else Color.White,
-                modifier = Modifier.size(iconSizeDp.dp)
-            )
+    CountedPlayerAction(count = count, iconSize = iconSizeDp.dp, modifier = modifier) {
+        PlayerControlGlassDock(enabled = glassEnabled && enabled, shape = androidx.compose.foundation.shape.CircleShape) {
+            AppIconButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = Modifier.size(buttonSizeDp.dp)
+            ) {
+                AppIcon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = if (!enabled) Color.White.copy(alpha = 0.38f) else if (isActive) AppContentColors.accent() else Color.White,
+                    modifier = Modifier.size(iconSizeDp.dp)
+                )
+            }
         }
     }
 }

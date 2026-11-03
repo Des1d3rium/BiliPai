@@ -3,30 +3,17 @@ package com.android.purebilibili.core.util
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
+import com.android.purebilibili.core.ui.skeleton.skeletonBackground
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
 
@@ -34,46 +21,10 @@ import com.android.purebilibili.core.theme.LocalAppUiStyle
  * 骨架屏闪光特效 Modifier（深浅色主题自适应）。
  */
 fun Modifier.shimmerEffect(): Modifier = composed {
-    if (com.android.purebilibili.core.ui.skeleton.rememberSkeletonBreathingEnabled()) {
-        val pulse = com.android.purebilibili.core.ui.skeleton.rememberGentleSkeletonPulse()
-        val onSurface = MaterialTheme.colorScheme.onSurface
-        val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-        return@composed this.then(Modifier.drawBehind {
-            val alpha = if (dark) 0.10f + 0.08f * pulse.value else 0.08f + 0.06f * pulse.value
-            drawRect(onSurface.copy(alpha = alpha))
-        })
-    }
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val startOffsetX by transition.animateFloat(
-        initialValue = -2 * size.width.toFloat(),
-        targetValue = 2 * size.width.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000)
-        ),
-        label = "shimmer_offset"
+    val color = com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonBlockColor(
+        com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonPulseState(),
     )
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val base = if (isDark) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    }
-    val highlight = if (isDark) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-    }
-
-    background(
-        brush = Brush.linearGradient(
-            colors = listOf(base, highlight, base),
-            start = Offset(startOffsetX, 0f),
-            end = Offset(startOffsetX + size.width.toFloat(), size.height.toFloat())
-        )
-    ).onGloballyPositioned {
-        size = it.size
-    }
+    this.skeletonBackground(color)
 }
 
 // =============================================================================
@@ -154,15 +105,15 @@ fun <T> rememberDebounceCallback(
 
 /**
  * 视频网格骨架（历史列表等）。
- * 使用与首页一致的柔和 alpha 脉冲，避免 shimmer 扫光闪烁。
+ * 使用与首页一致的绘制阶段扫光，保留封面尺寸。
  */
 @Composable
 fun VideoGridItemSkeleton(coverAspectRatio: Float = 4f / 3f) {
-    val pulse = com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonPulse()
+    val pulse = com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonPulseState()
     val blockColor = com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonBlockColor(pulse)
     com.android.purebilibili.core.ui.skeleton.ContentVideoGridItemSkeleton(
         coverAspectRatio = coverAspectRatio,
-        blockColor = blockColor,
+        blockColorProvider = blockColor,
     )
 }
 

@@ -152,8 +152,9 @@ class DanmakuSettingsMappingPolicyTest {
             intPreferencesKey("danmaku_portrait_display_area_mode") to
                 PortraitDanmakuDisplayAreaMode.SCREEN_TOP.value
         )
-        val invalidPrefs = mutablePreferencesOf(
-            intPreferencesKey("danmaku_portrait_display_area_mode") to 99
+        val videoViewportPrefs = mutablePreferencesOf(
+            intPreferencesKey("danmaku_portrait_display_area_mode") to
+                PortraitDanmakuDisplayAreaMode.VIDEO_VIEWPORT.value
         )
 
         for (profile in DanmakuSettingsScope.entries) {
@@ -163,7 +164,7 @@ class DanmakuSettingsMappingPolicyTest {
             )
             assertEquals(
                 PortraitDanmakuDisplayAreaMode.VIDEO_VIEWPORT,
-                mapDanmakuSettingsFromPreferences(invalidPrefs, profile).portraitDisplayAreaMode
+                mapDanmakuSettingsFromPreferences(videoViewportPrefs, profile).portraitDisplayAreaMode
             )
         }
     }

@@ -12,7 +12,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.background
@@ -43,8 +42,8 @@ import com.android.purebilibili.core.ui.adaptive.MotionTier
 import com.android.purebilibili.core.ui.animation.DampedDragAnimationState
 import com.android.purebilibili.core.ui.animation.DampedDragTrackingMode
 import com.android.purebilibili.core.ui.animation.rememberDampedDragAnimationState
-import com.android.purebilibili.core.ui.motion.AppMotionEasing
 import com.android.purebilibili.core.ui.motion.BottomBarMotionSpec
+import com.android.purebilibili.core.ui.motion.continuityTween
 import com.android.purebilibili.core.ui.motion.emphasizedEnterTween
 import com.android.purebilibili.core.ui.motion.emphasizedExitTween
 import com.android.purebilibili.core.ui.motion.softLandingSpring
@@ -257,10 +256,7 @@ internal fun Modifier.bottomBarMatchedLiquidDockSurface(
     } else {
         val animatedScrollProgress by animateFloatAsState(
             targetValue = if (isScrolling) 1f else 0f,
-            animationSpec = tween(
-                durationMillis = resolveBottomBarMaterialScrollAnimationDurationMillis(isScrolling),
-                easing = AppMotionEasing.Continuity
-            ),
+            animationSpec = continuityTween(resolveBottomBarMaterialScrollAnimationDurationMillis(isScrolling)),
             label = "bottomBarMatchedMaterialScrollProgress"
         )
         animatedScrollProgress
@@ -313,7 +309,7 @@ internal fun BottomBarMatchedReusableLiquidDock(
     liquidGlassEffectsEnabled: Boolean = true,
     /**
      * Allowlisted callers only: home search field, comment [BottomInputBar], and dynamic
-     * composer/detail chrome that explicitly follows the same floating-dock contract.
+     * composer/detail chrome, article actions, live list search, the landscape live interaction window and the live room header that explicitly follow the same floating-dock contract.
      * Other chrome must leave this false.
      */
     reuseEnabled: Boolean = false,
@@ -324,6 +320,8 @@ internal fun BottomBarMatchedReusableLiquidDock(
     drawShellLens: Boolean = true,
     shellLensIntensity: Float = 1f,
     isScrollInProgressProvider: () -> Boolean = { false },
+    /** 仅含文字、图标的内容无需录制外壳；内部有玻璃采样控件时保留默认值。 */
+    captureShellForContent: Boolean = true,
     content: @Composable BoxScope.(liquidChromeActive: Boolean) -> Unit
 ) {
     val elasticState = com.android.purebilibili.core.ui.components.rememberAppElasticPressState(
@@ -331,14 +329,16 @@ internal fun BottomBarMatchedReusableLiquidDock(
     )
     val reuseAllowed = LocalAppThemeConfig.current.liquidGlassEnabled
     if (!reuseEnabled || !reuseAllowed || !liquidGlassEffectsEnabled) {
+        val fallbackElasticFeedbackEnabled = elasticFeedbackEnabled &&
+            !com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()
         Box(modifier = modifier.appElasticPress(
-            enabled = elasticFeedbackEnabled,
+            enabled = fallbackElasticFeedbackEnabled,
             state = elasticState,
             allowConsumedDrag = allowConsumedDrag,
         )) {
             CompositionLocalProvider(
                 com.android.purebilibili.core.ui.components.LocalElasticPressEnabled provides
-                    (!elasticFeedbackEnabled && com.android.purebilibili.core.ui.components.LocalElasticPressEnabled.current),
+                    (!fallbackElasticFeedbackEnabled && com.android.purebilibili.core.ui.components.LocalElasticPressEnabled.current),
             ) {
                 content(false)
             }
@@ -354,10 +354,17 @@ internal fun BottomBarMatchedReusableLiquidDock(
     // Match floating segmented chrome: a supplied sibling/page source already
     // contains the background pixels. Do not record a second blank source and
     // sample both on every optical pass. Each dock still owns its lens/effects.
-    val localBackdrop = if (backdrop == null) rememberLayerBackdrop() else null
-    val effectiveBackdrop = (backdrop ?: localBackdrop)?.let {
+    val parentGlass = com.android.purebilibili.core.ui.blur.LocalAppGlassContainer.current
+        .takeIf { glassEnabled }
+    val suppliedBackdrop = if (parentGlass != null) parentGlass.backdrop else backdrop
+    val localBackdrop = if (suppliedBackdrop == null) rememberLayerBackdrop() else null
+    val effectiveBackdrop = (suppliedBackdrop ?: localBackdrop)?.let {
         com.android.purebilibili.feature.home.components.liquid.rememberStableBackdrop(it)
     }
+    // 只录制外壳这一兄弟层，内部控件不得进入自身消费的背景源。
+    val shellSource = if (glassEnabled && captureShellForContent) {
+        com.android.purebilibili.core.ui.blur.rememberChromeBackdropSource()
+    } else null
     val isDarkTheme = com.android.purebilibili.core.ui.isAppInDarkTheme()
     val blurIntensity = currentUnifiedBlurIntensity()
     val tuning = resolveAndroidNativeBottomBarTuning(
@@ -423,7 +430,7 @@ internal fun BottomBarMatchedReusableLiquidDock(
             drawShellLens = drawShellLens,
             shellLensIntensity = shellLensIntensity,
             blurRadius = tuning.shellBlurRadiusDp.dp,
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier.matchParentSize().then(shellSource?.modifier ?: Modifier),
             liquidGlassPreset = renderConfig.preset,
             liquidGlassTuning = liquidGlassTuning,
             isScrollInProgressProvider = isScrollInProgressProvider
@@ -433,7 +440,13 @@ internal fun BottomBarMatchedReusableLiquidDock(
         } else Modifier) {
             androidx.compose.runtime.CompositionLocalProvider(
                 com.android.purebilibili.core.ui.components.LocalElasticPressEnabled provides (!elasticFeedbackEnabled && com.android.purebilibili.core.ui.components.LocalElasticPressEnabled.current),
-            ) { content(true) }
+            ) {
+                com.android.purebilibili.core.ui.blur.AppGlassContainerContent(
+                    enabled = glassEnabled,
+                    backdrop = shellSource?.takeIf { it.isReady }?.backdrop ?: effectiveBackdrop,
+                    ownsDeformation = elasticFeedbackEnabled,
+                ) { content(true) }
+            }
         }
     }
 }
@@ -469,9 +482,10 @@ internal fun BoxScope.BottomBarMatchedLiquidIndicator(
     dragScaleTarget: Float = BOTTOM_BAR_INDICATOR_DRAG_SCALE_TARGET,
     bottomBarMotionSpec: BottomBarMotionSpec,
     isDarkTheme: Boolean,
-    indicatorSettleReboundTransform: BottomBarClickPulseTransform =
-        BottomBarClickPulseTransform(scaleX = 1f),
     orientation: BottomBarLiquidOrientation = BottomBarLiquidOrientation.HORIZONTAL,
+    // Optional physical shell thickness for vertical rails; horizontal callers retain their defaults.
+    opticalShellExtentDp: Float? = null,
+    indicatorScaleTransformProvider: (() -> BottomBarIndicatorLayerTransform)? = null,
     indicatorAlignment: Alignment = Alignment.CenterStart,
     interactionModifier: Modifier = Modifier,
     wobblePosition: (() -> Float)? = null,
@@ -508,6 +522,8 @@ internal fun BoxScope.BottomBarMatchedLiquidIndicator(
         bottomBarMotionSpec = bottomBarMotionSpec,
         isDarkTheme = isDarkTheme,
         swapMotionAxes = orientation == BottomBarLiquidOrientation.VERTICAL,
+        opticalShellExtentDp = opticalShellExtentDp,
+        indicatorScaleTransformProvider = indicatorScaleTransformProvider,
         indicatorAlignment = indicatorAlignment,
         interactionModifier = interactionModifier,
         wobblePosition = wobblePosition,

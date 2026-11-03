@@ -12,6 +12,27 @@ import org.junit.Test
 class CommentReadAccessPolicyTest {
 
     @Test
+    fun `closed comment codes preserve server explanation and prevent input`() {
+        for (code in listOf(12061, 12002)) {
+            val failure = CommentReadException(code, "评论区已关闭，暂时无法查看")
+            assertEquals(code, failure.code)
+            assertEquals("评论区已关闭，暂时无法查看", failure.message)
+            assertTrue(failure.commentInputBlocked)
+            assertFalse(shouldFallbackCommentRead(code))
+        }
+        assertEquals("评论区暂不可用", CommentReadException(12061, " ").message)
+        assertEquals("评论区已关闭", CommentReadException(12002).message)
+        assertFalse(CommentReadException(-412).commentInputBlocked)
+        assertFalse(CommentReadException(-101).commentInputBlocked)
+    }
+
+    @Test
+    fun `unknown comment error retains server message and diagnostic code`() {
+        assertEquals("评论暂不可见 (12345)", resolveCommentReadErrorMessage(12345, "评论暂不可见"))
+        assertEquals("加载评论失败 (12345)", resolveCommentReadErrorMessage(12345, "success"))
+    }
+
+    @Test
     fun `sorted thread location supplement preserves ranking cursor and existing controls`() {
         val root = ReplyItem(rpid = 100L, replyControl = ReplyControl(location = "IP属地：上海"))
         val data = ReplyData(

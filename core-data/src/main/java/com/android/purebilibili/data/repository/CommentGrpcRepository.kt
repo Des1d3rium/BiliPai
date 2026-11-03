@@ -32,6 +32,7 @@ import com.android.purebilibili.data.model.response.ReplyVote
 import com.android.purebilibili.data.model.response.ReplyVoteCard
 import com.android.purebilibili.data.model.response.ReplyVoteCardOption
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
@@ -49,23 +50,13 @@ object CommentGrpcRepository {
         type: Int,
         mode: Int,
         nextOffset: String?,
-        useCursorPaging: Boolean = false,
-        cursorNext: Long? = null,
     ): ByteArray {
         val fields = mutableListOf(
             ProtoWire.int64(1, oid),
             ProtoWire.int64(2, type.toLong()),
         )
-        if (useCursorPaging) {
-            // PiliPlus MainList: cursor.next (int64) + cursor.mode, fields 1 and 4.
-            fields += ProtoWire.bytes(3, ProtoWire.message(
-                ProtoWire.int64(1, cursorNext ?: 0L),
-                ProtoWire.int32(4, mode),
-            ))
-        } else {
-            fields += ProtoWire.int32(9, mode)
-        }
-        if (!useCursorPaging && !nextOffset.isNullOrBlank()) {
+        fields += ProtoWire.int32(9, mode)
+        if (!nextOffset.isNullOrBlank()) {
             fields += ProtoWire.bytes(
                 10,
                 ProtoWire.message(
@@ -83,8 +74,6 @@ object CommentGrpcRepository {
         type: Int,
         mode: Int,
         nextOffset: String?,
-        useCursorPaging: Boolean = false,
-        cursorNext: Long? = null,
     ): Result<ReplyData> {
         if (mode != MODE_TIME && mode != MODE_HOT) {
             return Result.failure(IllegalArgumentException("Unsupported gRPC reply mode: $mode"))
@@ -97,8 +86,6 @@ object CommentGrpcRepository {
                     type = type,
                     mode = mode,
                     nextOffset = nextOffset,
-                    useCursorPaging = useCursorPaging,
-                    cursorNext = cursorNext,
                 )
             )
             parseMainListReply(response)
@@ -215,7 +202,7 @@ object CommentGrpcRepository {
         oid: Long,
         rpid: Long
     ): Result<String?> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val request = ProtoWire.message(
                 ProtoWire.int64(1, type),
                 ProtoWire.int64(2, oid),
@@ -225,7 +212,11 @@ object CommentGrpcRepository {
                 path = PATH_TRANSLATE_REPLY,
                 message = request
             )
-            parseTranslateReplyResp(response, rpid)
+            Result.success(parseTranslateReplyResp(response, rpid))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -311,6 +302,10 @@ object CommentGrpcRepository {
                 top = upTop
             ),
             control = ReplyPageControl(
+                title = subject.title,
+                backgroundText = subject.backgroundText,
+                emptyText = subject.emptyText,
+                emptyHighlightText = subject.emptyHighlightText,
                 inputDisable = subject.inputDisable,
                 rootInputText = subject.rootText,
                 childInputText = subject.childText,
@@ -321,6 +316,7 @@ object CommentGrpcRepository {
             mainListContinuation = if (cursor.isEnd) null else CommentMainListContinuation(
                 route = CommentMainListRoute.GRPC,
                 next = cursorNext,
+                offset = paginationNextOffset.takeIf { it.isNotBlank() },
             ),
         )
     }
@@ -384,6 +380,10 @@ object CommentGrpcRepository {
             replies = root.replies.orEmpty(),
             root = root,
             control = ReplyPageControl(
+                title = subject.title,
+                backgroundText = subject.backgroundText,
+                emptyText = subject.emptyText,
+                emptyHighlightText = subject.emptyHighlightText,
                 inputDisable = subject.inputDisable,
                 rootInputText = subject.rootText,
                 childInputText = subject.childText,
@@ -413,6 +413,10 @@ object CommentGrpcRepository {
             config = ReplyConfig(showUpFlag = subject.showUpAction),
             replies = replies,
             control = ReplyPageControl(
+                title = subject.title,
+                backgroundText = subject.backgroundText,
+                emptyText = subject.emptyText,
+                emptyHighlightText = subject.emptyHighlightText,
                 inputDisable = subject.inputDisable,
                 rootInputText = subject.rootText,
                 childInputText = subject.childText,
@@ -447,6 +451,10 @@ object CommentGrpcRepository {
         ProtoWire.parseFields(bytes).forEach { field ->
             control = when (field.number) {
                 1 -> control.copy(upMid = field.varint)
+                7 -> control.copy(backgroundText = ProtoWire.stringValue(field))
+                17 -> control.copy(title = ProtoWire.stringValue(field))
+                21 -> control.copy(emptyText = ProtoWire.stringValue(field))
+                22 -> control.copy(emptyHighlightText = ProtoWire.stringValue(field))
                 11 -> control.copy(showUpAction = field.varint != 0L)
                 13 -> control.copy(inputDisable = field.varint != 0L)
                 14 -> control.copy(rootText = ProtoWire.stringValue(field))
@@ -659,11 +667,15 @@ object CommentGrpcRepository {
         var prefixIcon = ""
         var appUrlSchema = ""
         var pcUrl = ""
+        var isGoods = false
         ProtoWire.parseFields(bytes).forEach { field ->
             when (field.number) {
                 1 -> title = ProtoWire.stringValue(field)
                 3 -> prefixIcon = ProtoWire.stringValue(field)
                 4 -> appUrlSchema = ProtoWire.stringValue(field)
+                10 -> isGoods = ProtoWire.parseFields(field.bytes).any { extra ->
+                    extra.number == 1 || extra.number == 2 || (extra.number == 5 && extra.varint == 1L)
+                }
                 13 -> pcUrl = ProtoWire.stringValue(field)
             }
         }
@@ -671,7 +683,8 @@ object CommentGrpcRepository {
             title = title,
             url = pcUrl.ifBlank { token },
             appUrlSchema = appUrlSchema,
-            prefixIcon = prefixIcon
+            prefixIcon = prefixIcon,
+            isGoods = isGoods
         )
     }
 
@@ -820,6 +833,10 @@ object CommentGrpcRepository {
     )
 
     private data class GrpcSubjectControl(
+        val title: String = "",
+        val backgroundText: String = "",
+        val emptyText: String = "",
+        val emptyHighlightText: String = "",
         val upMid: Long = 0L,
         val showUpAction: Boolean = false,
         val inputDisable: Boolean = false,

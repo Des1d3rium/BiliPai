@@ -21,6 +21,26 @@ import org.junit.Test
 
 class VideoPlaybackUseCaseQualitySwitchTest {
 
+    @Test
+    fun `initial selection locks the available quality at or below the preference`() {
+        val result = VideoPlaybackUseCase().resolvePlaybackSelection(
+            playUrlData = PlayUrlData(dash = Dash(video = listOf(
+                DashVideo(id = 125, baseUrl = "https://example.com/hdr", codecs = "hev1"),
+                DashVideo(id = 120, baseUrl = "https://example.com/4k", codecs = "hev1"),
+                DashVideo(id = 80, baseUrl = "https://example.com/1080", codecs = "avc1"),
+            ))),
+            targetQuality = 120,
+            isHevcSupported = true,
+            isAv1Supported = false,
+            isDolbyAudioSupported = false,
+            isDolbyAudioSoftwareDecoded = false,
+            lockSelectedQuality = true,
+        )
+        assertEquals(120, result?.actualQuality)
+        assertEquals(PlaybackQualityMode.LOCKED(120), result?.adaptiveDashSource?.playbackQualityMode)
+        assertEquals(listOf(120), result?.adaptiveDashSource?.videoTracks?.map { it.id })
+    }
+
     private val cachedVideos = listOf(
         DashVideo(id = 80, baseUrl = "https://example.com/1080.m4s"),
         DashVideo(id = 64, baseUrl = "https://example.com/720.m4s"),

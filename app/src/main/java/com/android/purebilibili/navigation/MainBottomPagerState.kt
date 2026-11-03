@@ -15,7 +15,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
- * 底栏 HorizontalPager 状态。切页由 UserInput 优先级接管 Pager。
+ * 底栏 HorizontalPager 状态。点击指示器与内容翻页分别连续运动。
  */
 @Stable
 internal class MainBottomPagerState(
@@ -33,7 +33,7 @@ internal class MainBottomPagerState(
 
     /** Continuous position shared by the pager and the bottom-bar indicator. */
     val indicatorPosition: Float
-        get() = pagerState.currentPage + pagerState.currentPageOffsetFraction
+        get() = pagerState.tabIndicatorPosition
 
     /** True for both user-driven and programmatic pager movement. */
     val isScrollInProgress: Boolean
@@ -52,7 +52,7 @@ internal class MainBottomPagerState(
     /**
      * MainPagerState 目标页切换：
      * - 先更新 [selectedPage]（底栏指示器跟目标页），并让目标页先完成一次组合；
-     * - 再在 Pager 的 UserInput mutation 中逐帧滚动到目标，避免反向切页被旧状态取消。
+     * - 再驱动 Pager 到目标，远距离切换允许跳过中间页，指示器独立连续移动。
      */
     fun switchToPage(targetIndex: Int) {
         val lastPage = pagerState.pageCount - 1

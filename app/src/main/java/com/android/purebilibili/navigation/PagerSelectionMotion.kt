@@ -4,8 +4,10 @@ import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.withFrameNanos
 import kotlin.math.abs
 
@@ -22,13 +24,32 @@ internal suspend fun awaitPagerTargetPagePrewarm(
     repeat(maxFrames.coerceAtLeast(0)) { withFrameNanos { } }
 }
 
+/** A weak key keeps removed pagers collectible; sessions never hold their pager. */
+private val tabSelectionMotions = java.util.WeakHashMap<PagerState, androidx.compose.runtime.MutableState<TabSelectionMotion?>>()
+
+private class TabSelectionMotion(val target: Int, start: Float) {
+    var position by androidx.compose.runtime.mutableFloatStateOf(start)
+}
+
+private fun tabSelectionState(pager: PagerState) = tabSelectionMotions.getOrPut(pager) {
+    androidx.compose.runtime.mutableStateOf(null)
+}
+
+internal val PagerState.isTabSelectionInProgress: Boolean
+    get() = tabSelectionState(this).value != null
+
+/** Selection semantics and label colors use the clicked destination, never a pre-jump page. */
+internal val PagerState.tabSelectedPage: Int
+    get() = (tabSelectionState(this).value?.target ?: currentPage).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+
+/** Clicks animate the rail independently; touch scrolling always uses the actual page offset. */
+internal val PagerState.tabIndicatorPosition: Float
+    get() = tabSelectionState(this).value?.position ?: (currentPage + currentPageOffsetFraction)
+
 /**
- * Moves a tab-backed pager through every intermediate page.
- *
- * Compose's animateScrollToPage may pre-jump for distant targets. That optimization is useful
- * for content carousels, but makes a tab indicator appear to hard-cut. Tab rails use this helper
- * so page content and indicators share one continuous position. The main bottom navigation and
- * every tab rail that opts into progressive page traversal call this same implementation.
+ * Click navigation lets Pager skip distant intermediate pages while the rail moves continuously.
+ * Both animations share a spec and lifetime; interruption releases the rail to the touch position.
+ * This changes motion ownership only, across MD3, Miuix and glass, without changing their geometry.
  */
 internal suspend fun animatePagerSelection(
     pagerState: PagerState,
@@ -37,40 +58,28 @@ internal suspend fun animatePagerSelection(
 ) {
     val lastPage = pagerState.pageCount - 1
     if (lastPage < 0) return
-    val safeTargetPage = targetPage.coerceIn(0, lastPage)
-    if (
-        safeTargetPage == pagerState.currentPage &&
-        abs(pagerState.currentPageOffsetFraction) <= 0.001f
-    ) {
-        return
-    }
-
-    val pageDistance = abs(safeTargetPage - pagerState.currentPage).coerceAtLeast(1)
-    val resolvedSpec = animationSpec ?: tween(
-        durationMillis = resolveBottomPagerNavigationDurationMillis(pageDistance),
-        easing = EaseInOut,
-    )
-
-    pagerState.scroll(MutatePriority.UserInput) {
-        val pageSizePx = pagerState.layoutInfo.pageSize + pagerState.layoutInfo.pageSpacing
-        if (pageSizePx <= 0) return@scroll
-        val remainingPages = safeTargetPage -
-            pagerState.currentPage -
-            pagerState.currentPageOffsetFraction
-        val scrollDistancePx = remainingPages * pageSizePx
-        var consumedPx = 0f
-        animate(
-            initialValue = 0f,
-            targetValue = scrollDistancePx,
-            animationSpec = resolvedSpec,
-        ) { value, _ ->
-            consumedPx += scrollBy(value - consumedPx)
+    val target = targetPage.coerceIn(0, lastPage)
+    val state = tabSelectionState(pagerState)
+    // Selection state and click callbacks can request the same destination in the same frame.
+    if (state.value?.target == target) return
+    if (target == pagerState.currentPage && abs(pagerState.currentPageOffsetFraction) <= 0.001f && state.value == null) return
+    val start = pagerState.tabIndicatorPosition
+    val motion = TabSelectionMotion(target, start)
+    val spec = animationSpec ?: tween<Float>(durationMillis = 300, easing = EaseInOut)
+    state.value = motion
+    try {
+        kotlinx.coroutines.coroutineScope {
+            val indicator = launch {
+                animate(start, target.toFloat(), animationSpec = spec) { value, _ ->
+                    motion.position = value
+                }
+            }
+            // The framework pre-jumps near distant destinations instead of composing every page.
+            pagerState.animateScrollToPage(target, animationSpec = spec)
+            indicator.join()
         }
-    }
-
-    if (pagerState.currentPage != safeTargetPage ||
-        abs(pagerState.currentPageOffsetFraction) > 0.001f
-    ) {
-        pagerState.scrollToPage(safeTargetPage)
+    } finally {
+        // An interrupted old coroutine cannot clear a newer click's rail animation.
+        if (state.value === motion) state.value = null
     }
 }

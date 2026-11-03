@@ -434,7 +434,7 @@ class VideoContentTabBarPolicyTest {
         assertEquals(72, resolveVideoContentTabBarDockItemWidthDp(labelFontSizeSp = 16))
         assertEquals(66, resolveVideoContentTabBarDockItemWidthDp(labelFontSizeSp = 13))
         assertEquals(
-            0,
+            16,
             resolveVideoContentTabBarStartPaddingDp(
                 reusesLiquidGlassDock = true,
                 containerHorizontalPaddingDp = layoutSpec.containerHorizontalPaddingDp,

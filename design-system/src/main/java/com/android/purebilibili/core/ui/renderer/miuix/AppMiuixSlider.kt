@@ -2,7 +2,6 @@ package com.android.purebilibili.core.ui.renderer.miuix
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.android.purebilibili.core.ui.components.AppSliderColors
 import com.android.purebilibili.core.ui.components.appDesktopFocusableItemVisuals
 import top.yukonga.miuix.kmp.basic.Slider
@@ -25,7 +24,9 @@ internal fun AppMiuixSlider(
             backgroundColor = it.inactiveTrackColor,
             thumbColor = it.thumbColor,
         )
-    } ?: SliderDefaults.sliderColors(thumbColor = com.android.purebilibili.core.ui.components.appControlThumbColor())
+    } ?: if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        SliderDefaults.sliderColors()
+    } else SliderDefaults.sliderColors(thumbColor = com.android.purebilibili.core.ui.components.appControlThumbColor())
     Slider(
         value = value,
         onValueChange = onValueChange,

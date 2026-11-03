@@ -11,9 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyGridScope
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,21 +31,21 @@ internal const val SPACE_SKELETON_CARD_CONTENT_TYPE = "space_skeleton_card"
  * UP 空间首屏骨架的 item 提供者：资料头、主标签条、分段标题和投稿网格都与真实
  * [SpaceContent] 同构。
  *
- * 关键点：它**不再自建 `LazyVerticalGrid`**，而是把骨架 item 铺进 [SpaceContent]
- * 的内容网格（同一个 LazyVerticalGrid、同一个 `gridState`）。Loading → Success 因此
+ * 关键点：它**不再自建 `LazyVerticalStaggeredGrid`**，而是把骨架 item 铺进 [SpaceContent]
+ * 的内容网格（同一个 LazyVerticalStaggeredGrid、同一个 `gridState`）。Loading → Success 因此
  * 只是 item 原地替换，网格与滚动锚点都不会重建，首屏不再跳。
  *
  * 列数、封面比例、内边距、头部形态都由调用方按真实内容同规则算好传入；色块用固定色
  * 而非呼吸脉冲（`rememberStaticSkeletonBlockColor`），避免「灰块呼吸 + 内容淡入」叠成闪烁。
  */
-internal fun LazyGridScope.SpaceLoadingSkeleton(
+internal fun LazyStaggeredGridScope.SpaceLoadingSkeleton(
     columns: Int,
     coverAspectRatio: Float,
     bannerHeightDp: Float,
     useExpandedHeader: Boolean,
     blockColor: Color,
 ) {
-    item(key = "space_skeleton_header", span = { GridItemSpan(maxLineSpan) }) {
+    item(key = "space_skeleton_header", span = StaggeredGridItemSpan.FullLine) {
         SpaceHeaderSkeleton(
             bannerHeightDp = bannerHeightDp,
             useExpandedHeader = useExpandedHeader,
@@ -53,14 +53,14 @@ internal fun LazyGridScope.SpaceLoadingSkeleton(
         )
     }
     // 主标签条占位：与真实 SpaceContentTabs 行同高，避免标签出现时整页下移。
-    item(key = "space_skeleton_tabs", span = { GridItemSpan(maxLineSpan) }) {
+    item(key = "space_skeleton_tabs", span = StaggeredGridItemSpan.FullLine) {
         ContentSkeletonBlock(
             blockColor,
             Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
             AppShapes.container(ContainerLevel.Pill),
         )
     }
-    item(key = "space_skeleton_section", span = { GridItemSpan(maxLineSpan) }) {
+    item(key = "space_skeleton_section", span = StaggeredGridItemSpan.FullLine) {
         ContentSkeletonBlock(blockColor, Modifier.width(92.dp).height(20.dp))
     }
     items(

@@ -715,7 +715,7 @@ private fun TransferContentSelectionUi(
 @Composable
 private fun TransferCheckRow(label: String, checked: Boolean, enabled: Boolean = true, onChecked: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.Checkbox(checked = checked, enabled = enabled, onCheckedChange = onChecked)
+        com.android.purebilibili.core.ui.components.AppCheckbox(checked = checked, enabled = enabled, onCheckedChange = onChecked)
         AppText(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -732,7 +732,7 @@ private fun TransferGroup(
         color = AppContentColors.secondaryText())
     items.forEach { item ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.Checkbox(
+            com.android.purebilibili.core.ui.components.AppCheckbox(
                 checked = item.id in selected,
                 onCheckedChange = { checked ->
                     onSelected(if (checked) selected + item.id else selected - item.id)

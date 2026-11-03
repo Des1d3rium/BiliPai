@@ -69,8 +69,13 @@ internal fun SpaceBannerFusionEffect(
     maxParallaxTranslationPx: Float,
     scrollState: ScrollableState,
     modifier: Modifier = Modifier,
+    fusionEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    if (!fusionEnabled) {
+        Box(modifier = modifier) { content() }
+        return
+    }
     val parentComposition = rememberCompositionContext()
     val dropletSizePx = with(LocalDensity.current) { 72f * density }
     val latestDropletSize = rememberUpdatedState(dropletSizePx)

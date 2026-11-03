@@ -10,6 +10,27 @@ import kotlin.test.assertTrue
 class LiveAudioOnlyPlaybackPolicyTest {
 
     @Test
+    fun `container navigation clips live texture without requiring legacy shared scopes`() {
+        assertTrue(
+            shouldUseTextureSurfaceForLivePlayer(
+                hasSharedTransitionScope = false,
+                hasAnimatedVisibilityScope = false,
+                preferCompatibleTextureSurface = false,
+                hasContainerTransition = true,
+            )
+        )
+        assertFalse(
+            shouldUseTextureSurfaceForLivePlayer(
+                hasSharedTransitionScope = false,
+                hasAnimatedVisibilityScope = false,
+                preferCompatibleTextureSurface = false,
+                hasContainerTransition = true,
+                requiresHdrSurfaceOutput = true,
+            )
+        )
+    }
+
+    @Test
     fun `audio only mode does not bind live player view`() {
         assertFalse(shouldBindLivePlayerViewForAudioOnly(isAudioOnly = true))
         assertTrue(shouldBindLivePlayerViewForAudioOnly(isAudioOnly = false))

@@ -67,6 +67,64 @@ class VideoCardGestureFollowStateTest {
     }
 
     @Test
+    fun grabbingAutomaticFlightKeepsEveryVisiblePoseChannelWithAndWithoutTranslation() {
+        for (translationEnabled in listOf(false, true)) {
+            for (morph in listOf(.25f, .5f, .75f)) {
+                val scope = Scope().apply {
+                    relativeDepth = morph - 1f
+                    role = NavRole.Incoming
+                    gesture = null
+                }
+                val progress = MiuixVideoCardTransitionProgress(
+                    gestureTranslationEnabled = translationEnabled, gesturePoseEnabled = true,
+                )
+                progress.bind(scope)
+                assertEquals(null, progress.followPose(scope, bounds, 1080f, 2400f, 30f, motion))
+                val automatic = resolveMiuixVideoCardClickTransform(morph, 1080f, 2400f, bounds)
+                val origin = resolveMiuixVideoCardGestureVisualOrigin(
+                    bounds, 1080f, 2400f, morph, automatic.transformOrigin,
+                )
+                progress.recordAutomaticPose(automatic, origin)
+                val expected = VideoCardFollowPose(
+                    translation = Offset(automatic.translationX, automatic.translationY),
+                    rotationZ = automatic.rotationZ, transformOrigin = origin,
+                    rotationX = automatic.rotationX, rotationY = automatic.rotationY,
+                    liftScale = automatic.liftScale, cameraDistance = automatic.cameraDistance,
+                )
+                scope.gesture = NavGesture(0f, NavSwipeEdge.Right, 1800f)
+                // 导航先知道已开始抓取，坐标观察器尚未收到事件时也保持投影。
+                assertEquals(expected, pose(progress, scope))
+                progress.gestureFollow.onTransitionState(event(1080f, 1800f, NavigationEvent.EDGE_RIGHT))
+                assertEquals(morph, progress.depthOrNull()!!, .0001f)
+                assertEquals(expected, pose(progress, scope))
+                // 下一帧才开始移动；锚点不被后续输入反复认领。
+                progress.gestureFollow.onTransitionState(event(980f, 1850f, NavigationEvent.EDGE_RIGHT))
+                val moved = pose(progress, scope)
+                assertOffset(if (translationEnabled) Offset(-100f, 50f) else Offset.Zero, moved.translation)
+                assertEquals(origin, moved.transformOrigin)
+                progress.clear()
+                assertEquals(VideoCardFollowPose().cameraDistance, pose(progress, scope).cameraDistance)
+            }
+        }
+    }
+
+    @Test
+    fun regrabDoesNotClampAnExistingReleaseImpulseOrAutomaticPerspective() {
+        val anchor = VideoCardFollowPose(
+            translation = Offset(70f, 90f), rotationZ = 5.8f,
+            transformOrigin = TransformOrigin(.2f, .7f),
+            rotationX = -1.8f, rotationY = 1.7f, liftScale = .95f, cameraDistance = 5.5f,
+        )
+        val initial = Offset(1080f, 1800f)
+        val actual = resolveVideoCardFollowPose(
+            VideoCardGestureSample(2, initial, initial), bounds, 1080f, 2400f,
+            morph = .5f, anchorMorph = .5f, arcAmplitudePx = 30f,
+            anchorPose = anchor, gestureProgress = 0f,
+        )
+        assertEquals(anchor, actual)
+    }
+
+    @Test
     fun screenCoordinatesBecomePaneLocalAndReleaseRetainsLastSample() {
         val state = VideoCardGestureFollowState()
         state.hostOriginOnScreen = Offset(800f, 80f)
@@ -193,6 +251,26 @@ class VideoCardGestureFollowStateTest {
             assertEquals(0f, end?.rotationY ?: 0f)
             assertEquals(1f, end?.liftScale ?: 1f)
         }
+    }
+
+    @Test
+    fun nearCompleteFollowCommitKeepsReleaseDepthAndPose() {
+        val scope = Scope()
+        val progress = MiuixVideoCardTransitionProgress(gestureTranslationEnabled = true, gesturePoseEnabled = true)
+        progress.bind(scope)
+        progress.gestureFollow.onTransitionState(event(0f, 700f))
+        pose(progress, scope)
+        scope.relativeDepth = -.99f
+        scope.gesture = NavGesture(.99f, NavSwipeEdge.Left, 1000f, 700f)
+        progress.gestureFollow.onTransitionState(event(600f, 1000f))
+        val releaseDepth = progress.depthOrNull()!!
+        val releasePose = pose(progress, scope)
+        scope.settle = Settle(NavSettlePhase.Commit)
+        scope.role = NavRole.Outgoing
+        assertEquals(releaseDepth, progress.depthOrNull()!!, .0001f)
+        assertEquals(releasePose, pose(progress, scope))
+        scope.relativeDepth = -1f
+        assertOffset(Offset.Zero, pose(progress, scope).translation)
     }
 
     @Test

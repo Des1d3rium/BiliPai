@@ -66,6 +66,9 @@ class AppGlassMenuRequest(
     val onSourceVisibilityChange: (Boolean) -> Unit = {},
     val interactiveContent: Boolean = false,
     val darkTheme: Boolean? = null,
+    val showScrollbar: Boolean = false,
+    val fitWholeItems: Boolean = false,
+    val useAvailableHeight: Boolean = false,
 )
 
 class AppGlassMenuScope(
@@ -74,6 +77,7 @@ class AppGlassMenuScope(
     val unregister: (Any) -> Unit,
     val dispatch: (action: () -> Unit, dismiss: Boolean) -> Unit,
     val backdrop: Backdrop? = null,
+    val fitWholeItems: Boolean = false,
 )
 
 val LocalAppGlassMenuActive = compositionLocalOf { false }
@@ -84,6 +88,8 @@ val LocalAppGlassMenuDarkTheme = compositionLocalOf<Boolean?> { null }
 
 val LocalAppGlassMenuPresenter = compositionLocalOf<AppGlassMenuPresenter?> { null }
 val LocalAppGlassMenuScope = compositionLocalOf<AppGlassMenuScope?> { null }
+/** Interactive panels can finish their action after the shared popup has returned to its source. */
+val LocalAppGlassPanelDismissAction = compositionLocalOf<((() -> Unit) -> Unit)?> { null }
 
 @Composable
 fun appGlassMenuAvailable(): Boolean {
@@ -111,21 +117,34 @@ fun AppGlassMenu(
     carriedPress: AppSingleChoicePopupPress? = null,
     onSourceVisibilityChange: (Boolean) -> Unit = {},
     interactiveContent: Boolean = false,
+    showScrollbar: Boolean = false,
+    fitWholeItems: Boolean = false,
+    useAvailableHeight: Boolean = false,
     content: @Composable () -> Unit,
 ): Boolean {
     val presenter = LocalAppGlassMenuPresenter.current
     if (!com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled ||
         presenter == null || presenter.ownerView !== LocalView.current) return false
-    val activeSource = source?.takeIf { it.isAvailable }
+    // 关闭时保留来源身份供退场使用，但不订阅随列表滚动变化的边界。
+    val activeSource = source?.takeIf { it.enabled && (!expanded || it.isAvailable) }
     val suppliedBackdrop = LocalAppGlassMenuBackdrop.current
     val suppliedDarkTheme = LocalAppGlassMenuDarkTheme.current
     val owner = remember { Any() }
     val generation = remember { intArrayOf(0) }
     var measuredAnchor by remember { mutableStateOf<Rect?>(null) }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val currentAnchor by rememberUpdatedState((anchorBounds ?: activeSource?.bounds ?: measuredAnchor)?.translate(
-        with(density) { Offset(offset.x.toPx(), offset.y.toPx()) },
-    ))
+    val retainedAnchor = remember { arrayOfNulls<Rect>(1) }
+    val resolvedAnchor = if (expanded) {
+        (anchorBounds ?: activeSource?.bounds ?: measuredAnchor)?.translate(
+            with(density) { Offset(offset.x.toPx(), offset.y.toPx()) },
+        )
+    } else retainedAnchor[0]
+    SideEffect {
+        if (expanded) retainedAnchor[0] = resolvedAnchor
+        // 下次打开重新测量，避免列表已经滚动后先使用上次的坐标。
+        else measuredAnchor = null
+    }
+    val currentAnchor by rememberUpdatedState(resolvedAnchor)
     val latestExpanded by rememberUpdatedState(expanded)
     val scope = rememberCoroutineScope()
     val latestDismiss by rememberUpdatedState(onDismissRequest)
@@ -133,7 +152,9 @@ fun AppGlassMenu(
     val locals = currentCompositionLocalContext
     val contentLocals by rememberUpdatedState(locals)
     // 显式锚点和真实触发源无需布局占位，避免横向 dock 为零尺寸节点再分配间距。
-    if (anchorBounds == null && activeSource == null && placement == AppGlassMenuPlacement.ANCHOR_END) {
+    // 关闭时不挂坐标观察器，避免列表里的每个菜单随滚动写回布局状态。
+    // 展开后先测量锚点，下一帧再由下方 effect 交给弹窗宿主。
+    if (expanded && anchorBounds == null && activeSource == null && placement == AppGlassMenuPlacement.ANCHOR_END) {
         Box(Modifier.onGloballyPositioned {
             measuredAnchor = it.parentLayoutCoordinates?.boundsInWindow() ?: it.boundsInWindow()
         })
@@ -163,12 +184,26 @@ fun AppGlassMenu(
                     }
                 },
                 interactiveContent = interactiveContent,
+                showScrollbar = showScrollbar,
+                fitWholeItems = fitWholeItems,
+                useAvailableHeight = useAvailableHeight,
                 content = { scope ->
                     CompositionLocalProvider(contentLocals) {
                         CompositionLocalProvider(
                             LocalAppGlassMenuScope provides scope.takeUnless { interactiveContent },
+                            LocalAppGlassPanelDismissAction provides if (interactiveContent) {
+                                { action: () -> Unit -> scope.dispatch(action, true) }
+                            } else null,
                             LocalAppGlassMenuBackdrop provides scope.backdrop,
-                        ) { latestContent() }
+                            // 菜单绘制在独立覆盖层，不能继承触发控件的玻璃形变归属。
+                            com.android.purebilibili.core.ui.blur.LocalAppGlassContainer provides null,
+                        ) {
+                            com.android.purebilibili.core.ui.blur.AppGlassContainerContent(
+                                enabled = interactiveContent,
+                                backdrop = scope.backdrop,
+                                ownsDeformation = true,
+                            ) { latestContent() }
+                        }
                     }
                 },
             ))

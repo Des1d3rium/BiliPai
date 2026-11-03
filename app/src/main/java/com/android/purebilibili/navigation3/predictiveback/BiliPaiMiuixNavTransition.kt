@@ -43,6 +43,20 @@ internal fun biliPaiMiuixNavTransition(
         BiliPaiPredictiveBackAnimationStyle.AOSP -> AospNavTransition
         BiliPaiPredictiveBackAnimationStyle.SCALE -> scaleNavTransition(exitDirection)
         BiliPaiPredictiveBackAnimationStyle.CLASSIC -> ClassicNavTransition
+        BiliPaiPredictiveBackAnimationStyle.CIRCULAR_REVEAL -> return CircularRevealNavTransition
+        BiliPaiPredictiveBackAnimationStyle.IOS -> return IosPageNavTransition
+        BiliPaiPredictiveBackAnimationStyle.NO_TRANSITION -> return InstantPageNavTransition
+        BiliPaiPredictiveBackAnimationStyle.SIZE -> return SizePageNavTransition
+        BiliPaiPredictiveBackAnimationStyle.SHARED_AXIS -> return SharedAxisPageNavTransition
+        BiliPaiPredictiveBackAnimationStyle.FADE,
+        BiliPaiPredictiveBackAnimationStyle.FADE_IN,
+        BiliPaiPredictiveBackAnimationStyle.RIGHT_TO_LEFT,
+        BiliPaiPredictiveBackAnimationStyle.LEFT_TO_RIGHT,
+        BiliPaiPredictiveBackAnimationStyle.UP_TO_DOWN,
+        BiliPaiPredictiveBackAnimationStyle.DOWN_TO_UP,
+        BiliPaiPredictiveBackAnimationStyle.RIGHT_TO_LEFT_FADE,
+        BiliPaiPredictiveBackAnimationStyle.LEFT_TO_RIGHT_FADE,
+        BiliPaiPredictiveBackAnimationStyle.ZOOM -> return pagePresetNavTransition(animation)
     }
     return realtimeCoveredBlurTransition(
         baseTransition = baseTransition,

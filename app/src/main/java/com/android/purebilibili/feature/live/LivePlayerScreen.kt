@@ -1,5 +1,9 @@
 package com.android.purebilibili.feature.live
 
+import com.android.purebilibili.core.player.withAppVideoDecoderDiagnostics
+import com.android.purebilibili.core.player.withAppVideoDecoderPreference
+
+import com.android.purebilibili.core.ui.components.appGlassMenuSource
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.ui.graphics.Color
@@ -46,6 +50,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Refresh
 import com.android.purebilibili.core.ui.components.AppIcon
 import androidx.compose.material3.MaterialTheme
 import com.android.purebilibili.core.ui.components.AppSlider
@@ -168,6 +173,7 @@ import com.android.purebilibili.core.ui.components.AppTextButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -234,6 +240,8 @@ private fun LiveRoomScreen(
 
     // 状态
     var showDanmakuSettingsDialog by remember { mutableStateOf(false) }
+    val liveDanmakuSettingsSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    val liveInteractionWindowSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
     var showBlockDialog by remember { mutableStateOf(false) }
     var showPlayerInfoDialog by remember { mutableStateOf(false) }
     var showShutdownTimerDialog by remember { mutableStateOf(false) }
@@ -255,12 +263,14 @@ private fun LiveRoomScreen(
         showEmoticonSheet = showEmoticons
         showSendDanmakuSheet = true
     }
-    var reportTarget by remember { mutableStateOf<LiveDanmakuItem?>(null) }
-    var isFullscreen by rememberSaveable { mutableStateOf(false) }
+    var reportTarget by remember(roomId, siteId) { mutableStateOf<LiveDanmakuItem?>(null) }
+    var fullscreenRequested by rememberSaveable { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(true) }
     var selectedInteractionTab by rememberSaveable(roomId, siteId) { mutableIntStateOf(0) }
     val chatListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val superChatListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var showLandscapeInteraction by rememberSaveable(roomId, siteId) { mutableStateOf(false) }
+    var landscapeInteractionCollapsed by remember(roomId, siteId) { mutableStateOf(false) }
     var followingLatestChat by rememberSaveable(roomId, siteId) { mutableStateOf(true) }
     var isPipRequested by remember { mutableStateOf(false) }
     var wasPlaybackActiveBeforePause by remember { mutableStateOf(false) }
@@ -269,24 +279,22 @@ private fun LiveRoomScreen(
     var liveVideoSize by remember(roomId, siteId) { mutableStateOf(androidx.media3.common.VideoSize.UNKNOWN) }
     var videoScale by rememberSaveable(roomId, siteId) { mutableFloatStateOf(1f) }
     var videoAspectRatio by remember { mutableStateOf(VideoAspectRatio.FIT) }
-    var backgroundPlaybackEnabled by remember {
-        mutableStateOf(SettingsManager.getBackgroundPlaybackEnabledSync(context))
-    }
-    val autoEnterFullscreenEnabled by SettingsManager.getAutoEnterFullscreen(context)
-        .collectAsStateWithLifecycle(initialValue = false)
-    val autoExitFullscreenEnabled by SettingsManager.getAutoExitFullscreen(context)
-        .collectAsStateWithLifecycle(initialValue = true)
+    val savedBackgroundPlaybackEnabled by remember(context) { SettingsManager.getBackgroundPlaybackEnabled(context) }
+        .collectAsStateWithLifecycle(initialValue = SettingsManager.getBackgroundPlaybackEnabledSync(context))
+    val autoEnterFullscreenEnabled by remember(context) {
+        SettingsManager.getAutoEnterFullscreen(context)
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val autoExitFullscreenEnabled by remember(context) {
+        SettingsManager.getAutoExitFullscreen(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
+    val fullscreenGestureReverse by remember(context) {
+        SettingsManager.getFullscreenGestureReverse(context)
+    }.collectAsStateWithLifecycle(initialValue = false)
     var didAutoEnterFullscreen by rememberSaveable(roomId, siteId) { mutableStateOf(false) }
     var shutdownAtMillis by remember { mutableStateOf<Long?>(null) }
     val showLivePipButton = remember { shouldShowLivePipButton(android.os.Build.VERSION.SDK_INT) }
     val successState = uiState as? LivePlayerState.Success
     val isLiveAudioOnly = successState?.isAudioOnly == true
-    val superChatItems by viewModel.superChatItems.collectAsStateWithLifecycle()
-    val chatHistory by viewModel.chatHistory.collectAsStateWithLifecycle()
-    val replyTarget by viewModel.replyTarget.collectAsStateWithLifecycle()
-    val isSending by viewModel.isSending.collectAsStateWithLifecycle()
-    val emoticonPackages by viewModel.emoticonPackages.collectAsStateWithLifecycle()
-    val shieldInfo by viewModel.shieldInfo.collectAsStateWithLifecycle()
     val roomInfo = successState?.roomInfo ?: RoomInfo()
     val anchorInfo = successState?.anchorInfo ?: AnchorInfo()
     val currentIsRoomLive by rememberUpdatedState(roomInfo.liveStatus == 1)
@@ -308,6 +316,16 @@ private fun LiveRoomScreen(
     // 直播布局只看当前可用窗口，分屏/自由窗口不会沿用物理平板布局。
     val isTablet = windowSizeClass.isTablet
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val liveRequestedOrientationMode = resolveLiveRequestedOrientationMode(
+        displayContext = displayContext,
+        isFullscreen = fullscreenRequested,
+        isPortraitLive = isPortraitLive,
+    )
+    val isFullscreen = shouldPresentLiveFullscreen(
+        fullscreenRequested = fullscreenRequested,
+        isLandscape = isLandscape,
+        orientationMode = liveRequestedOrientationMode,
+    )
     val liveLayoutMode = resolveLiveRoomLayoutMode(
         isLandscape = isLandscape,
         isTablet = isTablet,
@@ -316,39 +334,72 @@ private fun LiveRoomScreen(
         hasObstructingHinge = hingeAdaptiveInfo.shouldAvoidHinge,
     )
     val playerGesturePolicy = LivePlayerGesturePolicy.Shared
+    var captureLiveDanmakuTap by remember(roomId, siteId) {
+        mutableStateOf<((androidx.compose.ui.geometry.Offset) -> com.android.purebilibili.danmaku.engine.DanmakuClickCapture?)?>(null)
+    }
+    var liveDanmakuInteractionEnabled by remember(roomId, siteId) { mutableStateOf(true) }
+    val liveVisualWorkActive = com.android.purebilibili.core.ui.rememberVisualWorkActive()
     val liveDanmakuSettingsScope = remember(isLandscape) {
         resolveDanmakuSettingsScope(isLandscape = isLandscape)
     }
-    val liveDanmakuSettings by SettingsManager
-        .getDanmakuSettings(context, liveDanmakuSettingsScope)
-        .collectAsStateWithLifecycle(initialValue = DanmakuSettings())
+    val normalDanmakuSettings by remember(context) {
+        SettingsManager.getDanmakuSettings(context, DanmakuSettingsScope.PORTRAIT)
+    }.collectAsStateWithLifecycle(initialValue = DanmakuSettings())
+    val fullscreenDanmakuSettings by remember(context) {
+        SettingsManager.getDanmakuSettings(context, DanmakuSettingsScope.LANDSCAPE)
+    }.collectAsStateWithLifecycle(initialValue = DanmakuSettings())
+    val pendingLiveDanmakuStyles = remember(roomId, siteId, liveDanmakuSettingsScope, isFullscreen) {
+        mutableStateMapOf<LiveDanmakuStyleOption, Float>()
+    }
+    val draggingLiveDanmakuStyles = remember(roomId, siteId, liveDanmakuSettingsScope, isFullscreen, showDanmakuSettingsDialog) {
+        mutableStateMapOf<LiveDanmakuStyleOption, Float>()
+    }
+    // 已提交值保留至存储回流，关闭面板仅丢弃未提交的拖动预览。
+    val liveDanmakuStylePreview = pendingLiveDanmakuStyles + draggingLiveDanmakuStyles
+    val liveDanmakuWriteMutex = remember { kotlinx.coroutines.sync.Mutex() }
+    // 直播字号按普通／全屏选择；其余样式仍沿用当前窗口方向的设置。
+    val liveDanmakuSettings = applyLiveDanmakuStylePreview(
+        resolveLiveDanmakuSettings(isLandscape, isFullscreen, normalDanmakuSettings, fullscreenDanmakuSettings),
+        isFullscreen,
+        liveDanmakuStylePreview,
+    )
     val liveDanmakuDisplayArea = liveDanmakuSettings.displayArea
-    val liveSuperChatEnabled by SettingsManager.getLiveSuperChatEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
+    val liveSuperChatEnabled by remember(context) {
+        SettingsManager.getLiveSuperChatEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
     LaunchedEffect(liveSuperChatEnabled) { viewModel.setSuperChatEnabled(liveSuperChatEnabled) }
-    val liveSuperChatPanelEnabled by SettingsManager.getLiveSuperChatPanelEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
-    val liveSuperChatFlashEnabled by SettingsManager
-        .getLiveSuperChatFlashEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
-    val liveSuperChatPersistent by SettingsManager
-        .getLiveSuperChatPersistent(context)
-        .collectAsStateWithLifecycle(initialValue = false)
-    val liveSuperChatMaxWidthDp by SettingsManager
-        .getLiveSuperChatMaxWidthDp(context)
-        .collectAsStateWithLifecycle(initialValue = 360)
-    val liveKeyboardControlsEnabled by SettingsManager
-        .getLiveKeyboardControlsEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
+    val liveSuperChatPanelEnabled by remember(context) {
+        SettingsManager.getLiveSuperChatPanelEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
+    val liveSuperChatFlashEnabled by remember(context) {
+        SettingsManager.getLiveSuperChatFlashEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
+    val liveSuperChatPersistent by remember(context) {
+        SettingsManager.getLiveSuperChatPersistent(context)
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val savedLiveSuperChatMaxWidthDp by remember(context) {
+        SettingsManager.getLiveSuperChatMaxWidthDp(context)
+    }.collectAsStateWithLifecycle(initialValue = 360)
+    val liveSuperChatMaxWidthDp = liveDanmakuStylePreview[LiveDanmakuStyleOption.SuperChatWidth]?.roundToInt()
+        ?: savedLiveSuperChatMaxWidthDp
+    LaunchedEffect(normalDanmakuSettings, fullscreenDanmakuSettings, savedLiveSuperChatMaxWidthDp, pendingLiveDanmakuStyles) {
+        pendingLiveDanmakuStyles.entries.toList().forEach { (option, value) ->
+            val saved = savedLiveDanmakuStyleValue(option, normalDanmakuSettings, fullscreenDanmakuSettings, isLandscape, savedLiveSuperChatMaxWidthDp)
+            if (kotlin.math.abs(saved - value) < 0.0001f) pendingLiveDanmakuStyles.remove(option)
+        }
+    }
+    val liveKeyboardControlsEnabled by remember(context) {
+        SettingsManager.getLiveKeyboardControlsEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
     LaunchedEffect(liveKeyboardControlsEnabled, liveLayoutMode) {
         if (liveKeyboardControlsEnabled) liveKeyboardFocusRequester.requestFocus()
     }
-    val liveDanmakuEnabledPreference by SettingsManager
-        .getLiveDanmakuEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
-    val pipNoDanmaku by SettingsManager
-        .getPipNoDanmakuEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = false)
+    val liveDanmakuEnabledPreference by remember(context) {
+        SettingsManager.getLiveDanmakuEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = true)
+    val pipNoDanmaku by remember(context) {
+        SettingsManager.getPipNoDanmakuEnabled(context)
+    }.collectAsStateWithLifecycle(initialValue = false)
     val liveClock by produceState(System.currentTimeMillis(), roomInfo.roomId, roomInfo.liveStartTime) {
         while (true) { value = System.currentTimeMillis(); delay(30_000L) }
     }
@@ -363,10 +414,20 @@ private fun LiveRoomScreen(
         roomInfo.onlineRankText, formatLiveDuration(roomInfo.liveStartTime, liveClock))
         .filter { it.isNotBlank() }.joinToString("  ")
 
-    // 强制横屏切换
+    // 先请求目标方向，布局按真实窗口方向提交；竖向直播与窗口内全屏保持各自策略。
     fun toggleFullscreen() {
-        isFullscreen = !isFullscreen
+        val targetFullscreen = !fullscreenRequested
+        activity?.applyPlayerRequestedOrientation(
+            requestedOrientation = resolveLiveRequestedOrientationMode(
+                displayContext = displayContext,
+                isFullscreen = targetFullscreen,
+                isPortraitLive = isPortraitLive,
+            ).toActivityOrientation(),
+            displayContext = displayContext,
+        )
+        fullscreenRequested = targetFullscreen
     }
+    val currentToggleFullscreen by rememberUpdatedState({ toggleFullscreen() })
 
     fun toggleLiveDanmaku() {
         val current = successState?.isDanmakuEnabled ?: liveDanmakuEnabledPreference
@@ -431,18 +492,6 @@ private fun LiveRoomScreen(
         showShareMessageSheet = true
     }
 
-    fun toggleBackgroundPlayback() {
-        val newValue = !backgroundPlaybackEnabled
-        backgroundPlaybackEnabled = newValue
-        coroutineScope.launch {
-            SettingsManager.setBackgroundPlaybackEnabled(context, newValue)
-        }
-        Toast.makeText(
-            context,
-            if (newValue) "已开启后台播放" else "已关闭后台播放",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
 
     fun addLiveBlockKeyword(keyword: String) {
         val trimmed = keyword.trim()
@@ -507,7 +556,7 @@ private fun LiveRoomScreen(
     }
 
     // 全屏返回先恢复直播间布局。
-    LocalNavigationBackHandler(enabled = isFullscreen) { toggleFullscreen() }
+    LocalNavigationBackHandler(enabled = fullscreenRequested) { toggleFullscreen() }
 
     DisposableEffect(roomId) {
         miniPlayerManager.resetNavigationFlag()
@@ -543,7 +592,7 @@ private fun LiveRoomScreen(
         ExoPlayer.Builder(context)
             .setRenderersFactory(
                 androidx.media3.exoplayer.DefaultRenderersFactory(context)
-                    .setEnableDecoderFallback(true)
+                    .withAppVideoDecoderPreference(context)
             )
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(
@@ -554,7 +603,16 @@ private fun LiveRoomScreen(
                 /* handleAudioFocus= */ handleAudioFocus,
             )
             .setHandleAudioBecomingNoisy(true)
-            .build().apply { playWhenReady = true }
+            .build().withAppVideoDecoderDiagnostics(context).apply { playWhenReady = true }
+    }
+    val backgroundSession = com.android.purebilibili.feature.video.player.rememberPlayerBackgroundPlaybackSession(exoPlayer, "live:$bilibiliRoomId")
+    val backgroundOverride by backgroundSession.selection.collectAsStateWithLifecycle()
+    val backgroundPlaybackEnabled = backgroundOverride ?: savedBackgroundPlaybackEnabled
+    fun toggleBackgroundPlayback() {
+        val newValue = !backgroundPlaybackEnabled
+        backgroundSession.select(newValue)
+        coroutineScope.launch { backgroundSession.saveIfRemembered(context, newValue) }
+        Toast.makeText(context, if (newValue) "已开启后台播放" else "已关闭后台播放", Toast.LENGTH_SHORT).show()
     }
     com.android.purebilibili.feature.video.screen.VideoDetailKeepScreenOnEffect(
         window = activity?.window,
@@ -573,11 +631,29 @@ private fun LiveRoomScreen(
         if (livePageGlassSupported) retainedLiveGlassTexture = true
     }
     val liveHostLifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
+    val landscapeInteractionAvailable = isLandscape &&
+        (isFullscreen || liveLayoutMode == LiveRoomLayoutMode.LandscapeOverlay)
+    val landscapeInteractionVisible = showLandscapeInteraction && landscapeInteractionAvailable && liveVisualWorkActive &&
+        liveHostLifecycleState.isAtLeast(Lifecycle.State.RESUMED) &&
+        androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused &&
+        !miniPlayerManager.isMiniMode && !isPipRequested && activity?.isInPictureInPictureMode != true &&
+        liveDanmakuInteractionEnabled
+    LocalNavigationBackHandler(enabled = landscapeInteractionVisible) { showLandscapeInteraction = false }
     var liveBackdropRequired by remember(roomId, siteId) { mutableStateOf(true) }
+    val liveNavigationScope = com.android.purebilibili.core.ui.LocalVideoDetailNavigationTransitionScope.current
+    val liveTransitionCapturePaused by remember(liveNavigationScope) {
+        derivedStateOf {
+            liveNavigationScope?.let {
+                it.isRunning || it.isRemoving || it.relativeDepth != 0f
+            } == true
+        }
+    }
+    val liveCapturePaused = liveTransitionCapturePaused || !liveVisualWorkActive
     // 录制覆盖控件淡出，隐藏后停止；避免不可见控制层持续录制视频。
     val liveCaptureVisibility = androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (liveBackdropRequired) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween<Float>(
+        targetValue = if (liveBackdropRequired && !liveCapturePaused) 1f else 0f,
+        animationSpec = if (liveCapturePaused) androidx.compose.animation.core.snap<Float>()
+        else androidx.compose.animation.core.tween<Float>(
             com.android.purebilibili.feature.video.ui.overlay.PLAYER_GLASS_VISIBILITY_DURATION_MS,
         ),
         label = "livePlayerGlassCapture",
@@ -585,8 +661,14 @@ private fun LiveRoomScreen(
     val liveCaptureExiting by remember(liveCaptureVisibility) {
         derivedStateOf { liveCaptureVisibility.value > 0f }
     }
-    val captureLivePlayerPage = livePageGlassSupported && (liveBackdropRequired || liveCaptureExiting) &&
-        liveHostLifecycleState.isAtLeast(Lifecycle.State.STARTED) && !miniPlayerManager.isMiniMode
+    val captureLivePlayerPage = com.android.purebilibili.feature.video.ui.section.shouldCapturePlayerPageBackdrop(
+        glassSupported = livePageGlassSupported,
+        controlsRequestCapture = liveBackdropRequired || landscapeInteractionVisible,
+        controlsExitVisible = liveCaptureExiting,
+        hostStarted = liveHostLifecycleState.isAtLeast(Lifecycle.State.STARTED),
+        miniMode = miniPlayerManager.isMiniMode,
+        overlaysSuppressed = liveCapturePaused,
+    )
     val useTextureSurfaceForLivePlayer = com.android.purebilibili.feature.video.ui.section.shouldUsePlayerPageTexture(
         glassSupported = livePageGlassSupported,
         retainedGlassTexture = retainedLiveGlassTexture,
@@ -595,6 +677,7 @@ private fun LiveRoomScreen(
             hasSharedTransitionScope = sharedTransitionScope != null,
             hasAnimatedVisibilityScope = animatedVisibilityScope != null,
             requiresHdrSurfaceOutput = liveHdrSurfaceRequired,
+            hasContainerTransition = LocalLiveCardContainerActive.current,
         ),
     )
 
@@ -693,7 +776,7 @@ private fun LiveRoomScreen(
                     viewModel.onPlaybackStarted()
                     if (currentAutoEnterFullscreen && !didAutoEnterFullscreen) {
                         didAutoEnterFullscreen = true
-                        if (!isFullscreen) toggleFullscreen()
+                        if (!fullscreenRequested) currentToggleFullscreen()
                     }
                 }
                 CrashReporter.markLivePlaybackStage(if (playing) "playing" else "not_playing")
@@ -720,9 +803,9 @@ private fun LiveRoomScreen(
                     playbackState == Player.STATE_ENDED &&
                     currentAutoExitFullscreen &&
                     !currentIsRoomLive &&
-                    isFullscreen
+                    fullscreenRequested
                 ) {
-                    toggleFullscreen()
+                    currentToggleFullscreen()
                 }
             }
         }
@@ -910,13 +993,6 @@ private fun LiveRoomScreen(
         }
     }
 
-    val liveRequestedOrientationMode = remember(displayContext, isFullscreen, isPortraitLive) {
-        resolveLiveRequestedOrientationMode(
-            displayContext = displayContext,
-            isFullscreen = isFullscreen,
-            isPortraitLive = isPortraitLive,
-        )
-    }
     var previousLiveDisplayRole by remember {
         mutableStateOf(displayContext.foldableDisplayRole)
     }
@@ -935,18 +1011,8 @@ private fun LiveRoomScreen(
         previousLiveDisplayRole = displayContext.foldableDisplayRole
     }
     LaunchedEffect(activity, displayContext, liveRequestedOrientationMode) {
-        val requestedOrientation = when (liveRequestedOrientationMode) {
-            LiveRequestedOrientationMode.Unspecified ->
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            LiveRequestedOrientationMode.SensorLandscape ->
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            LiveRequestedOrientationMode.SensorPortrait ->
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            LiveRequestedOrientationMode.Portrait ->
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
         activity?.applyPlayerRequestedOrientation(
-            requestedOrientation = requestedOrientation,
+            requestedOrientation = liveRequestedOrientationMode.toActivityOrientation(),
             displayContext = displayContext,
         )
     }
@@ -1040,10 +1106,24 @@ private fun LiveRoomScreen(
                 )
             val showLiveDanmakuOverlay =
                 liveLayoutMode != LiveRoomLayoutMode.PortraitVerticalOverlay || isFullscreen
+            val liveDanmakuInPip = isPipRequested || activity?.isInPictureInPictureMode == true
             if (liveDanmakuLayerEnabled) {
-                // 竖向直播只切换可见性，保留消息订阅、时间轴与渲染器，避免进入全屏清空弹幕。
+                // 隐藏时保留渲染器并暂停，恢复后跟随直播时间；画中画沿用弹幕显示偏好。
                 LiveDanmakuOverlay(
                     danmakuFlow = viewModel.danmakuFlow,
+                    sessionKey = "$siteId:$roomId",
+                    active = showLiveDanmakuOverlay && (
+                        (liveVisualWorkActive && !miniPlayerManager.isMiniMode) ||
+                            (liveDanmakuInPip && !pipNoDanmaku)
+                        ),
+                    interactionEnabled = liveDanmakuInteractionEnabled && liveVisualWorkActive &&
+                        !liveDanmakuInPip && !miniPlayerManager.isMiniMode,
+                    onCaptureReady = { captureLiveDanmakuTap = it },
+                    onUserClick = onUserClick,
+                    onReport = { item ->
+                        if (canInteractWithRoom) reportTarget = item
+                        else Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show()
+                    },
                     isFullscreen = isFullscreen,
                     displayArea = liveDanmakuDisplayArea,
                     danmakuSettings = liveDanmakuSettings,
@@ -1066,6 +1146,10 @@ private fun LiveRoomScreen(
                     isPlaying = exoPlayer.playWhenReady,
                     isFullscreen = isFullscreen,
                     gesturePolicy = playerGesturePolicy,
+                    fullscreenRequested = fullscreenRequested,
+                    fullscreenGestureReverse = fullscreenGestureReverse,
+                    captureDanmakuTap = { captureLiveDanmakuTap?.invoke(it) },
+                    onDanmakuInteractionEnabledChange = { liveDanmakuInteractionEnabled = it },
                     showTopBar = shouldShowLivePlayerControlsTopBar(
                         layoutMode = liveLayoutMode,
                         isFullscreen = isFullscreen
@@ -1077,11 +1161,13 @@ private fun LiveRoomScreen(
                         if (exoPlayer.playWhenReady) exoPlayer.pause() else exoPlayer.play()
                     },
                     onToggleFullscreen = { toggleFullscreen() },
-                    onBack = { if (isFullscreen) toggleFullscreen() else exitLiveRoom() },
+                    onBack = { if (fullscreenRequested) toggleFullscreen() else exitLiveRoom() },
                     // 弹幕开关
                     isDanmakuEnabled = successState?.isDanmakuEnabled ?: true,
                     onToggleDanmaku = { toggleLiveDanmaku() },
                     onOpenDanmakuSettings = { showDanmakuSettingsDialog = true },
+                    danmakuSettingsSource = liveDanmakuSettingsSource,
+                    danmakuSettingsVisible = showDanmakuSettingsDialog,
                     onOpenBlockSettings = { showBlockDialog = true },
                     // [新增] 刷新
                     onRefresh = { viewModel.retry() },
@@ -1094,6 +1180,10 @@ private fun LiveRoomScreen(
                     onOpenVolume = { showVolumeDialog = true },
                     onOpenPlaybackPreferences = { showPlaybackPreferences = true },
                     onOpenSend = { openDanmakuInput() },
+                    showInteractionToggle = landscapeInteractionAvailable,
+                    interactionWindowVisible = landscapeInteractionVisible,
+                    interactionWindowSource = liveInteractionWindowSource,
+                    onToggleInteractionWindow = { showLandscapeInteraction = !showLandscapeInteraction },
                     videoFitDesc = videoAspectRatio.displayName,
                     videoFitOptions = listOf(VideoAspectRatio.STRETCH, VideoAspectRatio.FIT, VideoAspectRatio.FILL,
                         VideoAspectRatio.FIT_WIDTH, VideoAspectRatio.FIT_HEIGHT, VideoAspectRatio.ORIGINAL,
@@ -1172,36 +1262,46 @@ private fun LiveRoomScreen(
     }
 
     val chatContent: @Composable (Boolean, Boolean) -> Unit = { isOverlay, showHeader ->
-        LiveChatSection(
-            messages = if (liveSuperChatEnabled) chatHistory else chatHistory.filterNot { it.item.isSuperChat },
-            anchorUid = anchorInfo.uid,
-            canInteract = canInteractWithRoom,
-            isOverlay = isOverlay,
-            onUserClick = onUserClick,
-            onAtUser = { item ->
-                viewModel.setReplyTarget(item)
-                openDanmakuInput()
-            },
-            onBlockUser = { item ->
-                if (item.uid > 0L) {
-                    viewModel.shieldUser(item.uid)
-                } else {
-                    val keyword = item.uname.ifBlank { item.text }
-                    if (keyword.isNotBlank()) addLiveBlockKeyword(keyword)
-                }
-            },
-            onReportDanmaku = { item ->
-                reportTarget = item
-            },
-            listState = chatListState,
-            followingLatest = followingLatestChat,
-            onFollowingLatestChange = { followingLatestChat = it },
-            modifier = Modifier.fillMaxSize()
-        )
+        LiveRoomUpdates(viewModel.chatHistory) { chatHistory ->
+            val visibleMessages = remember(chatHistory, liveSuperChatEnabled) {
+                if (liveSuperChatEnabled) chatHistory else chatHistory.filterNot { it.item.isSuperChat }
+            }
+            LiveChatSection(
+                compact = landscapeInteractionAvailable,
+                messages = visibleMessages,
+                anchorUid = anchorInfo.uid,
+                canInteract = canInteractWithRoom,
+                isOverlay = isOverlay,
+                onUserClick = onUserClick,
+                onAtUser = { item ->
+                    viewModel.setReplyTarget(item)
+                    openDanmakuInput()
+                },
+                onBlockUser = { item ->
+                    if (item.uid > 0L) {
+                        viewModel.shieldUser(item.uid)
+                    } else {
+                        val keyword = item.uname.ifBlank { item.text }
+                        if (keyword.isNotBlank()) addLiveBlockKeyword(keyword)
+                    }
+                },
+                onReportDanmaku = { item ->
+                    reportTarget = item
+                },
+                listState = chatListState,
+                followingLatest = followingLatestChat,
+                onFollowingLatestChange = { followingLatestChat = it },
+                active = (!landscapeInteractionAvailable || (landscapeInteractionVisible && !landscapeInteractionCollapsed)) &&
+                    selectedInteractionTab == 0 && liveHostLifecycleState.isAtLeast(Lifecycle.State.RESUMED) &&
+                    !miniPlayerManager.isMiniMode && !isPipRequested && activity?.isInPictureInPictureMode != true,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 
     val interactionInput: @Composable (Boolean) -> Unit = { isOverlay ->
         LiveChatInputBar(
+            compact = landscapeInteractionAvailable,
             isOverlay = true,
             isDanmakuEnabled = successState?.isDanmakuEnabled ?: true,
             onToggleDanmaku = { toggleLiveDanmaku() },
@@ -1216,34 +1316,39 @@ private fun LiveRoomScreen(
     }
 
     val interactionContent: @Composable (Boolean, Boolean) -> Unit = { isOverlay, includeFooter ->
-        LivePrimaryInteractionPanel(
-            isOverlay = isOverlay,
-            selectedTab = selectedInteractionTab,
-            showSuperChat = liveSuperChatEnabled && liveSuperChatPanelEnabled,
-            superChatCount = superChatItems.size,
-            onSelectedTab = { selectedInteractionTab = it },
-            chatContent = { chatContent(isOverlay, false) },
-            persistentFooter = if (includeFooter) { { interactionInput(isOverlay) } } else null,
-            superChatContent = {
-                LiveSuperChatSection(
-                    items = superChatItems,
-                    listState = superChatListState,
-                    onCountdownPauseChange = { item, paused -> viewModel.setSuperChatMenuOpen(bilibiliRoomId, item.superChatId, paused) },
-                    persistent = liveSuperChatPersistent,
-                    modifier = Modifier.fillMaxSize(),
-                    onExpired = { item ->
-                        if (item.superChatId > 0L) {
-                            viewModel.dismissSuperChat(item.superChatId)
-                        }
-                    },
-                    onUserClick = onUserClick,
-                    onReport = { item ->
-                        if (canInteractWithRoom) reportTarget = item
-                        else Toast.makeText(context, "账号未登录", Toast.LENGTH_SHORT).show()
-                    },
-                )
-            },
-        )
+        LiveRoomCountUpdates(viewModel.superChatItems) { superChatCount ->
+            LivePrimaryInteractionPanel(
+                compact = landscapeInteractionAvailable,
+                isOverlay = isOverlay,
+                selectedTab = selectedInteractionTab,
+                showSuperChat = liveSuperChatEnabled && liveSuperChatPanelEnabled,
+                superChatCount = superChatCount,
+                onSelectedTab = { selectedInteractionTab = it },
+                chatContent = { chatContent(isOverlay, false) },
+                persistentFooter = if (includeFooter) { { interactionInput(isOverlay) } } else null,
+                superChatContent = {
+                    LiveRoomUpdates(viewModel.superChatItems) { superChatItems ->
+                        LiveSuperChatSection(
+                            items = superChatItems,
+                            listState = superChatListState,
+                            onCountdownPauseChange = { item, paused -> viewModel.setSuperChatMenuOpen(bilibiliRoomId, item.superChatId, paused) },
+                            persistent = liveSuperChatPersistent,
+                            modifier = Modifier.fillMaxSize(),
+                            onExpired = { item ->
+                                if (item.superChatId > 0L) {
+                                    viewModel.dismissSuperChat(item.superChatId)
+                                }
+                            },
+                            onUserClick = onUserClick,
+                            onReport = { item ->
+                                if (canInteractWithRoom) reportTarget = item
+                                else Toast.makeText(context, "账号未登录", Toast.LENGTH_SHORT).show()
+                            },
+                        )
+                    }
+                },
+            )
+        }
     }
 
     val keyboardModifier = if (liveKeyboardControlsEnabled) {
@@ -1330,7 +1435,10 @@ private fun LiveRoomScreen(
     LiveRoomLayout(
         mode = liveLayoutMode,
         isFullscreen = isFullscreen,
-        backgroundUrl = roomInfo.background,
+        backgroundUrl = when (liveLayoutMode) {
+            LiveRoomLayoutMode.PortraitPanel, LiveRoomLayoutMode.PortraitVerticalOverlay -> roomInfo.appBackground
+            else -> roomInfo.background
+        },
         hasObstructingHinge = hingeAdaptiveInfo.shouldAvoidHinge,
         modifier = Modifier.fillMaxSize(),
         header = roomAppBar,
@@ -1338,6 +1446,32 @@ private fun LiveRoomScreen(
         interaction = interactionContent,
         inputFooter = { interactionInput(true) },
     )
+
+    if (landscapeInteractionVisible) {
+        com.android.purebilibili.feature.live.components.LiveLandscapeInteractionWindow(
+            roomKey = "$siteId:$roomId",
+            glass = livePageGlassSupported,
+            source = liveInteractionWindowSource,
+            backdrop = livePlayerBackdrop.backdrop.takeIf { captureLivePlayerPage && livePlayerBackdrop.video.isReady },
+            onClose = { showLandscapeInteraction = false },
+            modifier = Modifier.fillMaxSize(),
+            onCollapsedChange = { landscapeInteractionCollapsed = it },
+            headerAction = {
+                LiveRoomCountUpdates(viewModel.superChatItems) { superChatCount ->
+                    if (liveSuperChatEnabled && liveSuperChatPanelEnabled &&
+                        (superChatCount > 0 || selectedInteractionTab == 1)
+                    ) {
+                        AppTextButton(onClick = { selectedInteractionTab = if (selectedInteractionTab == 0) 1 else 0 }) {
+                            AppText(
+                                if (selectedInteractionTab == 1) "弹幕" else "SC(${if (superChatCount > 99) "99+" else superChatCount.toString()})",
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            },
+        ) { interactionContent(true, true) }
+    }
 
     // SC 左下角非侵入式悬浮卡片（不遮挡中央视频画面，仅响应实时新 SC，带倒计时与独立关闭）
     // 跟随弹幕开关显示，并可在弹幕设置中独立关闭
@@ -1397,9 +1531,13 @@ private fun LiveRoomScreen(
 
     if (showDanmakuSettingsDialog) {
         LiveDanmakuSettingsDialog(
+            isFullscreen = isFullscreen,
+            source = liveDanmakuSettingsSource,
             danmakuEnabled = successState?.isDanmakuEnabled ?: true,
             displayArea = liveDanmakuDisplayArea,
-            fontScale = liveDanmakuSettings.fontScale,
+            normalFontScale = liveDanmakuStylePreview[LiveDanmakuStyleOption.NormalFontScale] ?: normalDanmakuSettings.fontScale,
+            fullscreenFontScale = liveDanmakuStylePreview[LiveDanmakuStyleOption.FullscreenFontScale] ?: fullscreenDanmakuSettings.fontScale,
+            advancedSettings = liveDanmakuSettings,
             opacity = liveDanmakuSettings.opacity,
             speed = liveDanmakuSettings.speed,
             allowScroll = liveDanmakuSettings.allowScroll,
@@ -1424,20 +1562,44 @@ private fun LiveRoomScreen(
                     SettingsManager.setDanmakuArea(context, area, liveDanmakuSettingsScope)
                 }
             },
-            onFontScaleChanged = { value ->
+            onStylePreview = { option, value -> draggingLiveDanmakuStyles[option] = value },
+            onStyleChanged = { option, value ->
+                val saved = savedLiveDanmakuStyleValue(option, normalDanmakuSettings, fullscreenDanmakuSettings, isLandscape, savedLiveSuperChatMaxWidthDp)
+                if (kotlin.math.abs(saved - value) < 0.0001f) pendingLiveDanmakuStyles.remove(option)
+                else pendingLiveDanmakuStyles[option] = value
+                draggingLiveDanmakuStyles.remove(option)
                 coroutineScope.launch {
-                    SettingsManager.setDanmakuFontScale(context, value, liveDanmakuSettingsScope)
+                    try {
+                        liveDanmakuWriteMutex.withLock {
+                            when (option) {
+                                LiveDanmakuStyleOption.NormalFontScale -> SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.PORTRAIT)
+                                LiveDanmakuStyleOption.FullscreenFontScale -> SettingsManager.setDanmakuFontScale(context, value, DanmakuSettingsScope.LANDSCAPE)
+                                LiveDanmakuStyleOption.Opacity -> SettingsManager.setDanmakuOpacity(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.Speed -> SettingsManager.setDanmakuSpeed(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.FontWeight -> SettingsManager.setDanmakuFontWeight(context, value.roundToInt(), liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.StrokeWidth -> SettingsManager.setDanmakuStrokeWidth(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.LineHeight -> SettingsManager.setDanmakuLineHeight(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.ScrollDuration -> SettingsManager.setDanmakuScrollDurationSeconds(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.StaticDuration -> SettingsManager.setDanmakuStaticDurationSeconds(context, value, liveDanmakuSettingsScope)
+                                LiveDanmakuStyleOption.SuperChatWidth -> SettingsManager.setLiveSuperChatMaxWidthDp(context, value.roundToInt())
+                            }
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (pendingLiveDanmakuStyles[option] == value) pendingLiveDanmakuStyles.remove(option)
+                        Toast.makeText(context, "弹幕设置保存失败，请重试", Toast.LENGTH_SHORT).show()
+                    }
                 }
             },
-            onOpacityChanged = { value ->
-                coroutineScope.launch {
-                    SettingsManager.setDanmakuOpacity(context, value, liveDanmakuSettingsScope)
-                }
+            onMassiveModeChanged = { value ->
+                coroutineScope.launch { SettingsManager.setDanmakuMassiveMode(context, value, liveDanmakuSettingsScope) }
             },
-            onSpeedChanged = { value ->
-                coroutineScope.launch {
-                    SettingsManager.setDanmakuSpeed(context, value, liveDanmakuSettingsScope)
-                }
+            onStaticToScrollChanged = { value ->
+                coroutineScope.launch { SettingsManager.setDanmakuStaticToScroll(context, value, liveDanmakuSettingsScope) }
+            },
+            onFixedVelocityChanged = { value ->
+                coroutineScope.launch { SettingsManager.setDanmakuScrollFixedVelocity(context, value, liveDanmakuSettingsScope) }
             },
             onToggleAllowScroll = {
                 coroutineScope.launch {
@@ -1489,11 +1651,6 @@ private fun LiveRoomScreen(
                     SettingsManager.setLiveSuperChatPersistent(context, !liveSuperChatPersistent)
                 }
             },
-            onSuperChatMaxWidthChanged = { widthDp ->
-                coroutineScope.launch {
-                    SettingsManager.setLiveSuperChatMaxWidthDp(context, widthDp)
-                }
-            },
             onToggleKeyboardControls = {
                 coroutineScope.launch {
                     SettingsManager.setLiveKeyboardControlsEnabled(context, !liveKeyboardControlsEnabled)
@@ -1508,6 +1665,7 @@ private fun LiveRoomScreen(
     }
 
     if (showBlockDialog) {
+        val shieldInfo by viewModel.shieldInfo.collectAsStateWithLifecycle()
         LiveDmBlockSheet(
             shieldInfo = shieldInfo,
             isLoggedIn = com.android.purebilibili.core.store.TokenManager.midCache != null,
@@ -1587,6 +1745,9 @@ private fun LiveRoomScreen(
     }
 
     if (showSendDanmakuSheet) {
+        val replyTarget by viewModel.replyTarget.collectAsStateWithLifecycle()
+        val isSending by viewModel.isSending.collectAsStateWithLifecycle()
+        val emoticonPackages by viewModel.emoticonPackages.collectAsStateWithLifecycle()
         LiveSendDanmakuSheet(
             onDismiss = {
                 showSendDanmakuSheet = false
@@ -1659,28 +1820,30 @@ private fun LivePortraitOverlayAppBar(
     onOpenRank: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val palette = rememberLiveChromePalette()
     val roomColorTokens = resolveLiveBiliPaiRoomColorTokens()
     val backIcon = rememberAppBackIcon()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .height(56.dp)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AppIconButton(
-            onClick = onBack,
-            modifier = Modifier.size(40.dp)
-        ) {
-            AppIcon(
-                backIcon,
-                contentDescription = "返回",
-                tint = roomColorTokens.inputOverlayColor
-            )
+    val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    val headerModifier = modifier
+        .fillMaxWidth()
+        .statusBarsPadding()
+        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+        .height(56.dp)
+        .padding(horizontal = 14.dp)
+    val moreSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    Row(modifier = headerModifier, verticalAlignment = Alignment.CenterVertically) {
+        LiveRoomHeaderGlassButton(glass = glass) {
+            AppIconButton(
+                onClick = onBack,
+                modifier = Modifier.size(if (glass) 34.dp else 40.dp)
+            ) {
+                AppIcon(
+                    backIcon,
+                    contentDescription = "返回",
+                    tint = roomColorTokens.inputOverlayColor
+                )
+            }
         }
+
         Row(
             modifier = Modifier.weight(1f).padding(horizontal = 10.dp)
                 .clickable(enabled = anchorInfo.uid > 0L) { onUserClick(anchorInfo.uid) },
@@ -1716,46 +1879,81 @@ private fun LivePortraitOverlayAppBar(
                 )
             }
         }
-        AppWindowActionMenu(
-            compact = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
-            anchorModifier = Modifier.size(30.dp),
-            modifier = Modifier.size(30.dp),
-            groups = listOf(
-                listOf(
-                    AppWindowAction(
-                        label = "复制链接",
-                        icon = Icons.Outlined.ContentCopy,
-                        onClick = onCopyLink,
-                    ),
-                    AppWindowAction(
-                        label = "分享直播间",
-                        icon = Icons.Outlined.Share,
-                        onClick = onShare,
-                    ),
-                    AppWindowAction(
-                        label = "分享至消息",
-                        icon = Icons.AutoMirrored.Outlined.ForwardToInbox,
-                        onClick = onShareToMessage,
-                    ),
-                    AppWindowAction(
-                        label = "浏览器打开",
-                        icon = Icons.Outlined.OpenInBrowser,
-                        onClick = onOpenBrowser,
+        LiveRoomHeaderGlassButton(
+            glass = glass,
+            modifier = if (glass) Modifier.appGlassMenuSource(moreSource) else Modifier,
+        ) {
+            AppWindowActionMenu(
+                compact = glass,
+                source = moreSource.takeIf { glass },
+                sourceCapturedByParent = glass,
+                anchorModifier = Modifier.size(if (glass) 34.dp else 30.dp),
+                modifier = Modifier.size(if (glass) 34.dp else 30.dp),
+                groups = listOf(
+                    listOf(
+                        AppWindowAction(
+                            label = "复制链接",
+                            icon = Icons.Outlined.ContentCopy,
+                            onClick = onCopyLink,
+                        ),
+                        AppWindowAction(
+                            label = "分享直播间",
+                            icon = Icons.Outlined.Share,
+                            onClick = onShare,
+                        ),
+                        AppWindowAction(
+                            label = "分享至消息",
+                            icon = Icons.AutoMirrored.Outlined.ForwardToInbox,
+                            onClick = onShareToMessage,
+                        ),
+                        AppWindowAction(
+                            label = "浏览器打开",
+                            icon = Icons.Outlined.OpenInBrowser,
+                            onClick = onOpenBrowser,
+                        ),
                     ),
                 ),
-            ),
-        ) {
-            AppIcon(
-                Icons.Filled.MoreVert,
-                contentDescription = "更多直播间操作",
-                tint = roomColorTokens.inputOverlayColor
-            )
+            ) {
+                AppIcon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "更多直播间操作",
+                    tint = roomColorTokens.inputOverlayColor
+                )
+            }
         }
+    }
+}
+
+/** 顶栏只有两个操作键拥有玻璃表面，主播信息区不附加材质或形变。 */
+@Composable
+private fun LiveRoomHeaderGlassButton(
+    glass: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    if (!glass) {
+        content()
+        return
+    }
+    com.android.purebilibili.feature.home.components.BottomBarMatchedReusableLiquidDock(
+        shape = CircleShape,
+        modifier = modifier.size(34.dp),
+        backdrop = LocalLiveRoomHeaderBackdrop.current,
+        reuseEnabled = true,
+        elasticFeedbackEnabled = true,
+        useNeutralLiquidContainer = true,
+        shellLensIntensity = com.android.purebilibili.feature.home.components.resolveFloatingDockGeometryScale(34f),
+    ) {
+        CompositionLocalProvider(
+            com.android.purebilibili.core.ui.components.LocalAppIconButtonGlassSurfaceProvided provides true,
+            com.android.purebilibili.core.ui.components.LocalAppTopBarIconDecorationEnabled provides false,
+        ) { content() }
     }
 }
 
 @Composable
 private fun LivePrimaryInteractionPanel(
+    compact: Boolean = false,
     isOverlay: Boolean = false,
     selectedTab: Int,
     showSuperChat: Boolean,
@@ -1785,10 +1983,11 @@ private fun LivePrimaryInteractionPanel(
             state = pagerState,
             modifier = Modifier.weight(1f),
         ) { page ->
-            Box(Modifier.fillMaxSize().padding(top = if (isOverlay) 12.dp else 0.dp, bottom = 12.dp)) {
+            Box(Modifier.fillMaxSize().padding(top = if (compact) 0.dp else if (isOverlay) 12.dp else 0.dp, bottom = if (compact) 4.dp else 12.dp)) {
                 if (page == 0) {
                     chatContent()
-                    if (showSuperChat && superChatCount > 0) {
+                    // 紧凑悬浮窗的切换入口位于标题栏，不覆盖消息，也不挤占正文高度。
+                    if (!compact && showSuperChat && superChatCount > 0) {
                         AppSurface(
                             onClick = { pagerScope.launch { pagerState.animateScrollToPage(1, animationSpec = androidx.compose.animation.core.tween(200)) } },
                             modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
@@ -1807,10 +2006,15 @@ private fun LivePrimaryInteractionPanel(
 }
 
 @Composable
+@kotlin.OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun LiveDanmakuSettingsDialog(
+    isFullscreen: Boolean,
+    source: com.android.purebilibili.core.ui.components.AppGlassMenuSource?,
     danmakuEnabled: Boolean,
     displayArea: Float,
-    fontScale: Float,
+    normalFontScale: Float,
+    fullscreenFontScale: Float,
+    advancedSettings: DanmakuSettings,
     opacity: Float,
     speed: Float,
     allowScroll: Boolean,
@@ -1827,188 +2031,211 @@ private fun LiveDanmakuSettingsDialog(
     keyboardControlsEnabled: Boolean,
     onToggleDanmaku: () -> Unit,
     onDisplayAreaSelected: (Float) -> Unit,
-    onFontScaleChanged: (Float) -> Unit,
-    onOpacityChanged: (Float) -> Unit,
-    onSpeedChanged: (Float) -> Unit,
+    onStylePreview: (LiveDanmakuStyleOption, Float) -> Unit,
+    onStyleChanged: (LiveDanmakuStyleOption, Float) -> Unit,
+    onMassiveModeChanged: (Boolean) -> Unit,
+    onStaticToScrollChanged: (Boolean) -> Unit,
+    onFixedVelocityChanged: (Boolean) -> Unit,
     onToggleAllowScroll: () -> Unit,
     onToggleAllowTop: () -> Unit,
     onToggleAllowBottom: () -> Unit,
     onToggleAllowColorful: () -> Unit,
     onToggleSuperChatFlash: () -> Unit,
     onToggleSuperChatPersistent: () -> Unit,
-    onSuperChatMaxWidthChanged: (Int) -> Unit,
     onToggleKeyboardControls: () -> Unit,
     onOpenBlock: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AppAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { AppText("弹幕设置") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium)
-            ) {
-                LiveSettingSwitchRow(
-                    title = "弹幕显示",
-                    checked = danmakuEnabled,
-                    onCheckedChange = { onToggleDanmaku() }
-                )
-                LiveDanmakuAreaSelector(
-                    currentArea = displayArea,
-                    onAreaSelected = onDisplayAreaSelected
-                )
-                LiveDanmakuStyleSliderRow(
-                    label = "字号",
-                    valueText = "${(fontScale * 100).roundToInt()}%",
-                    value = fontScale,
-                    valueRange = 0.5f..2.0f,
-                    steps = 5,
-                    onValueChangeFinished = onFontScaleChanged
-                )
-                LiveDanmakuStyleSliderRow(
-                    label = "不透明度",
-                    valueText = "${(opacity * 100).roundToInt()}%",
-                    value = opacity,
-                    valueRange = 0.2f..1.0f,
-                    steps = 3,
-                    onValueChangeFinished = onOpacityChanged
-                )
-                LiveDanmakuStyleSliderRow(
-                    label = "滚动速度",
-                    valueText = "${(speed * 100).roundToInt()}%",
-                    value = speed,
-                    valueRange = 0.5f..2.0f,
-                    steps = 5,
-                    onValueChangeFinished = onSpeedChanged
-                )
-                LiveSettingSwitchRow(
-                    title = "滚动弹幕",
-                    checked = allowScroll,
-                    onCheckedChange = { onToggleAllowScroll() }
-                )
-                LiveSettingSwitchRow(
-                    title = "顶部弹幕",
-                    checked = allowTop,
-                    onCheckedChange = { onToggleAllowTop() }
-                )
-                LiveSettingSwitchRow(
-                    title = "底部弹幕",
-                    checked = allowBottom,
-                    onCheckedChange = { onToggleAllowBottom() }
-                )
-                LiveSettingSwitchRow(
-                    title = "彩色弹幕",
-                    checked = allowColorful,
-                    onCheckedChange = { onToggleAllowColorful() }
-                )
-                LiveSettingSwitchRow(
-                    title = "显示醒目留言",
-                    checked = superChatEnabled,
-                    onCheckedChange = onSuperChatEnabledChange,
-                )
-                LiveSettingSwitchRow(
-                    title = "聊天区显示 SC 页面",
-                    checked = superChatPanelEnabled,
-                    onCheckedChange = { onToggleSuperChatPanel() },
-                )
-                LiveSettingSwitchRow(
-                    title = "醒目留言弹窗",
-                    checked = superChatFlashEnabled,
-                    onCheckedChange = { onToggleSuperChatFlash() }
-                )
-                LiveSettingSwitchRow(
-                    title = "SC 卡片常驻显示",
-                    checked = superChatPersistent,
-                    onCheckedChange = { onToggleSuperChatPersistent() }
-                )
-                LiveDanmakuStyleSliderRow(
-                    label = "全屏 SC 宽度",
-                    valueText = "${superChatMaxWidthDp} dp",
-                    value = superChatMaxWidthDp.toFloat(),
-                    valueRange = 260f..640f,
-                    steps = 18,
-                    onValueChangeFinished = { onSuperChatMaxWidthChanged(it.roundToInt()) }
-                )
-                LiveSettingSwitchRow(
-                    title = "键盘控制",
-                    checked = keyboardControlsEnabled,
-                    onCheckedChange = { onToggleKeyboardControls() }
-                )
-                if (keyboardControlsEnabled) {
-                    AppText(
-                        "Space/K 播放暂停 · F 全屏 · D 弹幕 · M 静音 · 方向键音量 · Q 点赞 · S 截图",
-                        color = AppContentColors.secondaryText(),
-                        style = MaterialTheme.typography.bodySmall,
+    var section by remember { mutableIntStateOf(0) }
+    val configuration = LocalConfiguration.current
+    val layoutPolicy = com.android.purebilibili.feature.video.ui.components.resolveDanmakuSettingsPanelLayoutPolicy(
+        isFullscreen = isFullscreen,
+        screenWidthDp = configuration.screenWidthDp,
+        screenHeightDp = configuration.screenHeightDp,
+    )
+    com.android.purebilibili.feature.video.ui.components.DanmakuSettingsPanelHost(
+        isFullscreen = isFullscreen,
+        layoutPolicy = layoutPolicy,
+        onDismiss = onDismiss,
+        source = source,
+    ) { requestDismiss ->
+        com.android.purebilibili.feature.video.ui.components.DanmakuSettingsPanelFrame(
+            layoutPolicy = layoutPolicy,
+            containerColor = AppSurfaceTokens.surface(),
+        ) {
+            // 玻璃页在同一面板内进入和返回；原生材质保留分区栏。
+            val glass = com.android.purebilibili.feature.video.ui.components.LocalPlayerGlassSettingsSurface.current
+            val sectionScrollStates = List(3) { rememberScrollState() }
+            com.android.purebilibili.feature.video.ui.components.DanmakuSettingsPanelBody(
+                onDismiss = requestDismiss,
+                title = if (glass) when (section) {
+                    1 -> "弹幕高级设置"
+                    2 -> "直播弹幕选项"
+                    else -> "弹幕设置"
+                } else "弹幕设置",
+                onBack = if (glass && section != 0) ({ section = 0 }) else null,
+                scrollState = sectionScrollStates[section],
+                navigation = {
+                    if (!glass) AppThemeAdaptiveTabRow(
+                        options = listOf("基础", "样式", "直播").mapIndexed { index, label -> AppSegmentOption(index, label) },
+                        selectedValue = section,
+                        onSelectionChange = { section = it },
+                        role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        miuixBackdrop = if (glass) com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop.current else null,
+                        liquidGlassAdaptIndicatorToLabel = !glass,
                     )
-                }
-                AppSurface(
-                    onClick = onOpenBlock,
-                    shape = AppShapes.container(ContainerLevel.Card),
-                    color = AppSurfaceTokens.surfaceContainerHigh().copy(alpha = 0.72f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(
-                            horizontal = AppSpacingTokens.Medium,
-                            vertical = AppSpacingTokens.Medium
-                        ),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AppIcon(Icons.Outlined.Block, contentDescription = null)
-                        Spacer(Modifier.width(AppSpacingTokens.Medium))
-                        AppText("屏蔽管理", modifier = Modifier.weight(1f))
+                },
+            ) {
+                when (section) {
+                    0 -> {
+                        LiveSettingSwitchRow(
+                            title = "弹幕显示",
+                            checked = danmakuEnabled,
+                            onCheckedChange = { onToggleDanmaku() }
+                        )
+                        LiveDanmakuAreaSelector(
+                            currentArea = displayArea,
+                            onAreaSelected = onDisplayAreaSelected
+                        )
+                        LiveDanmakuStyleSliderRow(
+                            label = "普通字号",
+                            valueText = { "${(it * 100).roundToInt()}%" },
+                            value = normalFontScale,
+                            valueRange = 0.5f..2.5f,
+                            steps = 199,
+                            defaultValue = DanmakuSettings().fontScale,
+                            onValuePreview = { onStylePreview(LiveDanmakuStyleOption.NormalFontScale, it) },
+                            onValueChangeFinished = { onStyleChanged(LiveDanmakuStyleOption.NormalFontScale, it) }
+                        )
+                        LiveDanmakuStyleSliderRow(
+                            label = "全屏字号",
+                            valueText = { "${(it * 100).roundToInt()}%" },
+                            value = fullscreenFontScale,
+                            valueRange = 0.5f..2.5f,
+                            steps = 199,
+                            defaultValue = DanmakuSettings().fontScale,
+                            onValuePreview = { onStylePreview(LiveDanmakuStyleOption.FullscreenFontScale, it) },
+                            onValueChangeFinished = { onStyleChanged(LiveDanmakuStyleOption.FullscreenFontScale, it) }
+                        )
+                        LiveDanmakuStyleSliderRow(
+                            label = "不透明度",
+                            valueText = { "${(it * 100).roundToInt()}%" },
+                            value = opacity,
+                            valueRange = 0f..1f,
+                            steps = 99,
+                            defaultValue = DanmakuSettings().opacity,
+                            onValuePreview = { onStylePreview(LiveDanmakuStyleOption.Opacity, it) },
+                            onValueChangeFinished = { onStyleChanged(LiveDanmakuStyleOption.Opacity, it) }
+                        )
+                        LiveDanmakuStyleSliderRow(
+                            label = "滚动速度",
+                            valueText = { "${(it * 100).roundToInt()}%" },
+                            value = speed,
+                            valueRange = 0.5f..3.0f,
+                            steps = 249,
+                            defaultValue = DanmakuSettings().speed,
+                            onValuePreview = { onStylePreview(LiveDanmakuStyleOption.Speed, it) },
+                            onValueChangeFinished = { onStyleChanged(LiveDanmakuStyleOption.Speed, it) }
+                        )
+                        AppText("按类型屏蔽", style = MaterialTheme.typography.labelLarge)
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.android.purebilibili.core.ui.components.AppFilterChip(!allowScroll, onToggleAllowScroll, label = { AppText("滚动") })
+                            com.android.purebilibili.core.ui.components.AppFilterChip(!allowTop, onToggleAllowTop, label = { AppText("顶部") })
+                            com.android.purebilibili.core.ui.components.AppFilterChip(!allowBottom, onToggleAllowBottom, label = { AppText("底部") })
+                            com.android.purebilibili.core.ui.components.AppFilterChip(!allowColorful, onToggleAllowColorful, label = { AppText("彩色") })
+                        }
+                    }
+                    1 -> LiveDanmakuAdvancedSettings(
+                        settings = advancedSettings,
+                        scrollEnabled = false,
+                        onStyleChanged = onStyleChanged,
+                        onStylePreview = onStylePreview,
+                        onMassiveModeChanged = onMassiveModeChanged,
+                        onStaticToScrollChanged = onStaticToScrollChanged,
+                        onFixedVelocityChanged = onFixedVelocityChanged,
+                    )
+                    else -> {
+                        if (glass) com.android.purebilibili.feature.video.ui.components.DanmakuSettingsSectionTitle("醒目留言")
+                        LiveSettingSwitchRow(
+                            title = "显示醒目留言",
+                            checked = superChatEnabled,
+                            onCheckedChange = onSuperChatEnabledChange,
+                        )
+                        LiveSettingSwitchRow(
+                            title = "聊天区显示 SC 页面",
+                            checked = superChatPanelEnabled,
+                            onCheckedChange = { onToggleSuperChatPanel() },
+                        )
+                        LiveSettingSwitchRow(
+                            title = "醒目留言弹窗",
+                            checked = superChatFlashEnabled,
+                            onCheckedChange = { onToggleSuperChatFlash() }
+                        )
+                        LiveSettingSwitchRow(
+                            title = "SC 卡片常驻显示",
+                            checked = superChatPersistent,
+                            onCheckedChange = { onToggleSuperChatPersistent() }
+                        )
+                        LiveDanmakuStyleSliderRow(
+                            label = "全屏 SC 宽度",
+                            valueText = { "${it.roundToInt()} dp" },
+                            value = superChatMaxWidthDp.toFloat(),
+                            valueRange = 260f..640f,
+                            steps = 18,
+                            defaultValue = 360f,
+                            onValuePreview = { onStylePreview(LiveDanmakuStyleOption.SuperChatWidth, it) },
+                            onValueChangeFinished = { onStyleChanged(LiveDanmakuStyleOption.SuperChatWidth, it) }
+                        )
+                        if (glass) com.android.purebilibili.feature.video.ui.components.DanmakuSettingsSectionTitle("操作")
+                        LiveSettingSwitchRow(
+                            title = "键盘控制",
+                            checked = keyboardControlsEnabled,
+                            onCheckedChange = { onToggleKeyboardControls() }
+                        )
+                        if (keyboardControlsEnabled) {
+                            AppText(
+                                "Space/K 播放暂停 · F 全屏 · D 弹幕 · M 静音 · 方向键音量 · Q 点赞 · S 截图",
+                                color = AppContentColors.secondaryText(),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
+                if (glass && section == 0) {
+                    com.android.purebilibili.feature.video.ui.components.DanmakuSettingsAction(
+                        title = "高级设置", onClick = { section = 1 },
+                    )
+                    com.android.purebilibili.feature.video.ui.components.DanmakuSettingsAction(
+                        title = "直播弹幕选项", onClick = { section = 2 },
+                    )
+                }
+                com.android.purebilibili.feature.video.ui.components.DanmakuSettingsAction(
+                    title = "屏蔽管理",
+                    onClick = onOpenBlock,
+                )
             }
-        },
-        confirmButton = {
-            AppTextButton(onClick = onDismiss) { AppText("完成") }
         }
-    )
+    }
 }
 
 @Composable
-private fun LiveDanmakuStyleSliderRow(
+internal fun LiveDanmakuStyleSliderRow(
     label: String,
-    valueText: String,
+    valueText: (Float) -> String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
-    onValueChangeFinished: (Float) -> Unit
+    defaultValue: Float,
+    onValuePreview: (Float) -> Unit,
+    onValueChangeFinished: (Float) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var localValue by remember(value) { mutableFloatStateOf(value) }
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.ExtraSmall)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppText(
-                text = label,
-                color = AppContentColors.secondaryText(),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            AppText(
-                text = valueText,
-                color = AppContentColors.secondaryText(),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        AppSlider(
-            value = localValue,
-            onValueChange = { localValue = it },
-            onValueChangeFinished = { onValueChangeFinished(localValue) },
-            valueRange = valueRange,
-            steps = steps,
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    contentDescription = label
-                    stateDescription = valueText
-                }
-        )
-    }
+    com.android.purebilibili.feature.video.ui.components.DanmakuSettingsSlider(
+        label = label, valueText = valueText, value = value, valueRange = valueRange,
+        steps = steps, defaultValue = defaultValue, onValuePreview = onValuePreview,
+        onValueChangeFinished = onValueChangeFinished, modifier = modifier,
+    )
 }
 
 @Composable
@@ -2016,71 +2243,16 @@ private fun LiveDanmakuAreaSelector(
     currentArea: Float,
     onAreaSelected: (Float) -> Unit
 ) {
-    data class LiveDanmakuAreaOption(
-        val value: Float,
-        val label: String,
-        val subtitle: String
+    com.android.purebilibili.feature.video.ui.components.DanmakuSettingsSlider(
+        label = "显示区域",
+        value = currentArea,
+        valueRange = 0.25f..1f,
+        steps = 2,
+        defaultValue = 0.5f,
+        valueText = { "${(it * 100).roundToInt()}%" },
+        onValuePreview = onAreaSelected,
+        onValueChangeFinished = onAreaSelected,
     )
-
-    val title = "弹幕区域"
-    val options = remember {
-        listOf(
-            LiveDanmakuAreaOption(0.25f, "1/4", "顶部"),
-            LiveDanmakuAreaOption(0.5f, "1/2", "半屏"),
-            LiveDanmakuAreaOption(0.75f, "3/4", "大部"),
-            LiveDanmakuAreaOption(1.0f, "全屏", "铺满")
-        )
-    }
-
-    AppSurface(
-        shape = AppShapes.container(ContainerLevel.Card),
-        color = AppSurfaceTokens.surfaceContainerHigh().copy(alpha = 0.72f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            Modifier.padding(
-                horizontal = AppSpacingTokens.Medium,
-                vertical = AppSpacingTokens.Medium
-            )
-        ) {
-            AppText(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(Modifier.height(AppSpacingTokens.Medium))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Small)
-            ) {
-                options.forEach { option ->
-                    val selected = kotlin.math.abs(currentArea - option.value) < 0.05f
-                    AppSingleChoiceRow(
-                        selected = selected,
-                        onClick = { onAreaSelected(option.value) },
-                        shape = AppShapes.borderedContainer(ContainerLevel.Card),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            AppText(
-                                text = option.label,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = AppSurfaceTokens.onSurfaceContainerHigh()
-                            )
-                            AppText(
-                                text = option.subtitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = AppSurfaceTokens.onSurfaceVariantSummary()
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

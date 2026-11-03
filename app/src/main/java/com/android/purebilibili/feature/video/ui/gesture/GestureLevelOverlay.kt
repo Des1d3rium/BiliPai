@@ -113,9 +113,15 @@ fun BoxScope.GestureLevelOverlayHost(
     modifier: Modifier = Modifier,
     glassBackdrop: Backdrop? = null,
     compact: Boolean = false,
+    // 调用方可在采样尚未就绪时维持玻璃布局；默认保留其他播放器的现有行为。
+    glassEnabled: Boolean = glassBackdrop != null,
+    glassTopInset: androidx.compose.ui.unit.Dp = 16.dp,
+    glassApplyTopSystemInsets: Boolean = true,
+    glassTopSystemInsets: WindowInsets? = null,
+    glassContentColorOverride: Color? = null,
 ) {
     val kind = resolveGestureLevelKind(mode) ?: return
-    val glass = glassBackdrop != null && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    val glass = glassEnabled && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     val playerChromeProfile = rememberAppPlayerChromeProfile()
     val style = rememberGestureLevelOverlayStyle(playerChromeProfile.tabPresentation)
     val motionSpec = remember { resolveVideoGestureMotionSpec() }
@@ -123,7 +129,7 @@ fun BoxScope.GestureLevelOverlayHost(
     val brightnessColor = colorResource(R.color.player_brightness_accent)
     val colorScheme = MaterialTheme.colorScheme
     val glassDarkTheme = resolveBottomBarDarkTheme(colorScheme.background)
-    val glassContentColor = colorScheme.onSurface
+    val glassContentColor = glassContentColorOverride ?: colorScheme.onSurface
     val miuixColorScheme = MiuixTheme.colorScheme
     val spec = remember(style, kind, percent, colorScheme, miuixColorScheme, brightnessColor) {
         resolveGestureLevelOverlaySpec(
@@ -156,8 +162,10 @@ fun BoxScope.GestureLevelOverlayHost(
             .align(if (glass) Alignment.TopCenter else spec.alignment)
             .then(
                 if (glass) Modifier
-                    .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
-                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .then(if (glassApplyTopSystemInsets) Modifier.windowInsetsPadding(
+                        glassTopSystemInsets ?: WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
+                    ) else Modifier)
+                    .padding(horizontal = 16.dp, vertical = glassTopInset)
                 else when (style) {
                     GestureLevelOverlayStyle.Md3 -> Modifier.fillMaxSize()
                     GestureLevelOverlayStyle.Miuix -> Modifier
@@ -202,10 +210,12 @@ fun BoxScope.GestureLevelOverlayHost(
                 modifier = Modifier
                     .width(if (compact) 240.dp else 360.dp)
                     .heightIn(min = 44.dp)
-                    .playerControlGlassSurface(
+                    .then(if (glassBackdrop == null) {
+                        Modifier.background(Color.Black.copy(alpha = 0.32f), RoundedCornerShape(50))
+                    } else Modifier.playerControlGlassSurface(
                         glassBackdrop,
                         darkTheme = glassDarkTheme,
-                    )
+                    ))
                     // Feedback taps must not toggle the player controls underneath.
                     .pointerInput(Unit) { detectTapGestures(onTap = {}) }
                     .padding(horizontal = 14.dp, vertical = 6.dp)

@@ -3,8 +3,6 @@ package com.android.purebilibili.core.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.toArgb
-import com.materialkolor.hct.Hct
 import com.android.purebilibili.core.store.ThemeRoleOverrides
 import com.android.purebilibili.core.store.WallpaperPaletteOverrides
 import com.android.purebilibili.core.store.WallpaperPaletteRole
@@ -29,6 +27,29 @@ internal fun resolveAppThemeEndpointPalette(
     // Wallpaper edits can change a role's backdrop. Repair only extended foregrounds
     // before either native bridge; glass on/off consumes the same corrected palette.
     val configured = if (preserveGeneratedPalette) enforceSeedTextContrast(overridden) else overridden
+    // Miuix 内容色板不随玻璃开关切换；玻璃控件的强调色单独提供。
+    if (uiStyle == AppUiStyle.MIUIX) {
+        val generatedMiuix = resolveMiuixColorsFromMaterialBridge(
+            createMiuixMaterialBridge(configured), darkTheme, useMonetMapping = true,
+        )
+        val miuix = if (source == Md3ColorSource.WALLPAPER_RETONED &&
+            WallpaperPaletteRole.SECONDARY in wallpaperOverrides.forMode(darkTheme)
+        ) generatedMiuix.copy(secondary = configured.secondary, onSecondary = configured.onSecondary)
+            else generatedMiuix
+        val material = alignMaterialSurfacesWithMiuix(
+            configured, miuix, preserveMaterialAccentRoles = true,
+        )
+        val glassAccent = if (liquidGlassEnabled && !preserveGeneratedPalette) {
+            resolveLiquidControlAccentColor(
+                source = source,
+                customSeed = customSeed,
+                generatedAccent = configured.primary,
+                roleOverridesEnabled = roleOverrides.enabled,
+                roleControlHex = if (darkTheme) roleOverrides.dark.controlAccentHex else roleOverrides.light.controlAccentHex,
+            )
+        } else material.primary
+        return AppThemePalette(material, miuix, glassAccent)
+    }
     val pickedAccent = resolveLiquidControlAccentColor(
         source = source,
         customSeed = customSeed,
@@ -36,22 +57,17 @@ internal fun resolveAppThemeEndpointPalette(
         roleOverridesEnabled = roleOverrides.enabled,
         roleControlHex = if (darkTheme) roleOverrides.dark.controlAccentHex else roleOverrides.light.controlAccentHex,
     )
-    // Native Miuix Standard adapts the picked seed for dark surfaces. Explicit dark
-    // role edits, generated palettes and glass retain their own color contracts.
-    // This shared endpoint also drives previews; light mode keeps the exact pick.
-    val adaptMiuixDarkAccent = uiStyle == AppUiStyle.MIUIX && darkTheme &&
-        !liquidGlassEnabled && !preserveGeneratedPalette && source == Md3ColorSource.CUSTOM &&
-        !roleOverrides.enabled
-    val selectedAccent = if (adaptMiuixDarkAccent) {
-        resolveMiuixDarkCustomAccent(pickedAccent)
-    } else pickedAccent
+    val selectedAccent = pickedAccent
     val exactPrimary = if (!preserveGeneratedPalette && source == Md3ColorSource.CUSTOM) configured.copy(
         primary = selectedAccent,
         onPrimary = resolveReadableForeground(selectedAccent),
     ) else configured
     val nativeMiuix = shouldUseNativeMiuixPalette(uiStyle)
     val nativeMiuixColors = if (nativeMiuix) {
-        resolveNativeMiuixColors(exactPrimary, darkTheme, amoledDarkTheme)
+        resolveNativeMiuixColors(
+            exactPrimary, darkTheme, amoledDarkTheme,
+            customRolesEnabled = source == Md3ColorSource.CUSTOM && roleOverrides.enabled && !preserveGeneratedPalette,
+        )
     } else null
     // 原生导航指示器、tonal 按钮及筛选胶囊消费 secondaryContainer，而非 primary。
     // 自定义色在关闭玻璃后也必须覆盖这个选中角色；只桥接颜色，不改原生布局和动效。
@@ -105,13 +121,4 @@ internal fun resolveCustomSelectionContentColor(accent: Color, container: Color)
         }
     }
     return target
-}
-
-/** Lower bright accents gently while lifting very dark picks to remain visible.
- * HCT retains the seed hue; tones 55–60 keep white switch handles above 3:1.
- * Text on the resulting fill is resolved independently via onPrimary.
- */
-internal fun resolveMiuixDarkCustomAccent(accent: Color): Color {
-    val seed = Hct.fromInt(accent.toArgb())
-    return Color(Hct.from(seed.hue, seed.chroma * 0.90, (seed.tone * 0.90).coerceIn(55.0, 60.0)).toInt())
 }

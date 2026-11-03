@@ -50,6 +50,30 @@ fun AppCompactInputField(
     LaunchedEffect(requester, autoFocusEnabled) {
         if (autoFocusEnabled) requester.requestFocus()
     }
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        // 原生输入框自行测量文字与边距，不把玻璃输入框的固定高度或胶囊形状带入此分支。
+        top.yukonga.miuix.kmp.basic.TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.heightIn(min = height).focusRequester(requester),
+            label = placeholder,
+            useLabelAsPlaceholder = true,
+            readOnly = readOnly,
+            singleLine = singleLine,
+            maxLines = maxLines,
+            interactionSource = interactionSource,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            leadingIcon = leadingIcon,
+            trailingIcon = trailingIcon,
+            colors = top.yukonga.miuix.kmp.basic.TextFieldDefaults.textFieldColors(
+                backgroundColor = if (containerColor == AppSurfaceTokens.searchContainer()) {
+                    top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.secondaryContainer
+                } else containerColor,
+            ),
+        )
+        return
+    }
     val textColor = AppContentColors.primaryText()
     BasicTextField(
         value = value,
@@ -125,6 +149,30 @@ fun AppCompactInputField(
     val requester = focusRequester ?: remember { FocusRequester() }
     LaunchedEffect(requester, autoFocusEnabled) {
         if (autoFocusEnabled) requester.requestFocus()
+    }
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        // 原生输入框自行测量文字与边距，不把玻璃输入框的固定高度或胶囊形状带入此分支。
+        top.yukonga.miuix.kmp.basic.TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.heightIn(min = height).focusRequester(requester),
+            label = placeholder,
+            useLabelAsPlaceholder = true,
+            readOnly = readOnly,
+            singleLine = singleLine,
+            maxLines = maxLines,
+            interactionSource = interactionSource,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            leadingIcon = leadingIcon,
+            trailingIcon = trailingIcon,
+            colors = top.yukonga.miuix.kmp.basic.TextFieldDefaults.textFieldColors(
+                backgroundColor = if (containerColor == AppSurfaceTokens.searchContainer()) {
+                    top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.secondaryContainer
+                } else containerColor,
+            ),
+        )
+        return
     }
     val textColor = AppContentColors.primaryText()
     BasicTextField(

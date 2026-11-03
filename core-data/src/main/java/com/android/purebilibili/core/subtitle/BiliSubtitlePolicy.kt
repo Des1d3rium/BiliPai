@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -94,7 +95,9 @@ enum class SubtitleAutoPreference {
     OFF,
     ON,
     WITHOUT_AI,
-    AUTO
+    AUTO,
+    /** 只自动启用中文字幕（含 AI 中文），没有中文字幕时不开启。 */
+    CHINESE_ONLY
 }
 
 private val SUBTITLE_JSON = Json {
@@ -251,8 +254,10 @@ fun parseBiliSubtitleBody(rawJson: String): List<SubtitleCue> {
             val obj = item.asJsonObjectOrNull() ?: return@mapNotNull null
             val fromSeconds = obj["from"].asDoubleOrNull() ?: return@mapNotNull null
             val toSeconds = obj["to"].asDoubleOrNull() ?: return@mapNotNull null
-            val content = obj["content"]?.jsonPrimitive?.content?.trim().orEmpty()
-            if (content.isBlank()) return@mapNotNull null
+            val content = (obj["content"] as? JsonPrimitive)?.content?.trim().orEmpty()
+            if (content.isBlank() || !fromSeconds.isFinite() || !toSeconds.isFinite() || toSeconds <= fromSeconds) {
+                return@mapNotNull null
+            }
             val startMs = (fromSeconds * 1000.0).toLong().coerceAtLeast(0L)
             val endMs = (toSeconds * 1000.0).toLong().coerceAtLeast(startMs)
             SubtitleCue(
@@ -263,7 +268,7 @@ fun parseBiliSubtitleBody(rawJson: String): List<SubtitleCue> {
                     val wordObject = wordElement.asJsonObjectOrNull() ?: return@mapNotNull null
                     val wordText = listOf("word", "text", "content")
                         .firstNotNullOfOrNull { key ->
-                            wordObject[key]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotBlank() }
+                            (wordObject[key] as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotBlank() }
                         }
                         ?: return@mapNotNull null
                     val startSeconds = wordObject["start"].asDoubleOrNull()
@@ -272,13 +277,12 @@ fun parseBiliSubtitleBody(rawJson: String): List<SubtitleCue> {
                     val endSeconds = wordObject["end"].asDoubleOrNull()
                         ?: wordObject["end_time"].asDoubleOrNull()
                         ?: return@mapNotNull null
-                    // 不同接口时间单位混用：大于 100000 视作毫秒，否则按秒
-                    val wordStartMs = if (startSeconds > 100_000.0) startSeconds.toLong() else (startSeconds * 1000.0).toLong()
-                    val wordEndMs = if (endSeconds > 100_000.0) endSeconds.toLong() else (endSeconds * 1000.0).toLong()
+                    val timing = resolveSubtitleWordTiming(startSeconds, endSeconds, startMs, endMs)
+                        ?: return@mapNotNull null
                     SubtitleWordSpan(
                         text = wordText,
-                        startMs = wordStartMs.coerceAtLeast(0L),
-                        endMs = wordEndMs.coerceAtLeast(wordStartMs)
+                        startMs = timing.first,
+                        endMs = timing.second,
                     )
                 }
             )
@@ -288,8 +292,43 @@ fun parseBiliSubtitleBody(rawJson: String): List<SubtitleCue> {
     }
 }
 
+/** 秒与毫秒候选必须落在所属句内；异常词时间不参与高亮，轻微越界截到句边界。 */
+private fun resolveSubtitleWordTiming(
+    start: Double,
+    end: Double,
+    cueStartMs: Long,
+    cueEndMs: Long,
+): Pair<Long, Long>? {
+    if (!start.isFinite() || !end.isFinite() || end <= start || cueEndMs <= cueStartMs) return null
+    val candidates = listOf(
+        (start * 1000.0).toLong() to (end * 1000.0).toLong(),
+        start.toLong() to end.toLong(),
+    ).filter { (from, to) -> to > from }
+    val timing = candidates.firstOrNull { (from, to) -> from >= cueStartMs && to <= cueEndMs }
+        ?: candidates.firstOrNull { (from, to) -> from < cueEndMs && to > cueStartMs }
+        ?: return null
+    return maxOf(timing.first, cueStartMs) to minOf(timing.second, cueEndMs)
+}
+
+/**
+ * B 站 AI 字幕的 lan 形如 ai-zh / ai-en，真实语言码在 ai- 之后。
+ * 归一化后才能与普通轨道按同一语言家族比较。
+ */
+private fun stripSubtitleAiLanguagePrefix(languageCode: String?): String {
+    val normalized = languageCode?.trim()?.lowercase().orEmpty()
+    if (normalized.isEmpty()) return ""
+    return normalized.removePrefix("ai-").ifBlank { normalized }
+}
+
+private fun isChineseSubtitleLanguage(languageCode: String?, languageLabel: String? = null): Boolean {
+    if (stripSubtitleAiLanguagePrefix(languageCode).startsWith("zh")) return true
+    // 少数接口只给 lan_doc，没有可用的语言码
+    val label = languageLabel.orEmpty()
+    return label.contains("中文") || label.contains("汉语") || label.contains("简体")
+}
+
 private fun resolveLanguageFamily(languageCode: String?): String? {
-    val normalized = languageCode?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val normalized = stripSubtitleAiLanguagePrefix(languageCode).takeIf { it.isNotBlank() } ?: return null
     return normalized.substringBefore('-').lowercase()
 }
 
@@ -319,12 +358,11 @@ fun resolveDefaultSubtitleLanguages(
         )
     }
 
+    // 中文字幕（含 AI 中文）优先于其它语言；中文内部官方优先于 AI。
     val primary = tracks.firstOrNull { track ->
-        track.lan.equals("zh-Hans", ignoreCase = true)
+        isChineseSubtitleLanguage(track.lan, track.lanDoc) && !isLikelyAiSubtitleTrack(track)
     } ?: tracks.firstOrNull { track ->
-        track.lan.equals("zh-CN", ignoreCase = true)
-    } ?: tracks.firstOrNull { track ->
-        track.lan.startsWith("zh", ignoreCase = true)
+        isChineseSubtitleLanguage(track.lan, track.lanDoc)
     } ?: findTrackByPreferredLanguage(
         tracks = tracks,
         preferredLanguage = preferredPrimaryLanguage
@@ -388,7 +426,9 @@ fun resolveSubtitleDisplayModeByAutoPreference(
     hasSecondaryTrack: Boolean,
     primaryTrackLikelyAi: Boolean,
     secondaryTrackLikelyAi: Boolean,
-    isMuted: Boolean
+    isMuted: Boolean,
+    primaryTrackLanguage: String?,
+    secondaryTrackLanguage: String?
 ): SubtitleDisplayMode {
     val defaultMode = resolveDefaultSubtitleDisplayMode(
         hasPrimaryTrack = hasPrimaryTrack,
@@ -412,6 +452,14 @@ fun resolveSubtitleDisplayModeByAutoPreference(
         SubtitleAutoPreference.AUTO -> {
             if (!defaultModeLikelyAi || isMuted) defaultMode else SubtitleDisplayMode.OFF
         }
+        // 只开中文字幕：主轨是中文就只开主轨（不叠加英文副轨），否则退回副轨，都没有就关闭。
+        SubtitleAutoPreference.CHINESE_ONLY -> when {
+            hasPrimaryTrack && isChineseSubtitleLanguage(primaryTrackLanguage) ->
+                SubtitleDisplayMode.PRIMARY_ONLY
+            hasSecondaryTrack && isChineseSubtitleLanguage(secondaryTrackLanguage) ->
+                SubtitleDisplayMode.SECONDARY_ONLY
+            else -> SubtitleDisplayMode.OFF
+        }
     }
 }
 
@@ -434,7 +482,9 @@ fun resolveSubtitlePreferenceSession(
         hasSecondaryTrack = hasSecondaryTrack,
         primaryTrackLikelyAi = primaryTrackLikelyAi,
         secondaryTrackLikelyAi = secondaryTrackLikelyAi,
-        isMuted = isMuted
+        isMuted = isMuted,
+        primaryTrackLanguage = primaryLanguage,
+        secondaryTrackLanguage = secondaryLanguage
     )
     return SubtitlePreferenceSession(
         key = sessionKey,
@@ -585,8 +635,5 @@ private fun JsonElement?.asJsonArrayOrNull(): JsonArray? {
 }
 
 private fun JsonElement?.asDoubleOrNull(): Double? {
-    return when (this) {
-        null -> null
-        else -> this.jsonPrimitive.doubleOrNull
-    }
+    return (this as? JsonPrimitive)?.doubleOrNull
 }

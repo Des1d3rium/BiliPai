@@ -68,7 +68,9 @@ data class ViewInfo(
     val honorReply: VideoHonorReply? = null,
     /** 新版简介分段:type=2 为 @提及,biz_id 是被@用户 mid,可跳空间。 */
     @SerialName("desc_v2")
-    val descV2: List<VideoDescSegment> = emptyList()
+    val descV2: List<VideoDescSegment> = emptyList(),
+    @SerialName("redirect_url")
+    val redirectUrl: String? = null
 ) {
     val isCooperation: Boolean
         get() = rights.isCooperation == 1 || staff.isNotEmpty()
@@ -171,6 +173,16 @@ data class Page(
     val part: String = "",
     val duration: Long = 0,
     @SerialName("first_frame") val firstFrame: String = "",
+    /** 分P尺寸；/x/player/pagelist 会返回，用于在播放信息加载前判断横竖屏。 */
+    val dimension: Dimension? = null,
+)
+
+/** /x/player/pagelist 的响应：只含分P列表，比 x/web-interface/view 轻量得多。 */
+@Serializable
+data class PageListResponse(
+    val code: Int = 0,
+    val message: String = "",
+    val data: List<Page>? = null
 )
 
 //  视频标签响应

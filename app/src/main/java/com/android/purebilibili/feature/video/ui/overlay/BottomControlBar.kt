@@ -167,10 +167,8 @@ internal fun resolveSubtitlePanelTrackOptions(trackOptions: List<SubtitleTrackOp
  */
 @Composable
 fun BottomControlBar(
-    isPlaying: Boolean,
     progress: PlayerProgress = PlayerProgress(),
     isFullscreen: Boolean,
-    onPlayPauseClick: () -> Unit,
     onSeek: (Long) -> Unit,
     onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
@@ -180,6 +178,7 @@ fun BottomControlBar(
     currentRatio: VideoAspectRatio = VideoAspectRatio.FIT,
     currentQualityLabel: String = "",
     onSpeedClick: () -> Unit = {},
+    onPortraitFullscreen: (() -> Unit)? = null,
     onRatioClick: () -> Unit = {},
     onQualityClick: () -> Unit = {},
     hasEpisodeEntry: Boolean = false,
@@ -226,6 +225,8 @@ fun BottomControlBar(
     val widthDp = viewportWidthDpOverride ?: LocalConfiguration.current.screenWidthDp
     val slotWidth = if (viewportIsLandscape && isFullscreen) 42.dp else 35.dp
     val showExtendedOptions = isFullscreen || widthDp >= 500
+    // 画面宽高描述视频视口，不代表页面方向；竖屏页面播放横向视频也属于内嵌控制栏。
+    val showInlineQuality = !isFullscreen
     val displayPosition = { (seekPositionProvider?.invoke() ?: seekPositionMs).coerceAtLeast(0L) }
     val progressLayout = remember(widthDp) {
         resolveVideoProgressBarLayoutPolicy(widthDp).copy(
@@ -256,7 +257,7 @@ fun BottomControlBar(
         Column(
             modifier = modifier.fillMaxWidth()
                 .semantics { testTagsAsResourceId = true }
-                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                .windowInsetsPadding(playerControlHorizontalInsets(isFullscreen, !viewportIsLandscape))
                 .padding(vertical = PILI_PLAYER_BOTTOM_VERTICAL_PADDING_DP.dp),
         ) {
             val seekInsets = WindowInsets.systemGestures.only(WindowInsetsSides.Horizontal).union(
@@ -282,7 +283,12 @@ fun BottomControlBar(
                     pbpRidgeSamples = if (heatmapEnabled) pbpRidgeSamples else emptyList(),
                     currentChapterProvider = { null },
                     onChapterClick = onChapterClick,
-                    modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter).testTag("player_progress"),
+                    // 进度条槽位固定为 14dp；预览按完整高度向上展开，不能被槽位压缩到按钮区。
+                    // 横竖屏与玻璃开关共用该槽位，控件行的位置不随拖动改变。
+                    modifier = Modifier
+                        .align(androidx.compose.ui.Alignment.BottomCenter)
+                        .testTag("player_progress")
+                        .wrapContentHeight(androidx.compose.ui.Alignment.Bottom, unbounded = isSeekScrubbing),
                 )
                 PlayerControlViewPointSegments(
                     progressProvider = progressProvider,
@@ -294,11 +300,11 @@ fun BottomControlBar(
                 )
             }
             PiliPlayerBar(
-                groupGlassControls = glass && !viewportIsLandscape,
+                groupGlassControls = false,
+                distributeActions = !isFullscreen,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(PILI_PLAYER_BOTTOM_ROW_HEIGHT_DP.dp)
                     .testTag("player_control_row"),
                 left = {
-                    if (!glass) PlayerPlayPauseButton(isPlaying, onPlayPauseClick)
                     PlayerControlGlassDock(enabled = glass, shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
                         ProgressTimeText(
                             positionProvider = displayPosition,
@@ -320,7 +326,15 @@ fun BottomControlBar(
                     }
                 },
                 right = {
-                    if (pbpRidgeSamples.isNotEmpty()) {
+                    // 竖屏内嵌控制栏优先提供画质入口，热度曲线仍按原设置绘制。
+                    if (showInlineQuality) {
+                        PlayerControlTextAction(
+                            text = currentQualityLabel.ifBlank { "画质" },
+                            description = "画质",
+                            onClick = onQualityClick,
+                            modifier = anchor(PlayerControlAnchor.QUALITY, "player_quality_action"),
+                        )
+                    } else if (pbpRidgeSamples.isNotEmpty()) {
                         PlayerControlIconAction(
                             icon = Icons.Filled.ShowChart, description = "高能进度条",
                             width = slotWidth, height = 30.dp, onClick = onHeatmapToggle,
@@ -371,6 +385,7 @@ fun BottomControlBar(
                             icon = if (subtitleControlState.enabled) Icons.Filled.ClosedCaption else Icons.Outlined.ClosedCaptionOff,
                             description = "字幕", width = slotWidth, height = 30.dp,
                             selected = subtitleControlState.enabled,
+                            selectedTint = com.android.purebilibili.core.ui.AppContentColors.accent(),
                             onClick = { localMenu = PlayerControlAnchor.SUBTITLE },
                             modifier = anchor(PlayerControlAnchor.SUBTITLE, "player_subtitle_action"),
                         )
@@ -379,7 +394,16 @@ fun BottomControlBar(
                         text = "${currentSpeed}X", description = "倍速", onClick = onSpeedClick,
                         modifier = anchor(PlayerControlAnchor.SPEED, "player_speed_action"),
                     )
-                    if (showExtendedOptions && currentQualityLabel.isNotEmpty()) {
+                    // 竖屏详情入口共用同一动作，玻璃与原生只由按钮材质决定外观。
+                    if (!isFullscreen && LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                        onPortraitFullscreen?.let { enterPortrait ->
+                            PlayerControlTextAction(
+                                text = "竖屏", description = "竖屏播放", onClick = enterPortrait,
+                                modifier = Modifier.testTag("player_portrait_fullscreen"),
+                            )
+                        }
+                    }
+                    if (!showInlineQuality && showExtendedOptions && currentQualityLabel.isNotEmpty()) {
                         PlayerControlTextAction(
                             text = currentQualityLabel, description = "画质", onClick = onQualityClick,
                             modifier = anchor(PlayerControlAnchor.QUALITY, "player_quality_action"),

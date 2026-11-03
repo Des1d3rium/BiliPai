@@ -11,6 +11,59 @@ import kotlin.test.assertTrue
 
 class LiveRoomLayoutPolicyTest {
     @Test
+    fun `landscape fullscreen keeps inline portrait layout until rotation arrives`() {
+        val mode = resolveLiveRequestedOrientationMode(isTabletDevice = false, isFullscreen = true)
+        val pending = shouldPresentLiveFullscreen(true, isLandscape = false, orientationMode = mode)
+        assertFalse(pending)
+        assertEquals(
+            LiveRoomLayoutMode.PortraitPanel,
+            resolveLiveRoomLayoutMode(false, false, pending, false),
+        )
+        val rotated = shouldPresentLiveFullscreen(true, isLandscape = true, orientationMode = mode)
+        assertTrue(rotated)
+        assertEquals(
+            LiveRoomLayoutMode.LandscapeOverlay,
+            resolveLiveRoomLayoutMode(true, false, rotated, false),
+        )
+    }
+
+    @Test
+    fun `pending fullscreen ignores repeated enter swipe and back cancels late rotation`() {
+        val requested = true
+        assertFalse(shouldToggleLiveFullscreenForDrag(-20f, 2.5f, requested, reverse = false))
+        assertTrue(shouldToggleLiveFullscreenForDrag(20f, 2.5f, requested, reverse = false))
+        val cancelledMode = resolveLiveRequestedOrientationMode(isTabletDevice = false, isFullscreen = false)
+        assertEquals(LiveRequestedOrientationMode.Portrait, cancelledMode)
+        assertFalse(shouldPresentLiveFullscreen(false, isLandscape = true, orientationMode = cancelledMode))
+    }
+
+    @Test
+    fun `portrait live and tablet fullscreen do not wait for landscape`() {
+        val portraitMode = resolveLiveRequestedOrientationMode(false, true, isPortraitLive = true)
+        assertTrue(shouldPresentLiveFullscreen(true, isLandscape = false, orientationMode = portraitMode))
+        val tabletMode = resolveLiveRequestedOrientationMode(true, true)
+        assertTrue(shouldPresentLiveFullscreen(true, isLandscape = false, orientationMode = tabletMode))
+    }
+
+    @Test
+    fun `phone split window enters fullscreen without waiting for physical rotation`() {
+        val splitWindow = resolveAppDisplayContext(
+            AppDisplayContextInput(
+                currentWindowWidthDp = 390,
+                currentWindowHeightDp = 440,
+                maximumWindowWidthDp = 390,
+                maximumWindowHeightDp = 844,
+                configurationOrientation = Configuration.ORIENTATION_PORTRAIT,
+                displayRotation = Surface.ROTATION_0,
+                isInMultiWindowMode = true,
+            ),
+        )
+        val mode = resolveLiveRequestedOrientationMode(splitWindow, isFullscreen = true)
+        assertEquals(LiveRequestedOrientationMode.Unspecified, mode)
+        assertTrue(shouldPresentLiveFullscreen(true, isLandscape = false, orientationMode = mode))
+    }
+
+    @Test
     fun `actual video dimensions include pixel aspect ratio and ignore unknown sizes`() {
         assertEquals(true, resolveLiveVideoIsPortrait(1080, 1920))
         assertEquals(false, resolveLiveVideoIsPortrait(1920, 1080))

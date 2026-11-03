@@ -1,10 +1,12 @@
 package com.android.purebilibili.feature.video
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.navigationevent.DirectNavigationEventInput
 import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventDispatcherOwner
 import androidx.navigationevent.NavigationEventHandler
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
@@ -75,6 +77,60 @@ class NavigationEventDisposalUiRegressionTest {
             root.addInput(input)
             input.backCompleted()
             assertEquals(2, completions)
+        }
+    }
+
+    @Test
+    fun lateComposeBackHandlerOnDisposedPageIsInertAndReentryStillHandlesBack() {
+        val visible = mutableStateOf(false)
+        val owner = mutableStateOf<NavigationEventDispatcherOwner?>(null)
+        lateinit var root: NavigationEventDispatcher
+        lateinit var removed: NavigationEventDispatcher
+        val input = DirectNavigationEventInput()
+        var completions = 0
+        rule.runOnIdle {
+            root = NavigationEventDispatcher()
+            root.addInput(input)
+            removed = NavigationEventDispatcher(root)
+            owner.value = object : NavigationEventDispatcherOwner {
+                override val navigationEventDispatcher = removed
+            }
+        }
+        rule.setContent {
+            if (visible.value) {
+                CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides checkNotNull(owner.value)) {
+                    BackHandler { completions++ }
+                }
+            }
+        }
+        try {
+            rule.runOnIdle {
+                // Parent teardown has already run when the deferred onRemembered arrives.
+                removed.dispose()
+                visible.value = true
+            }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                input.backCompleted()
+                assertEquals(0, completions)
+                visible.value = false
+            }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                owner.value = object : NavigationEventDispatcherOwner {
+                    override val navigationEventDispatcher = NavigationEventDispatcher(root)
+                }
+                visible.value = true
+            }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                input.backCompleted()
+                assertEquals(1, completions)
+            }
+        } finally {
+            rule.runOnIdle { visible.value = false }
+            rule.waitForIdle()
+            rule.runOnIdle { root.dispose() }
         }
     }
 

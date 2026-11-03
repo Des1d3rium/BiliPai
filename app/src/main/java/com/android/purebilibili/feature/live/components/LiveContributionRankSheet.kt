@@ -1,4 +1,6 @@
 package com.android.purebilibili.feature.live.components
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.ui.components.AppHorizontalDivider
 
 import androidx.compose.foundation.layout.Arrangement
@@ -72,12 +74,12 @@ fun LiveContributionRankSheet(
                 liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
                 role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
                 options = rankTypes.mapIndexed { index, type -> AppSegmentOption(index, type.title) },
-                selectedValue = pager.currentPage,
+                selectedValue = pager.tabSelectedPage,
                 onSelectionChange = { index -> scope.launch {
                     if (index == pager.currentPage) listStates[index].animateScrollToItem(0)
                     else com.android.purebilibili.navigation.animatePagerSelection(pager, index)
                 } },
-                indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+                indicatorPositionProvider = { pager.tabIndicatorPosition },
                 isScrollInProgressProvider = { pager.isScrollInProgress },
                 modifier = Modifier.fillMaxWidth(),
             )

@@ -1,5 +1,10 @@
 package com.android.purebilibili.feature.plugin.js
 
+import com.android.purebilibili.feature.home.rememberFeedGridColumnPreference
+import com.android.purebilibili.feature.home.effectiveGridColumnCount
+import com.android.purebilibili.feature.home.effectiveGridColumnCountCompact
+import com.android.purebilibili.feature.home.gridColumnPinchEnabled
+import com.android.purebilibili.core.util.LocalWindowSizeClass
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -17,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import com.android.purebilibili.core.ui.components.AppLazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import com.android.purebilibili.core.ui.rememberCompatibleStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.AppSurfaceTokens
@@ -138,10 +145,22 @@ fun BiliPaiJsPluginContentScreen(
     var detailItems by remember(pluginId) { mutableStateOf<List<BiliPaiJsMediaItem>>(emptyList()) }
     var isDetailLoading by remember(pluginId) { mutableStateOf(false) }
     var detailError by remember(pluginId) { mutableStateOf<String?>(null) }
-    val pinchToChangeGridColumnsEnabled by SettingsManager
-        .getPinchToChangeGridColumnsEnabled(context)
-        .collectAsStateWithLifecycle(initialValue = true)
-    var gridColumns by remember(pluginId) { mutableIntStateOf(BILI_PAI_JS_GRID_COLUMNS) }
+    val homeSettings by SettingsManager.getHomeSettings(context)
+        .collectAsStateWithLifecycle(initialValue = com.android.purebilibili.core.store.HomeSettings())
+    val windowSizeClass = LocalWindowSizeClass.current
+    val gridColumnPreference = androidx.compose.runtime.key(pluginId) {
+        rememberFeedGridColumnPreference(
+            settings = homeSettings,
+            widthSizeClass = windowSizeClass.widthSizeClass,
+            defaultColumns = com.android.purebilibili.feature.home.resolveHomeFeedStoredColumnCount(
+                windowSizeClass.widthSizeClass,
+                homeSettings.effectiveGridColumnCountCompact,
+                homeSettings.effectiveGridColumnCount,
+            ).takeIf { it > 0 } ?: BILI_PAI_JS_GRID_COLUMNS,
+            bounds = BILI_PAI_JS_PINCH_COLUMN_BOUNDS,
+            minimumColumns = BILI_PAI_JS_PINCH_COLUMN_BOUNDS.first,
+        )
+    }
     var imagePreview by remember { mutableStateOf<BiliPaiJsImagePreviewRequest?>(null) }
 
     imagePreview?.let { request ->
@@ -281,9 +300,10 @@ fun BiliPaiJsPluginContentScreen(
                 detailError = detailError,
                 detailSupported = current.manifest.supportsDetail,
                 isGridLayout = effectiveLayout == BiliPaiJsLayouts.GRID,
-                gridColumns = gridColumns,
-                pinchZoomEnabled = pinchToChangeGridColumnsEnabled,
-                onGridColumnsChange = { gridColumns = it },
+                gridColumns = gridColumnPreference.columns,
+                pinchZoomEnabled = homeSettings.gridColumnPinchEnabled,
+                onGridColumnsChange = gridColumnPreference.onChange,
+                onGridColumnsEnd = gridColumnPreference.onGestureEnd,
                 onPreviewImage = { images, index, rect ->
                     imagePreview = resolveBiliPaiJsImagePreviewRequest(images, index, rect)
                 },
@@ -339,6 +359,7 @@ private fun PluginContent(
     gridColumns: Int,
     pinchZoomEnabled: Boolean,
     onGridColumnsChange: (Int) -> Unit,
+    onGridColumnsEnd: (Int) -> Unit,
     onPreviewImage: (List<String>, Int, Rect?) -> Unit,
     onShareLayout: () -> Unit,
     onSelectModule: (BiliPaiJsModule) -> Unit,
@@ -348,12 +369,12 @@ private fun PluginContent(
     onBackFromDetail: () -> Unit,
     onPlayItem: (BiliPaiJsMediaItem) -> Unit
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberCompatibleStaggeredGridState()
     val inDetailView = detailStack.isNotEmpty()
     val shouldLoadMore by remember(canLoadMore, isLoadingMore, inDetailView) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
             canLoadMore && !isLoadingMore && !inDetailView && layoutInfo.totalItemsCount > 0 &&
                 lastVisibleIndex >= layoutInfo.totalItemsCount - 4
         }
@@ -362,19 +383,21 @@ private fun PluginContent(
         if (shouldLoadMore) onLoadMore()
     }
 
-    LazyColumn(
+    AppLazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(if (isGridLayout && !inDetailView) gridColumns.coerceAtLeast(1) else 1),
         modifier = modifier.homeFeedPinchZoom(
             enabled = pinchZoomEnabled && isGridLayout && !inDetailView,
             currentColumns = gridColumns,
             bounds = BILI_PAI_JS_PINCH_COLUMN_BOUNDS,
             onColumnsChange = onGridColumnsChange,
-            onGestureEnd = onGridColumnsChange,
+            onGestureEnd = onGridColumnsEnd,
         ),
         state = listState,
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalItemSpacing = 12.dp,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
+        item(span = StaggeredGridItemSpan.FullLine) {
             AppText(
                 text = installed.manifest.description.ifBlank { "${installed.manifest.id} · v${installed.manifest.version}" },
                 style = MaterialTheme.typography.bodyMedium,
@@ -382,7 +405,7 @@ private fun PluginContent(
             )
         }
         if (inDetailView) {
-            item(key = "js_detail_header") {
+            item(key = "js_detail_header", span = StaggeredGridItemSpan.FullLine) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     AppAssistChip(
                         onClick = onBackFromDetail,
@@ -396,7 +419,7 @@ private fun PluginContent(
                 }
             }
         } else {
-            item {
+            item(span = StaggeredGridItemSpan.FullLine) {
                 val modules = installed.manifest.modules
                 if (modules.isNotEmpty() && selectedModule != null) {
                     AppThemeAdaptiveTabRow(
@@ -416,7 +439,7 @@ private fun PluginContent(
                 }
             }
             selectedModule?.params?.filterNot { it.isHostDriven }?.takeIf { it.isNotEmpty() }?.let { params ->
-                item {
+                item(span = StaggeredGridItemSpan.FullLine) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         params.forEach { param ->
                             if (param.hasSelectableOptions) {
@@ -445,7 +468,7 @@ private fun PluginContent(
         }
         val activeLoading = if (inDetailView) isDetailLoading else isLoading
         if (activeLoading) {
-            item {
+            item(span = StaggeredGridItemSpan.FullLine) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -459,7 +482,7 @@ private fun PluginContent(
         }
         val activeError = if (inDetailView) detailError else errorMessage
         activeError?.let { message ->
-            item {
+            item(span = StaggeredGridItemSpan.FullLine) {
                 AppText(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
@@ -470,32 +493,33 @@ private fun PluginContent(
         val activeItems = if (inDetailView) detailItems else mediaItems
         val flattenedItems = flattenMediaItems(activeItems)
         if (isGridLayout && !inDetailView) {
-            flattenedItems.chunked(gridColumns.coerceAtLeast(1)).forEachIndexed { rowIndex, rowItems ->
-                item(key = "js_grid_${rowIndex}_${rowItems.first().id}") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        rowItems.forEach { rowItem ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                BiliPaiJsPosterCard(
-                                    item = rowItem,
-                                    onPlay = { onPlayItem(rowItem) },
-                                    onOpen = {
-                                        rowItem.link?.takeIf { it.isNotBlank() }?.let { link ->
-                                            onOpenLink(BiliPaiJsDetailEntry(link = link, title = rowItem.title))
-                                        }
-                                    },
-                                    onPreviewImage = onPreviewImage
-                                )
-                            }
-                        }
-                        repeat(gridColumns.coerceAtLeast(1) - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
+            val posterKeys = flattenedItems.mapIndexed { index, item -> "js_grid_${index}_${item.id}" }
+            val columns = gridColumns.coerceAtLeast(1)
+            com.android.purebilibili.feature.home.resolveHomeFeedAlignedRows(flattenedItems.size, columns)
+                .forEach { row ->
+                    item(key = "js_poster_row_${posterKeys[row.first]}", span = StaggeredGridItemSpan.FullLine) {
+                        com.android.purebilibili.feature.home.HomeAlignedVideoRow(
+                            indices = row,
+                            itemKeys = posterKeys,
+                            columns = columns,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { index, cardModifier ->
+                            val rowItem = flattenedItems[index]
+                            BiliPaiJsPosterCard(
+                                item = rowItem,
+                                modifier = cardModifier,
+                                onPlay = { onPlayItem(rowItem) },
+                                onOpen = {
+                                    rowItem.link?.takeIf { it.isNotBlank() }?.let { link ->
+                                        onOpenLink(BiliPaiJsDetailEntry(link = link, title = rowItem.title))
+                                    }
+                                },
+                                onPreviewImage = onPreviewImage,
+                            )
                         }
                     }
                 }
-            }
         } else {
             items(
                 count = flattenedItems.size,
@@ -519,7 +543,7 @@ private fun PluginContent(
             }
         }
         if (!inDetailView && (canLoadMore || isLoadingMore)) {
-            item(key = "js_media_load_more") {
+            item(key = "js_media_load_more", span = StaggeredGridItemSpan.FullLine) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -564,6 +588,7 @@ private fun resolveBiliPaiJsImagePreviewRequest(
 @Composable
 private fun BiliPaiJsPosterCard(
     item: BiliPaiJsMediaItem,
+    modifier: Modifier = Modifier,
     onPlay: () -> Unit,
     onOpen: () -> Unit,
     onPreviewImage: (List<String>, Int, Rect?) -> Unit
@@ -579,7 +604,7 @@ private fun BiliPaiJsPosterCard(
     val canOpenDetail = !item.isPlayable && !item.link.isNullOrBlank()
     val sourceRectState = rememberImagePreviewSourceRect()
     AppSurface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(AppShapes.container(ContainerLevel.Card))
             .combinedClickable(

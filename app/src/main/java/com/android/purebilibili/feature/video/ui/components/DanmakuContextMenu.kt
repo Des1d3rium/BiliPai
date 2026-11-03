@@ -123,6 +123,8 @@ internal fun resolveValidDanmakuTimestampJumpMs(text: String, durationMs: Long):
 fun DanmakuContextMenu(
     text: String,
     onDismiss: () -> Unit,
+    tapAnchor: com.android.purebilibili.feature.video.danmaku.DanmakuTapAnchor? = null,
+    onExpandActions: () -> Unit = {},
     onLike: () -> Unit,
     onRecall: () -> Unit,
     canRecall: Boolean = false,
@@ -143,6 +145,30 @@ fun DanmakuContextMenu(
     val context = LocalContext.current
     var currentPage by remember { mutableStateOf(DanmakuContextMenuPage.MAIN) }
     var showTextSelectionSheet by remember { mutableStateOf(false) }
+    var expanded by remember(text, tapAnchor) { mutableStateOf(false) }
+    val jumpMs = timestampJumpMs?.takeIf { it > 0 && it < durationMs }
+    if (tapAnchor != null && !expanded) {
+        DanmakuActionToolbar(
+            anchor = tapAnchor,
+            hasLiked = hasLiked,
+            voteCount = voteCount,
+            canVote = canVote,
+            voteLoading = voteLoading,
+            canRecall = canRecall,
+            hasTimestamp = jumpMs != null,
+            onDismiss = onDismiss,
+            onLike = { onLike(); onDismiss() },
+            onCopy = { copyPlainTextToClipboard(context, text); onDismiss() },
+            onReportOrRecall = {
+                currentPage = if (canRecall) DanmakuContextMenuPage.RECALL_CONFIRM else DanmakuContextMenuPage.REPORT
+                onExpandActions()
+                expanded = true
+            },
+            onTimestamp = { jumpMs?.let(onSeekToTimestamp); onDismiss() },
+            onMore = { onExpandActions(); expanded = true },
+        )
+        return
+    }
 
     if (showTextSelectionSheet) {
         TextSelectionBottomSheet(

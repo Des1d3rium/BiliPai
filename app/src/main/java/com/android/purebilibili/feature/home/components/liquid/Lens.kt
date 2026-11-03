@@ -12,4 +12,8 @@ fun BackdropEffectScope.lens(
     depthEffect: Boolean = false,
     chromaticAberration: Float = 0f,
     chromaticEdgeBand: Float? = null,
-) = sharedLens(refractionHeight, refractionAmount, depthEffect, chromaticAberration, chromaticEdgeBand)
+    chromaticBandHorizontal: Boolean = false,
+) = sharedLens(
+    refractionHeight, refractionAmount, depthEffect, chromaticAberration, chromaticEdgeBand,
+    chromaticBandHorizontal = chromaticBandHorizontal,
+)

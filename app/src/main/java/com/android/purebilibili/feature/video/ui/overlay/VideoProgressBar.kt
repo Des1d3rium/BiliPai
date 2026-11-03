@@ -1,5 +1,10 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
+import android.os.SystemClock
+import com.android.purebilibili.core.player.SeekTickHapticPolicy
+import com.android.purebilibili.core.ui.AppHapticScene
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -82,12 +87,16 @@ fun VideoProgressBar(
     val currentOnSeekDragStart by rememberUpdatedState(onSeekDragStart)
     val currentOnSeekDragUpdate by rememberUpdatedState(onSeekDragUpdate)
     val currentOnSeekDragCancel by rememberUpdatedState(onSeekDragCancel)
+    // 拖动进度条刻度触感：拖起轻振，跨过整秒时短振，快速滑动按 60ms 限频。
+    val seekHaptic = rememberHapticFeedback(AppHapticScene.PLAYER_SEEK)
+    val seekHapticPolicy = remember { SeekTickHapticPolicy() }
     LaunchedEffect(displayPositionMs, isSeekScrubbing) {
         if (!isSeekScrubbing) {
             dragTargetPositionMs = displayPositionMs.coerceAtLeast(0L)
         }
     }
 
+    val glassTrackHighlight = rememberPlayerProgressGlassHighlight()
     val uiSkinState = LocalUiSkinState.current
     val progressSkin = uiSkinState.activeSkin?.takeIf {
         uiSkinState.enabled && UiSkinSurface.PLAYER_PROGRESS in it.manifest.surfaces
@@ -135,7 +144,9 @@ fun VideoProgressBar(
         else layoutPolicy.baseHeightWithoutChapterDp.dp
     ) * verticalHeightScale
     val previewImageHeightDp = if (videoshotData?.isValid == true) {
-        resolveSeekPreviewBubbleHeightDp(LocalConfiguration.current.screenWidthDp)
+        resolveSeekPreviewBubbleHeightDp(
+            LocalConfiguration.current.screenWidthDp, LocalConfiguration.current.screenHeightDp,
+        ).takeIf { it > 0 }
     } else null
     val previewAreaHeightDp = if (isSeekScrubbing) {
         resolveVideoProgressPreviewAreaHeightDp(
@@ -205,6 +216,10 @@ fun VideoProgressBar(
                                     currentOnSeekStart()
                                     currentOnSeekDragStart(targetPositionMs)
                                     currentOnSeekDragUpdate(targetPositionMs)
+                                    if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                                        seekHaptic(HapticType.LIGHT)
+                                    }
+                                    seekHapticPolicy.finish()
                                     currentOnSeek(targetPositionMs)
                                 }
                             }
@@ -226,6 +241,9 @@ fun VideoProgressBar(
                                             dragTargetPositionMs = targetPositionMs
                                             currentOnSeekStart()
                                             currentOnSeekDragStart(targetPositionMs)
+                                            if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                                                seekHaptic(HapticType.LIGHT)
+                                            }
                                         },
                                         onDrag = { change, _ ->
                                             change.consume()
@@ -237,6 +255,9 @@ fun VideoProgressBar(
                                             latestDragPositionMs = targetPositionMs
                                             dragTargetPositionMs = targetPositionMs
                                             currentOnSeekDragUpdate(targetPositionMs)
+                                            if (seekHapticPolicy.update(targetPositionMs, SystemClock.uptimeMillis())) {
+                                                seekHaptic(HapticType.GESTURE_STEP)
+                                            }
                                         },
                                         onDragEnd = {
                                             val commitPositionMs = resolveSeekDragCommitPositionMs(
@@ -245,15 +266,18 @@ fun VideoProgressBar(
                                             )
                                             dragInProgress = false
                                             currentOnSeek(commitPositionMs)
+                                            seekHapticPolicy.finish()
                                         },
                                         onDragCancel = {
                                             dragInProgress = false
                                             currentOnSeekDragCancel()
+                                            seekHapticPolicy.finish()
                                         }
                                     )
                                 } finally {
                                     if (shouldCancelSeekDragOnPointerInputCompletion(dragInProgress)) {
                                         currentOnSeekDragCancel()
+                                        seekHapticPolicy.finish()
                                     }
                                 }
                             }
@@ -371,6 +395,7 @@ fun VideoProgressBar(
                                         bufferedColor = bufferedTrackColor,
                                         inactiveColor = inactiveTrackColor,
                                     )
+                                    glassTrackHighlight?.draw(this, trackHeightPx)
                                     sponsorLines.forEach { (start, end, color) ->
                                         drawLine(color, start, end, trackHeightPx, StrokeCap.Round)
                                     }
@@ -441,9 +466,11 @@ private fun ProgressSeekPreview(
     if (videoshotData != null && videoshotData.isValid) {
         SeekPreviewBubble(videoshotData = videoshotData, targetPositionMs = target,
             currentPositionMs = currentPosition, durationMs = duration, offsetX = thumbCenterXPx,
-            containerWidth = containerWidthPx, placement = placement)
+            containerWidth = containerWidthPx, placement = placement,
+            modifier = Modifier.testTag("player_seek_preview"))
     } else {
         SeekPreviewBubbleSimple(targetPositionMs = target, currentPositionMs = currentPosition,
-            offsetX = thumbCenterXPx, containerWidth = containerWidthPx, placement = placement)
+            offsetX = thumbCenterXPx, containerWidth = containerWidthPx, placement = placement,
+            modifier = Modifier.testTag("player_seek_preview"))
     }
 }

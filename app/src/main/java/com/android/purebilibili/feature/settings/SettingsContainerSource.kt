@@ -1,5 +1,8 @@
 package com.android.purebilibili.feature.settings
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
@@ -29,6 +32,9 @@ internal class SettingsContainerAnchor {
     }
 }
 
+/** 圆形等主容器之外、仍需随来源一起移动的局部内容。 */
+internal data class SettingsContainerCompanion(val layer: GraphicsLayer, val bounds: Rect)
+
 internal class SettingsContainerSource(
     val anchor: SettingsContainerAnchor,
     var layer: GraphicsLayer,
@@ -36,19 +42,47 @@ internal class SettingsContainerSource(
     val bounds: Rect,
     val hostSize: IntSize,
     val originInRoot: Offset,
-    val color: Color,
+    color: Color,
     val topRadius: Float,
     val bottomRadius: Float,
+    // 头像只作短程内容交接，容器仍展开到页面；设置行与直播封面保留整块缩放。
+    val avatarSource: Boolean = false,
 ) {
-    fun isUsable(size: IntSize): Boolean {
+    // 来源图层随主题重录，底色也必须同步，不能保留点击时的配色。
+    var color by mutableStateOf(color)
+    // 当次捕获拥有开合状态，主题或嵌套入口更新转场对象时不能重置。
+    var previewImageUrl: String? = null
+    var hasOpened = false
+    var companions: List<SettingsContainerCompanion> = emptyList()
+    var returnInFlight: () -> Boolean = { false }
+
+    fun isUsable(size: IntSize, expectedSourceScale: Float = 1f): Boolean {
         val liveBounds = anchor.boundsInRoot?.translate(-originInRoot) ?: return false
         return anchor.coordinates?.isAttached == true && anchor.recorded && size == hostSize &&
             bounds.width > 1f && bounds.height > 1f &&
-            kotlin.math.abs(liveBounds.left - bounds.left) < 1f &&
-            kotlin.math.abs(liveBounds.top - bounds.top) < 1f &&
-            kotlin.math.abs(liveBounds.width - bounds.width) < 1f &&
-            kotlin.math.abs(liveBounds.height - bounds.height) < 1f
+            matchesSettingsContainerSourceBounds(liveBounds, bounds, hostSize, expectedSourceScale)
     }
+}
+
+/** 图层景深可能更新全局坐标，也可能只更新绘制；两种合法坐标都不能误判为列表滚动。 */
+internal fun matchesSettingsContainerSourceBounds(
+    liveBounds: Rect,
+    capturedBounds: Rect,
+    hostSize: IntSize,
+    expectedSourceScale: Float,
+): Boolean {
+    fun matches(expected: Rect): Boolean =
+        kotlin.math.abs(liveBounds.left - expected.left) < 1f &&
+            kotlin.math.abs(liveBounds.top - expected.top) < 1f &&
+            kotlin.math.abs(liveBounds.width - expected.width) < 1f &&
+            kotlin.math.abs(liveBounds.height - expected.height) < 1f
+    if (matches(capturedBounds)) return true
+    if (!expectedSourceScale.isFinite() || expectedSourceScale <= 0f) return false
+    val center = Offset(hostSize.width / 2f, hostSize.height / 2f)
+    return matches(Rect(
+        center + (capturedBounds.topLeft - center) * expectedSourceScale,
+        center + (capturedBounds.bottomRight - center) * expectedSourceScale,
+    ))
 }
 
 internal class SettingsContainerSources {
@@ -64,6 +98,7 @@ internal class SettingsContainerSources {
         color: Color,
         topRadius: Float,
         bottomRadius: Float,
+        avatarSource: Boolean = false,
     ) {
         val coordinates = anchor.coordinates ?: return
         if (!coordinates.isAttached || !anchor.recorded || hostSize == IntSize.Zero) return
@@ -77,6 +112,7 @@ internal class SettingsContainerSources {
         ) ?: return
         sources[target] = SettingsContainerSource(
             anchor, layer, owner, bounds, hostSize, hostOrigin, color, topRadius, bottomRadius,
+            avatarSource = avatarSource,
         )
     }
 }

@@ -8,6 +8,47 @@ import kotlin.test.assertTrue
 
 class VideoCardReturnTimelineTest {
     @Test
+    fun wholeCardAndMediaFinishTogetherAndRewindFromTheSameDepth() {
+        val start = VideoCardTransitionVisualTimeline.WHOLE_CARD_RETURN_START
+        val end = VideoCardTransitionVisualTimeline.WHOLE_CARD_RETURN_END
+        assertEquals(end, VideoCardTransitionVisualTimeline.MEDIA_RETURN_END)
+        assertEquals(0f, resolveVideoCardWholeCardReturnHandoffAlpha(1f - start), .0001f)
+        assertEquals(1f, resolveVideoCardWholeCardReturnHandoffAlpha(1f - end), .0001f)
+        val samples = (0..100).map { step ->
+            val depth = 1f - step / 100f
+            val alpha = resolveVideoCardWholeCardReturnHandoffAlpha(depth)
+            assertTrue(alpha + .0001f >= resolveVideoCardLiveReturnVisualHandoffAlpha(depth))
+            alpha
+        }
+        assertTrue(samples.zipWithNext().all { (before, after) -> before <= after })
+        val reversed = (100 downTo 0).map { step ->
+            resolveVideoCardWholeCardReturnHandoffAlpha(1f - step / 100f)
+        }
+        assertEquals(samples, reversed.reversed())
+    }
+
+    @Test
+    fun landingMediaAndTitleShareGentleEndpointsAndReverseTogether() {
+        val start = VideoCardTransitionVisualTimeline.MEDIA_RETURN_START
+        val end = VideoCardTransitionVisualTimeline.MEDIA_RETURN_END
+        val window = end - start
+        fun media(settle: Float) = resolveVideoCardLiveReturnVisualHandoffAlpha(1f - settle)
+        assertTrue(media(start + window * .01f) < .001f)
+        assertTrue(1f - media(end - window * .01f) < .001f)
+        for (step in 0..100) {
+            val depth = 1f - (start + window * step / 100f)
+            val alpha = resolveVideoCardLiveReturnVisualHandoffAlpha(depth)
+            assertEquals(alpha, resolveVideoCardSourceChromeReturnAlpha(depth), .0001f)
+            assertEquals(alpha, resolveVideoCardContentHandoffProgress(
+                depth, VideoCardTransitionBackgroundPhase.HELD, true,
+            ), .0001f)
+            assertEquals(1f, alpha + resolveVideoCardDetailChromeAlpha(
+                depth, VideoCardTransitionBackgroundPhase.RETURNING, false,
+            ), .0001f)
+        }
+    }
+
+    @Test
     fun nativeViewportBodyStaysVisibleMidReturnAndRestoresOnCancel() {
         fun frame(depth: Float, phase: VideoCardTransitionBackgroundPhase) =
             resolveVideoCardSecondaryContentVisualFrame(

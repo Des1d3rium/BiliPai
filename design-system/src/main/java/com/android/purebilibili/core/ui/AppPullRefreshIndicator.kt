@@ -63,6 +63,7 @@ fun AppPullRefreshLoadingIndicator(
             state = state,
             isRefreshing = isRefreshing,
             modifier = modifier,
+            color = AppContentColors.accent(),
         )
 
         PresetPrimitiveRenderer.MIUIX_BRIDGED -> {

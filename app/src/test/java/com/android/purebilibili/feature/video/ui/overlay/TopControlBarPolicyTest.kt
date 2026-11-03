@@ -6,9 +6,9 @@ import kotlin.test.assertTrue
 
 class TopControlBarPolicyTest {
     @Test
-    fun portraitInline_matchesReferenceGates() {
+    fun portraitInline_showsHomeAndPlayerActions() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = true, isFullscreen = false)
-        assertFalse(policy.showHome)
+        assertTrue(policy.showHome)
         assertFalse(policy.showTitle)
         assertFalse(policy.showStatus)
         assertTrue(policy.showAudio)
@@ -33,7 +33,7 @@ class TopControlBarPolicyTest {
     @Test
     fun landscapeInline_horizontalScreen_hidesTitleStatusAndEngagement() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = false, isFullscreen = false)
-        assertFalse(policy.showHome)
+        assertTrue(policy.showHome)
         assertFalse(policy.showTitle)
         assertFalse(policy.showStatus)
         assertTrue(policy.showAudio)
@@ -45,7 +45,7 @@ class TopControlBarPolicyTest {
     @Test
     fun landscapeFullscreen_showsTitleStatusAndEngagementWithoutCastOrAudio() {
         val policy = resolveTopControlBarLayoutPolicy(isPortrait = false, isFullscreen = true)
-        assertFalse(policy.showHome)
+        assertTrue(policy.showHome)
         assertTrue(policy.showTitle)
         assertTrue(policy.showStatus)
         assertFalse(policy.showAudio)

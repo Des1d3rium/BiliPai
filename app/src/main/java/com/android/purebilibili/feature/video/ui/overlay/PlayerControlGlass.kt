@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -51,9 +52,6 @@ internal fun PlayerControlsBackdropHost(
         CompositionLocalProvider(
             LocalPlayerControlBackdrop provides backdrop.takeIf { glass },
             com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop provides backdrop.takeIf { glass },
-            // 菜单跟随应用明暗主题，播放器按钮本身仍使用深色媒体材质。
-            com.android.purebilibili.core.ui.components.LocalAppGlassMenuDarkTheme provides
-                com.android.purebilibili.core.ui.isAppInDarkTheme().takeIf { glass },
             LocalPlayerControlGlassEnabled provides glass,
         ) { content() }
     }
@@ -88,6 +86,9 @@ internal fun PlayerControlGlassThumb(size: Dp, dragging: Boolean, modifier: Modi
     )
 }
 
+/** 玻璃单图标采用等宽高槽位；文字胶囊与原生控件保留各自尺寸。 */
+internal val PlayerGlassIconButtonSize = 34.dp
+
 /** A single transformed subtree keeps the shell, labels and icons together. */
 @Composable
 internal fun PlayerControlGlassDock(
@@ -104,6 +105,9 @@ internal fun PlayerControlGlassDock(
     val elastic = rememberAppElasticPressState(feedbackStrength = if (shape == CircleShape) 1f else 0.6f)
     val ownsDrag = remember { mutableStateOf(false) }
     val providedBackdrop = LocalPlayerControlBackdrop.current
+    val shellSource = if (glass && providedBackdrop != null) {
+        com.android.purebilibili.core.ui.blur.rememberChromeBackdropSource()
+    } else null
     val shellTuning = if (
         glass && providedBackdrop != null &&
         minimumReadabilityScrimAlpha > tuning.contentReadabilityScrimAlpha
@@ -131,32 +135,49 @@ internal fun PlayerControlGlassDock(
                     onDragCancel = { ownsDrag.value = false },
                     onDrag = { change, _ -> change.consume() },
                 )
-            } else Modifier)
-            .then(if (glass && providedBackdrop == null) {
-                Modifier.background(Color.Black.copy(alpha = maxOf(0.32f, minimumReadabilityScrimAlpha)), shape)
-            } else if (glass) Modifier.biliPaiFloatingDockShell(
-                backdrop = providedBackdrop,
-                shape = shape,
-                // Match the bottom dock's neutral material; player glyphs remain white.
-                containerColor = resolveBiliPaiBottomBarContainerColor(darkTheme = true, liquidGlassTuning = shellTuning),
-                pressProgress = 0f,
-                lensIntensity = 1f,
-                liquidGlassTuning = shellTuning,
-                darkTheme = true,
-                interactionLayerBlock = elastic.layerBlock,
-                interactionState = elastic,
-            ) else Modifier),
+            } else Modifier),
+        // 内容层接收与原控件相同的最小尺寸，固定圆形按钮中的对齐与触控范围保持一致。
+        propagateMinConstraints = glass && providedBackdrop != null,
     ) {
-        CompositionLocalProvider(
-            LocalElasticPressEnabled provides (!feedbackEnabled && LocalElasticPressEnabled.current),
-            LocalAppTopBarIconDecorationEnabled provides false,
-            // Video chrome owns a dark media surface even when the surrounding app is light.
-            // Preserve explicit white/active glyph colors instead of correcting them against
-            // the light page behind a transparent native IconButton.
-            LocalAppIconButtonGlassSurfaceProvided provides true,
-            androidx.compose.material3.LocalContentColor provides Color.White,
-            top.yukonga.miuix.kmp.theme.LocalContentColor provides Color.White,
-        ) { content() }
+        if (glass) {
+            // 外壳单独录制，正文与子控件只消费录制结果，避免背景源包含自身。
+            Box(
+                Modifier.matchParentSize()
+                    .then(shellSource?.modifier ?: Modifier)
+                    .then(if (providedBackdrop == null) {
+                        Modifier.background(Color.Black.copy(alpha = maxOf(0.32f, minimumReadabilityScrimAlpha)), shape)
+                    } else Modifier.biliPaiFloatingDockShell(
+                        backdrop = providedBackdrop,
+                        shape = shape,
+                        containerColor = resolveBiliPaiBottomBarContainerColor(darkTheme = true, liquidGlassTuning = shellTuning),
+                        pressProgress = 0f,
+                        lensIntensity = 1f,
+                        liquidGlassTuning = shellTuning,
+                        darkTheme = true,
+                        interactionLayerBlock = elastic.layerBlock,
+                        interactionState = elastic,
+                    )),
+            )
+        }
+        val dockContent: @Composable BoxScope.() -> Unit = {
+            CompositionLocalProvider(
+                LocalElasticPressEnabled provides (!feedbackEnabled && LocalElasticPressEnabled.current),
+                LocalAppTopBarIconDecorationEnabled provides false,
+                // 播放器控件保留媒体表面的白色前景，不跟随外部页面明暗取色。
+                LocalAppIconButtonGlassSurfaceProvided provides true,
+                androidx.compose.material3.LocalContentColor provides Color.White,
+                top.yukonga.miuix.kmp.theme.LocalContentColor provides Color.White,
+            ) {
+                com.android.purebilibili.core.ui.blur.AppGlassContainerContent(
+                    enabled = glass && shellSource != null,
+                    backdrop = shellSource?.takeIf { it.isReady }?.backdrop ?: providedBackdrop,
+                    ownsDeformation = feedbackEnabled,
+                ) { content() }
+            }
+        }
+        if (glass && providedBackdrop != null) {
+            Box(Modifier.graphicsLayer(elastic.layerBlock), content = dockContent)
+        } else dockContent()
     }
 }
 

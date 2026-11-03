@@ -19,12 +19,14 @@ class AppGlassPopupInterruptionTest {
     private fun controller() = AppGlassChoicePopupController({ _, _, _ -> }, {})
     private fun menu(
         press: com.android.purebilibili.core.ui.components.AppSingleChoicePopupPress? = null,
+        interactiveContent: Boolean = false,
         onDismiss: () -> Unit = {},
     ) = AppGlassMenuRequest(
         anchor = { anchor }, placement = AppGlassMenuPlacement.ANCHOR_END,
         maxWidth = 280.dp, minWidth = 160.dp, maxHeight = null,
         scrollState = ScrollState(0), modifier = Modifier, title = "菜单",
         onDismissRequest = onDismiss, content = {}, carriedPress = press,
+        interactiveContent = interactiveContent,
     )
 
     @Test
@@ -134,6 +136,22 @@ class AppGlassPopupInterruptionTest {
         controller.showMenu(owner, menu { dismissals++ })
         assertFalse(controller.morph.opening)
         assertEquals(session, controller.morph.session)
+        controller.finish()?.invoke()
+        controller.finish()?.invoke()
+        assertEquals(1, actions)
+        assertEquals(1, dismissals)
+    }
+
+    @Test
+    fun interactivePanelActionWaitsForExitAndCommitsOnlyOnce() {
+        val controller = controller()
+        var actions = 0
+        var dismissals = 0
+        controller.showMenu(Any(), menu(interactiveContent = true) { dismissals++ })
+        repeat(3) { controller.menuScope.dispatch({ actions++ }, true) }
+        assertFalse(controller.morph.opening)
+        assertEquals(0, actions)
+        assertEquals(0, dismissals)
         controller.finish()?.invoke()
         controller.finish()?.invoke()
         assertEquals(1, actions)

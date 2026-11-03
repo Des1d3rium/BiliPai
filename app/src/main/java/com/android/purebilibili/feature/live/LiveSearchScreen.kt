@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.live
 
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.ui.components.appCountedTabOption
 import com.android.purebilibili.core.ui.AppContentColors
 
@@ -234,7 +236,7 @@ fun LiveSearchScreen(
                         liquidGlassAnimateLabelWidthChanges = false,
                         role = AppTabRowRole.SECONDARY,
                         options = tabs,
-                        selectedValue = pager.currentPage,
+                        selectedValue = pager.tabSelectedPage,
                         onSelectionChange = { target ->
                             scope.launch {
                                 if (pager.currentPage == target) {
@@ -242,7 +244,7 @@ fun LiveSearchScreen(
                                 } else animatePagerSelection(pager, target)
                             }
                         },
-                        indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+                        indicatorPositionProvider = { pager.tabIndicatorPosition },
                         isScrollInProgressProvider = { pager.isScrollInProgress },
                         modifier = Modifier.fillMaxWidth(),
                     )

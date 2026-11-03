@@ -186,8 +186,8 @@ internal class AmbientFrameController(
                         val analyzed = withContext(Dispatchers.Default) {
                             val crop = analyzer.analyze(pixels, w, h, started)
                             val glow = if (config.glow) {
-                                // API 33+ 优先 RenderEffect GPU 模糊；失败或低版本回退 CPU 内核。
-                                val gpuGlow = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                // HardwareBufferRenderer 仅 API 34+ 可用；失败或低版本回退 CPU 内核。
+                                val gpuGlow = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                                     AmbientGpuBlurPolicy.glow(raw, crop)
                                 } else {
                                     null

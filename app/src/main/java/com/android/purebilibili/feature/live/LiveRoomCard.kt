@@ -75,13 +75,23 @@ internal fun LiveRoomCard(
     val sharedTransitionScope = LocalSharedTransitionScope.current
     val animatedVisibilityScope = LocalAnimatedVisibilityScope.current
     val palette = rememberLiveChromePalette()
+    val containerTransition = rememberLiveCardContainerTransition(
+        roomId = model.roomId,
+        title = model.title,
+        hostName = model.hostName,
+        color = AppSurfaceTokens.cardContainer(),
+        cornerRadius = metrics.cardRadiusDp.dp,
+        onClick = onClick,
+        enabled = enableSharedCoverTransition,
+    )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .then(containerTransition.modifier)
             .liveSecondaryClick(onLongPress)
             .combinedClickable(
-                onClick = onClick,
+                onClick = containerTransition.onClick,
                 onLongClick = onLongPress,
                 role = Role.Button
             )
@@ -102,6 +112,7 @@ internal fun LiveRoomCard(
                     .then(
                         if (
                             enableSharedCoverTransition &&
+                            !containerTransition.enabled &&
                             sharedTransitionScope != null &&
                             animatedVisibilityScope != null
                         ) {
@@ -183,6 +194,7 @@ internal fun LiveRoomCard(
                     text = model.hostName,
                     color = AppContentColors.secondaryText(),
                     style = MaterialTheme.typography.bodySmall,
+                    minLines = 1,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

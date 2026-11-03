@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.live
 
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.ui.AppSurfaceTokens
 
 import com.android.purebilibili.core.ui.AppContentColors
@@ -57,7 +59,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-fun LiveAreaScreen(onBack: () -> Unit, onAreaClick: (Int, Int, String) -> Unit) {
+internal fun LiveAreaScreen(
+    onBack: () -> Unit,
+    onAreaClick: (Int, Int, String) -> Unit,
+    onAreaContainerClick: ((com.android.purebilibili.navigation3.BiliPaiNavKey.LiveAreaDetail) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val palette = rememberLiveChromePalette()
@@ -154,11 +160,11 @@ fun LiveAreaScreen(onBack: () -> Unit, onAreaClick: (Int, Int, String) -> Unit) 
                     liquidGlassAnimateLabelWidthChanges = true,
                     role = AppTabRowRole.SECONDARY,
                     options = areas.mapIndexed { index, parent -> AppSegmentOption(index, parent.name) },
-                    selectedValue = pager.currentPage,
+                    selectedValue = pager.tabSelectedPage,
                     onSelectionChange = { target -> scope.launch { animatePagerSelection(pager, target) } },
                     scrollable = true,
                     centerContent = false,
-                    indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+                    indicatorPositionProvider = { pager.tabIndicatorPosition },
                     isScrollInProgressProvider = { pager.isScrollInProgress },
                     isPagerDraggingProvider = { pagerDragHeld },
                     pagerTargetPositionProvider = { pager.targetPage.toFloat() },
@@ -186,6 +192,8 @@ fun LiveAreaScreen(onBack: () -> Unit, onAreaClick: (Int, Int, String) -> Unit) 
                                     child = child,
                                     isEditing = editing,
                                     isFavorite = favorites.any { it.areaId == tag.areaId && it.parentAreaId == tag.parentAreaId },
+                                    parentAreaId = tag.parentAreaId,
+                                    onAreaContainerClick = onAreaContainerClick,
                                     onClick = {
                                         if (saving) return@LiveAreaGridItem
                                         if (editing && tag.areaId > 0) favorites = toggleLiveFavoriteTag(favorites, tag)
@@ -311,20 +319,42 @@ private fun LiveAreaGridItem(
     child: LiveAreaChild,
     isEditing: Boolean,
     isFavorite: Boolean,
+    parentAreaId: Int,
+    onAreaContainerClick: ((com.android.purebilibili.navigation3.BiliPaiNavKey.LiveAreaDetail) -> Unit)?,
     onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    // 每个图标生成自己的导航会话，捕获和实际入栈必须使用同一个目标身份。
+    val target = remember(parentAreaId, child.id, child.name) {
+        com.android.purebilibili.navigation3.BiliPaiNavKey.LiveAreaDetail(
+            parentAreaId = parentAreaId,
+            areaId = child.id.toIntOrNull() ?: 0,
+            title = child.name,
+            openId = android.os.SystemClock.elapsedRealtimeNanos(),
+        )
+    }
+    val transition = rememberLiveCardContainerTransition(
+        roomId = 0,
+        title = child.name,
+        hostName = "",
+        color = AppSurfaceTokens.surfaceContainer(),
+        cornerRadius = 8.dp,
+        enabled = !isEditing && onAreaContainerClick != null,
+        includeAvatarCompanions = true,
+        containerTarget = target,
+        onClick = { if (onAreaContainerClick != null) onAreaContainerClick(target) else onClick() },
+    )
     Box(
         modifier = Modifier
             .height(80.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = if (isEditing || onAreaContainerClick == null) onClick else transition.onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             LiveAreaIcon(
                 imageUrl = child.pic,
                 title = child.name,
-                modifier = Modifier.size(45.dp)
+                modifier = Modifier.size(45.dp).then(transition.modifier)
             )
             Spacer(Modifier.height(AppSpacingTokens.ExtraSmall))
             AppText(
@@ -333,7 +363,8 @@ private fun LiveAreaGridItem(
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = transition.companionModifier,
             )
         }
         if (isEditing && child.id != "0") {

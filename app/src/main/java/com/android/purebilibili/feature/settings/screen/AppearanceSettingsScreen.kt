@@ -83,7 +83,6 @@ import com.android.purebilibili.core.ui.adaptive.resolveDeviceUiProfile
 import com.android.purebilibili.core.ui.adaptive.resolveEffectiveMotionTier
 import com.android.purebilibili.core.ui.blur.BlurIntensity
 import com.android.purebilibili.core.ui.blur.resolveHomeChromeLiquidGlassEnabled
-import com.android.purebilibili.core.ui.blur.shouldAllowHomeChromeLiquidGlass
 import com.android.purebilibili.core.ui.performance.SYSTEM_AUTO_DISPLAY_MODE_ID
 import com.android.purebilibili.core.ui.performance.applyPreferredDisplayMode
 import com.android.purebilibili.core.ui.performance.displayModePreferenceLabel
@@ -249,8 +248,6 @@ fun AppearanceSettingsContent(
 ) {
     val homeConfiguration = rememberSettingsHomeConfiguration()
     val themeConfiguration = rememberSettingsThemeConfiguration()
-    val liquidControlsUseThemeColor by remember(context) { SettingsManager.getLiquidControlsUseThemeColor(context) }
-        .collectAsStateWithLifecycle(initialValue = false)
     val activity = context as? android.app.Activity
     val supportedDisplayModes = remember(activity) {
         activity?.supportedAppDisplayModes().orEmpty()
@@ -310,7 +307,7 @@ fun AppearanceSettingsContent(
     val windowSizeClass = LocalWindowSizeClass.current
     val isTablet = windowSizeClass.isTablet
     val sectionKeys = when (contentMode) {
-        AppearanceSettingsContentMode.APPEARANCE -> listOf("appearance_display_mode", "appearance_theme_color", "appearance_text_size", "appearance_splash_icon", "appearance_language")
+        AppearanceSettingsContentMode.APPEARANCE -> listOf("appearance_display_mode", "appearance_theme_color", "appearance_text_size", "appearance_splash_icon", "content_image_display", "appearance_language")
         AppearanceSettingsContentMode.HOME -> listOf("home_list", "home_wallpaper", "home_recommendation", "home_browsing")
     }.flatMap { listOf(it + "_title", it) }
     SettingsSectionFocusEffect(
@@ -495,7 +492,6 @@ fun AppearanceSettingsContent(
     val fullVideoCardContentVisible = homeConfiguration.showFullVideoCardContent
     val videoCardLongPressActionEnabled = homeConfiguration.videoCardLongPressActionEnabled
     val homeCardDynamicTintEnabled = homeConfiguration.homeCardDynamicTintEnabled
-    val homeCardFrostedGlassEnabled = homeConfiguration.homeCardFrostedGlassEnabled
     val homeDurationStyle = homeConfiguration.homeDurationStyle
     val homeFeedCardStyle = homeConfiguration.homeFeedCardStyle
     val homeHeroCarouselEnabled = homeConfiguration.homeHeroCarouselEnabled
@@ -513,7 +509,6 @@ fun AppearanceSettingsContent(
         .collectAsStateWithLifecycle(initialValue = false)
     val showProfileEditButton by remember(context) { SettingsManager.getShowProfileEditButton(context) }
         .collectAsStateWithLifecycle(initialValue = false)
-    val isLiquidGlassAvailable = shouldAllowHomeChromeLiquidGlass(Build.VERSION.SDK_INT)
     val effectiveLiquidGlassEnabled = resolveHomeChromeLiquidGlassEnabled(
         userEnabled = homeConfiguration.androidNativeLiquidGlassEnabled,
         sdkInt = Build.VERSION.SDK_INT,
@@ -647,39 +642,8 @@ fun AppearanceSettingsContent(
                             )
                         }
 
-                        Column {
-                            AppPreferenceDivider()
-                            SettingsItemAnchor("appearance.effective_liquid_glass_enabled") {
-                                AppSwitchPreference(
-                                    icon = rememberSettingsSemanticIcon(SettingsIconRole.ANDROID_LIQUID_GLASS),
-                                    title = settingItemTitle("appearance.effective_liquid_glass_enabled"),
-                                    subtitle = if (isLiquidGlassAvailable) {
-                                        context.getString(R.string.appearance_liquid_glass_summary)
-                                    } else {
-                                        context.getString(R.string.appearance_liquid_glass_unsupported)
-                                    },
-                                    checked = effectiveLiquidGlassEnabled,
-                                    onCheckedChange = { viewModel.toggleAndroidNativeLiquidGlass(it) },
-                                    enabled = isLiquidGlassAvailable,
-                                    iconTint = AppContentColors.secondaryText()
-                                )
-                            }
-                        }
-
-                        AppPreferenceDivider()
-
-                        SettingsItemAnchor("appearance.liquid_controls_use_theme_color") {
-                            AppSwitchPreference(
-                                title = context.getString(R.string.appearance_liquid_controls_theme_title),
-                                subtitle = context.getString(R.string.appearance_liquid_controls_theme_summary),
-                                checked = liquidControlsUseThemeColor,
-                                enabled = effectiveLiquidGlassEnabled && isLiquidGlassAvailable,
-                                onCheckedChange = { enabled ->
-                                    scope.launch { SettingsManager.setLiquidControlsUseThemeColor(context, enabled) }
-                                },
-                            )
-                        }
-                        AppPreferenceDivider()
+                        // 液态玻璃总开关与玻璃材质条目已集中在「动画与触感」页的玻璃分组,
+                        // 这里只保留与玻璃无关的显示样式条目。
 
                         SettingsItemAnchor("appearance.app_list_item_style") {
                             SettingsSingleChoicePreference(
@@ -905,6 +869,35 @@ fun AppearanceSettingsContent(
                                             }
                                         },
                                         iconTint = AppContentColors.accent()
+                                    )
+                                }
+
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    com.android.purebilibili.core.ui.components.AppTextButton(
+                                        onClick = {
+                                            roleColorTarget = null
+                                            scope.launch {
+                                                // 清除两种明暗模式的手动覆盖，让当前主题重新提供完整默认色板。
+                                                SettingsManager.setThemeRoleOverrides(context, ThemeRoleOverrides())
+                                            }
+                                        },
+                                        enabled = storedThemeRoleOverrides != ThemeRoleOverrides(),
+                                    ) {
+                                        AppText(stringResource(
+                                            if (palettePreviewConfiguration.uiStyle == AppUiStyle.MIUIX) {
+                                                R.string.appearance_theme_restore_miuix_palette
+                                            } else {
+                                                R.string.appearance_theme_restore_md3_palette
+                                            }
+                                        ))
+                                    }
+                                    AppText(
+                                        text = stringResource(R.string.appearance_theme_restore_palette_summary),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AppContentColors.secondaryText(),
                                     )
                                 }
 
@@ -1233,12 +1226,11 @@ fun AppearanceSettingsContent(
 
         //  首页配色预览：不依赖颜色来源，始终展示当前主题的实际取色
         item(key = "appearance_theme_home_preview") {
-            Box(modifier = Modifier.entrance()) {
+            // 独立圆角分组之间保留外部间距，玻璃、MD3 与 Miuix 共用，避免两张卡片相贴。
+            Box(modifier = Modifier.padding(top = 16.dp).entrance()) {
                 // 交给设置页分组承载：圆角、水平边距与容器色由 AppPreferenceGroup 统一决定。
                 AppPreferenceGroup {
-                    ThemeHomePreview(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                    )
+                    ExpandableThemeHomePreview()
                 }
             }
         }
@@ -1657,6 +1649,12 @@ fun AppearanceSettingsContent(
             }
         }
 
+        item(key = "content_image_display_title") {
+            AppPreferenceSectionTitle("图片显示")
+        }
+        item(key = "content_image_display") {
+            com.android.purebilibili.feature.settings.ContentImagePreferences()
+        }
         //  语言
         item(key = "appearance_language_title") {
             Box(modifier = Modifier.entrance()) {
@@ -1718,70 +1716,93 @@ fun AppearanceSettingsContent(
                             onSelectionChange = viewModel::setDisplayMode,
                         )
 
-                        // 网格列数设置 (仅在双列网格模式下显示)
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = isTablet && state.displayMode == 0,
-                            enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
-                            exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
-                        ) {
-                            Column {
-                                AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
-                                SettingsItemAnchor("appearance.grid_column_count") {
-                                    SettingsSingleChoicePreference(
-                                        icon = com.android.purebilibili.feature.settings.rememberMaterialSymbol(com.android.purebilibili.R.drawable.ms_format_list_bulleted_24),
-                                        iconTint = AppContentColors.secondaryText(),
-                                        title = context.getString(R.string.home_settings_grid_columns_title),
-                                        subtitle = if (state.gridColumnCount == 0) {
-                                            context.getString(R.string.home_settings_grid_columns_adaptive)
-                                        } else {
-                                            context.getString(R.string.home_settings_grid_columns_fixed, state.gridColumnCount)
-                                        },
-                                        options = (0..6).map { count ->
-                                            AppSegmentOption(
-                                                value = count,
-                                                label = if (count == 0) context.getString(R.string.home_settings_grid_columns_auto) else context.getString(R.string.home_settings_grid_columns_count, count),
-                                            )
-                                        },
-                                        selectedValue = state.gridColumnCount,
-                                        optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Feed(columns = value)) },
-                                        onSelectionChange = viewModel::setGridColumnCount,
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        SettingsItemAnchor(com.android.purebilibili.feature.settings.GRID_CUSTOMIZATION_SETTING_ID) {
+                            AppSwitchPreference(
+                                title = com.android.purebilibili.feature.settings.settingItemTitle(com.android.purebilibili.feature.settings.GRID_CUSTOMIZATION_SETTING_ID, context),
+                                subtitle = context.getString(R.string.home_settings_grid_customization_summary),
+                                checked = homeConfiguration.gridColumnCustomizationEnabled,
+                                onCheckedChange = { scope.launch { SettingsManager.setGridColumnCustomizationEnabled(context, it) } },
+                            )
+                        }
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        SettingsItemAnchor("appearance.pinch_to_change_grid_columns_enabled") {
+                            AppSwitchPreference(
+                                title = com.android.purebilibili.feature.settings.settingItemTitle("appearance.pinch_to_change_grid_columns_enabled", context),
+                                subtitle = context.getString(R.string.home_settings_pinch_columns_summary),
+                                checked = pinchToChangeGridColumnsEnabled,
+                                enabled = homeConfiguration.gridColumnCustomizationEnabled,
+                                onCheckedChange = { scope.launch { SettingsManager.setPinchToChangeGridColumnsEnabled(context, it) } },
+                            )
+                        }
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        SettingsItemAnchor(com.android.purebilibili.feature.settings.GRID_SHARE_SETTING_ID) {
+                            AppSwitchPreference(
+                                title = com.android.purebilibili.feature.settings.settingItemTitle(com.android.purebilibili.feature.settings.GRID_SHARE_SETTING_ID, context),
+                                subtitle = context.getString(R.string.home_settings_grid_share_summary),
+                                checked = homeConfiguration.gridColumnsSharedAcrossPages,
+                                enabled = homeConfiguration.gridColumnCustomizationEnabled,
+                                onCheckedChange = { scope.launch { SettingsManager.setGridColumnsSharedAcrossPages(context, it) } },
+                            )
+                        }
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        SettingsItemAnchor(com.android.purebilibili.feature.settings.GRID_COMPACT_SETTING_ID) {
+                            SettingsSingleChoicePreference(
+                                title = com.android.purebilibili.feature.settings.settingItemTitle(com.android.purebilibili.feature.settings.GRID_COMPACT_SETTING_ID, context),
+                                subtitle = context.getString(R.string.home_settings_grid_default_summary),
+                                enabled = homeConfiguration.gridColumnCustomizationEnabled,
+                                options = (0..4).map { count ->
+                                    AppSegmentOption(
+                                        value = count,
+                                        label = if (count == 0) context.getString(R.string.home_settings_grid_columns_auto)
+                                        else context.getString(R.string.home_settings_grid_columns_count, count),
                                     )
-                                }
-                                AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
-                                SettingsItemAnchor("appearance.home_feed_card_width_preset") {
-                                    SettingsSingleChoicePreference(
-                                        title = context.getString(R.string.home_settings_card_width_title),
-                                        subtitle = if (state.gridColumnCount > 0) {
-                                            context.getString(R.string.home_settings_card_width_current, state.gridColumnCount)
-                                        } else {
-                                            context.getString(R.string.home_settings_card_width_auto)
-                                        },
-                                        options = resolveHomeFeedCardWidthPresetSegmentOptions().map { option ->
-                                            option.copy(label = context.getString(when (option.value) {
-                                                HomeFeedCardWidthPreset.AUTO -> R.string.home_settings_card_width_auto_option
-                                                HomeFeedCardWidthPreset.COMPACT -> R.string.home_settings_card_width_compact
-                                                HomeFeedCardWidthPreset.BALANCED -> R.string.home_settings_card_width_balanced
-                                                HomeFeedCardWidthPreset.WIDE -> R.string.home_settings_card_width_wide
-                                                HomeFeedCardWidthPreset.ULTRA_WIDE -> R.string.home_settings_card_width_ultra_wide
-                                            }))
-                                        },
-                                        selectedValue = state.homeFeedCardWidthPreset,
-                                        onSelectionChange = viewModel::setHomeFeedCardWidthPreset,
+                                },
+                                selectedValue = homeConfiguration.gridColumnCountCompact,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Feed(columns = value)) },
+                                onSelectionChange = { count -> scope.launch { SettingsManager.setGridColumnCountCompact(context, count) } },
+                            )
+                        }
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        SettingsItemAnchor("appearance.grid_column_count") {
+                            SettingsSingleChoicePreference(
+                                title = com.android.purebilibili.feature.settings.settingItemTitle("appearance.grid_column_count", context),
+                                subtitle = context.getString(R.string.home_settings_grid_default_summary),
+                                enabled = homeConfiguration.gridColumnCustomizationEnabled,
+                                options = (0..7).map { count ->
+                                    AppSegmentOption(
+                                        value = count,
+                                        label = if (count == 0) context.getString(R.string.home_settings_grid_columns_auto)
+                                        else context.getString(R.string.home_settings_grid_columns_count, count),
                                     )
-                                }
-                                AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
-                                SettingsItemAnchor("appearance.pinch_to_change_grid_columns_enabled") {
-                                    AppSwitchPreference(
-                                        title = context.getString(R.string.home_settings_pinch_columns_title),
-                                        subtitle = context.getString(R.string.home_settings_pinch_columns_summary),
-                                        checked = pinchToChangeGridColumnsEnabled,
-                                        onCheckedChange = { enabled ->
-                                            scope.launch {
-                                                SettingsManager.setPinchToChangeGridColumnsEnabled(context, enabled)
-                                            }
-                                        },
-                                    )
-                                }
+                                },
+                                selectedValue = homeConfiguration.gridColumnCount,
+                                optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.Feed(columns = value)) },
+                                onSelectionChange = { count -> scope.launch { SettingsManager.setGridColumnCount(context, count) } },
+                            )
+                        }
+                        if (isTablet && state.displayMode == 0) {
+                            AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                            SettingsItemAnchor("appearance.home_feed_card_width_preset") {
+                                SettingsSingleChoicePreference(
+                                    title = context.getString(R.string.home_settings_card_width_title),
+                                    subtitle = if (homeConfiguration.gridColumnCustomizationEnabled && homeConfiguration.gridColumnCount > 0) {
+                                        context.getString(R.string.home_settings_card_width_current, homeConfiguration.gridColumnCount)
+                                    } else {
+                                        context.getString(R.string.home_settings_card_width_auto)
+                                    },
+                                    options = resolveHomeFeedCardWidthPresetSegmentOptions().map { option ->
+                                        option.copy(label = context.getString(when (option.value) {
+                                            HomeFeedCardWidthPreset.AUTO -> R.string.home_settings_card_width_auto_option
+                                            HomeFeedCardWidthPreset.COMPACT -> R.string.home_settings_card_width_compact
+                                            HomeFeedCardWidthPreset.BALANCED -> R.string.home_settings_card_width_balanced
+                                            HomeFeedCardWidthPreset.WIDE -> R.string.home_settings_card_width_wide
+                                            HomeFeedCardWidthPreset.ULTRA_WIDE -> R.string.home_settings_card_width_ultra_wide
+                                        }))
+                                    },
+                                    selectedValue = state.homeFeedCardWidthPreset,
+                                    onSelectionChange = viewModel::setHomeFeedCardWidthPreset,
+                                )
                             }
                         }
 
@@ -1930,6 +1951,8 @@ fun AppearanceSettingsContent(
                             )
                         }
 
+                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
+                        com.android.purebilibili.feature.settings.RecommendRetentionPreference()
                         AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
                         SettingsItemAnchor("appearance.home_refresh_tip_visible") {
                             AppSwitchPreference(
@@ -2176,25 +2199,7 @@ fun AppearanceSettingsContent(
                             }
                         }
 
-                        AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
-                        SettingsItemAnchor("appearance.home_card_frosted_glass_enabled") {
-                            AppSwitchPreference(
-                                icon = rememberSettingsSemanticIcon(SettingsIconRole.HOME_INFO_GLASS),
-                                title = settingItemTitle("appearance.home_card_frosted_glass_enabled"),
-                                subtitle = if (homeCardFrostedGlassEnabled) {
-                                    context.getString(R.string.appearance_wallpaper_card_blur_on)
-                                } else {
-                                    context.getString(R.string.appearance_wallpaper_card_blur_off)
-                                },
-                                checked = homeCardFrostedGlassEnabled,
-                                onCheckedChange = {
-                                    scope.launch {
-                                        SettingsManager.setHomeCardFrostedGlassEnabled(context, it)
-                                    }
-                                },
-                                iconTint = AppContentColors.secondaryText()
-                            )
-                        }
+                        // 「卡片背景模糊」已并入「动画与触感」页的液态玻璃与磨砂分组。
                         AppPreferenceDivider(modifier = Modifier.padding(start = 16.dp))
                         SettingsItemAnchor("appearance.home_card_dynamic_tint_enabled") {
                             AppSwitchPreference(

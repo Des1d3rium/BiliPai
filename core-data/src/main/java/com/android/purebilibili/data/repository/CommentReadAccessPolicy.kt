@@ -37,7 +37,9 @@ internal fun hasRenderableCommentPayload(data: ReplyData?): Boolean {
     return data.replies.orEmpty().isNotEmpty() ||
         data.hots.orEmpty().isNotEmpty() ||
         data.collectTopReplies().isNotEmpty() ||
-        data.voteCard != null
+        data.voteCard != null ||
+        !data.control?.sectionNotice().isNullOrBlank() ||
+        !data.control?.emptyMessage().isNullOrBlank()
 }
 
 private fun collectRenderableComments(data: ReplyData): Sequence<ReplyItem> {
@@ -98,7 +100,17 @@ internal fun shouldFallbackCommentReadOnEmptyRenderableSuccess(
         !hasRenderableCommentPayload(data)
 }
 
-internal fun resolveCommentReadErrorMessage(code: Int): String {
+/** 保留服务端业务码，UI 可区分评论区限制与临时网络失败。 */
+class CommentReadException(val code: Int, serverMessage: String? = null) :
+    Exception(resolveCommentReadErrorMessage(code, serverMessage)) {
+    val commentInputBlocked: Boolean get() = code == 12061 || code == 12002
+}
+
+internal fun resolveCommentReadErrorMessage(code: Int, serverMessage: String? = null): String {
+    val detail = serverMessage?.trim()?.takeIf {
+        it.isNotBlank() && !it.equals("success", ignoreCase = true) && it != "0"
+    }
+    if ((code == 12061 || code == 12002) && detail != null) return detail
     return when (code) {
         -352 -> "请求频率过高，请稍后再试"
         -111 -> "签名验证失败，请稍后重试"
@@ -106,8 +118,9 @@ internal fun resolveCommentReadErrorMessage(code: Int): String {
         -400 -> "请求参数错误"
         -412 -> "请求被拦截，请稍后再试"
         12002 -> "评论区已关闭"
+        12061 -> "评论区暂不可用"
         12009 -> "评论内容不存在"
-        else -> "加载评论失败 ($code)"
+        else -> detail?.let { "$it ($code)" } ?: "加载评论失败 ($code)"
     }
 }
 

@@ -38,13 +38,25 @@ internal fun parseChatRecommendations(content: String): Pair<String, List<ChatRe
     return root.text("main_title") to cards
 }
 
-internal fun parseChatTip(content: String): String = runCatching {
-    when (val root = Json.parseToJsonElement(content)) {
-        is JsonArray -> root.mapNotNull { ((it as? JsonObject)?.get("text") as? JsonPrimitive)?.contentOrNull }.joinToString("")
-        is JsonObject -> (root["text"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        else -> ""
+internal fun parseChatTip(content: String): String {
+    fun extract(element: JsonElement, depth: Int): String {
+        if (depth > 4) return ""
+        return when (element) {
+            is JsonArray -> element.joinToString("") { extract(it, depth + 1) }
+            is JsonObject -> (element["content"] ?: element["text"])
+                ?.let { extract(it, depth + 1) }.orEmpty()
+            is JsonPrimitive -> {
+                val value = element.contentOrNull.orEmpty()
+                val trimmed = value.trimStart()
+                if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+                    runCatching { extract(Json.parseToJsonElement(value), depth + 1) }.getOrDefault("")
+                } else value
+            }
+            else -> ""
+        }
     }
-}.getOrDefault("")
+    return runCatching { extract(Json.parseToJsonElement(content), 0) }.getOrDefault("")
+}
 
 @Composable
 internal fun ChatNoticeMessage(content: String, onOpenLink: (String) -> Unit, modifier: Modifier = Modifier) {

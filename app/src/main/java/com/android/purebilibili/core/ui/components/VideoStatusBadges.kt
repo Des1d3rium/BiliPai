@@ -20,7 +20,7 @@ internal fun VideoStatusBadges(labels: List<String>, modifier: Modifier = Modifi
         labels.forEach { label ->
             AppStatusBadge(
                 label = label,
-                emphasized = label == "充电专属" || label == "付费",
+                emphasized = label == "充电专属" || label == "付费" || label == "合作" || label == "联合投稿",
             )
         }
     }

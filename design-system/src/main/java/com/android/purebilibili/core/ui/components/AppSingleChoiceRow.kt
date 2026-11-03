@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.graphics.Shape
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.AppSpacingTokens
 import com.android.purebilibili.core.ui.AppSurfaceTokens
 import com.android.purebilibili.core.ui.ContainerLevel
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 
 /**
  * Theme-native single-choice row.
@@ -34,6 +37,21 @@ fun AppSingleChoiceRow(
     content: @Composable RowScope.() -> Unit,
 ) {
     val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = modifier.semantics {
+                this.selected = selected
+                if (!enabled) disabled()
+            },
+            onClick = feedbackClick,
+            enabled = enabled,
+            role = androidx.compose.ui.semantics.Role.RadioButton,
+            endActions = { AppRadioButton(selected = selected, onClick = null, enabled = enabled) },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, content = content)
+        }
+        return
+    }
     AppSurface(
         onClick = feedbackClick,
         enabled = enabled,

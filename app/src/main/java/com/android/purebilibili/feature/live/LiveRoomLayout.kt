@@ -3,6 +3,8 @@ package com.android.purebilibili.feature.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -17,6 +19,9 @@ import coil3.compose.AsyncImage
 import com.android.purebilibili.R
 import com.android.purebilibili.core.ui.adaptive.AppHingePaneLayout
 
+/** 只包含直播间背景，顶栏玻璃不得采样包含自身的页面录制。 */
+internal val LocalLiveRoomHeaderBackdrop = compositionLocalOf<top.yukonga.miuix.kmp.blur.Backdrop?> { null }
+
 /** 直播间的窗口布局。播放器、聊天与发送入口由调用方接入同一份房间状态。 */
 @Composable
 internal fun LiveRoomLayout(
@@ -30,14 +35,25 @@ internal fun LiveRoomLayout(
     interaction: @Composable (overVideo: Boolean, includeFooter: Boolean) -> Unit,
     inputFooter: @Composable () -> Unit,
 ) {
+    val headerBackdrop = if (!isFullscreen && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
+        com.android.purebilibili.core.ui.blur.rememberChromeBackdropSource(recordingBackground = Color.Black)
+    } else null
+    val roomHeader: @Composable () -> Unit = {
+        CompositionLocalProvider(LocalLiveRoomHeaderBackdrop provides headerBackdrop?.takeIf { it.isReady }?.backdrop) {
+            header()
+        }
+    }
     Box(modifier.background(Color.Black)) {
-        if (!isFullscreen) LiveRoomBackground(backgroundUrl, Modifier.fillMaxSize())
+        if (!isFullscreen) LiveRoomBackground(
+            backgroundUrl,
+            Modifier.fillMaxSize().then(headerBackdrop?.modifier ?: Modifier),
+        )
         if (hasObstructingHinge) {
             AppHingePaneLayout(
                 modifier = Modifier.fillMaxSize(),
                 primaryContent = {
                     Column(Modifier.fillMaxSize()) {
-                        if (!isFullscreen) header()
+                        if (!isFullscreen) roomHeader()
                         Box(Modifier.weight(1f).fillMaxWidth()) { player() }
                     }
                 },
@@ -56,7 +72,7 @@ internal fun LiveRoomLayout(
             Layout(
                 modifier = Modifier.fillMaxSize(),
                 content = {
-                    Box { if (!isFullscreen) header() }
+                    Box { if (!isFullscreen) roomHeader() }
                     Box(Modifier.clipToBounds()) { player() }
                     Box { if (showInteraction) interaction(vertical, !vertical) }
                     Box { if (vertical && !isFullscreen) inputFooter() }

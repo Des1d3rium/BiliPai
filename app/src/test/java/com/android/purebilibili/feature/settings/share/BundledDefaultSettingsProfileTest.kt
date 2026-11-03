@@ -32,7 +32,6 @@ class BundledDefaultSettingsProfileTest {
         val profile = readProfile()
         listOf(
             "card_transition_enabled",
-            "related_video_transition_enabled",
             "live_surface_card_transition_enabled",
             "video_return_content_follow_progress_enabled",
         ).forEach { key ->

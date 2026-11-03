@@ -130,7 +130,6 @@ suspend fun applyOnboardingSettingsGuidePreset(
         value = preset.lowQualityHomeCoverInDataSaver
     )
     SettingsManager.setCardTransitionEnabled(context, preset.cardTransitionEnabled)
-    SettingsManager.setRelatedVideoTransitionEnabled(context, true)
     SettingsManager.setLiveSurfaceCardTransitionEnabled(context, true)
     SettingsManager.setVideoReturnContentFollowProgressEnabled(context, true)
 }

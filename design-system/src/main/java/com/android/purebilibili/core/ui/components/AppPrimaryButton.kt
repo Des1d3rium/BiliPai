@@ -5,6 +5,28 @@ package com.android.purebilibili.core.ui.components
 import com.android.purebilibili.core.ui.AppChromeSizeTokens
 import com.android.purebilibili.core.ui.AppContentColors
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.unit.Dp
+import com.android.purebilibili.core.ui.LocalComponentMotionEnabled
+import com.android.purebilibili.core.ui.LocalSystemReduceMotion
+import com.android.purebilibili.core.ui.rememberVisualWorkActive
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -44,7 +66,8 @@ fun AppPrimaryButton(
     isLoading: Boolean = false,
     leadingIcon: ImageVector? = null,
 ): Unit = AppExactTouchTargets {
-    val elasticFeedbackEnabled = enabled && !isLoading && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    val elasticFeedbackEnabled = enabled && !isLoading && LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+        LocalAppThemeConfig.current.liquidGlassEnabled
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val haptic = LocalHapticFeedback.current
         val hapticEnabled = LocalAppThemeConfig.current.hapticFeedbackEnabled
@@ -74,13 +97,11 @@ fun AppPrimaryButton(
                 contentPadding = AppButtonDefaults.ContentPadding,
                 interactionSource = interactionSource,
             ) {
-                if (isLoading) {
-                    AppCircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = primaryContentColor,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
+                PrimaryButtonLoadingContent(
+                    isLoading = isLoading,
+                    indicatorSize = 20.dp,
+                    indicatorColor = primaryContentColor,
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -112,23 +133,86 @@ fun AppPrimaryButton(
             interactionSource = interactionSource,
         ) {
             val contentColor = MiuixLocalContentColor.current
-            if (isLoading) {
+            PrimaryButtonLoadingContent(
+                isLoading = isLoading,
+                indicatorSize = 24.dp,
+                indicatorColor = contentColor,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (leadingIcon != null) {
+                        Icon(
+                            imageVector = leadingIcon,
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(AppSpacingTokens.Small))
+                    }
+                    MiuixText(text = text, style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
+    }
+}
+
+
+/** 文案持续参与测量；加载指示覆盖在同一槽位，文字变化不依赖历史测量缓存。 */
+@Composable
+private fun PrimaryButtonLoadingContent(
+    isLoading: Boolean,
+    indicatorSize: Dp,
+    indicatorColor: Color,
+    modifier: Modifier = Modifier,
+    label: @Composable () -> Unit,
+) {
+    val motionEnabled = LocalComponentMotionEnabled.current && !LocalSystemReduceMotion.current
+    val visualWorkActive = rememberVisualWorkActive()
+    var inViewport by remember { mutableStateOf(false) }
+    val labelAlpha = animateFloatAsState(
+        targetValue = if (isLoading) 0f else 1f,
+        animationSpec = tween(if (motionEnabled) 150 else 0),
+        label = "primaryButtonLabelAlpha",
+    )
+    Box(
+        modifier = modifier
+            .sizeIn(minWidth = indicatorSize, minHeight = indicatorSize)
+            .onGloballyPositioned { coordinates ->
+                inViewport = coordinates.isAttached && run {
+                    val bounds = coordinates.boundsInWindow()
+                    val viewport = coordinates.findRootCoordinates().boundsInWindow()
+                    bounds.width > 0f && bounds.height > 0f && bounds.overlaps(viewport)
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .graphicsLayer { alpha = labelAlpha.value }
+                .then(if (isLoading) Modifier.clearAndSetSemantics { } else Modifier),
+        ) { label() }
+        AnimatedVisibility(
+            visible = isLoading,
+            enter = fadeIn(tween(if (motionEnabled) 150 else 0)),
+            exit = fadeOut(tween(if (motionEnabled) 100 else 0)),
+        ) {
+            if (isLoading && motionEnabled && visualWorkActive && inViewport) {
                 AppCircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = contentColor,
+                    modifier = Modifier.size(indicatorSize),
+                    color = indicatorColor,
                     strokeWidth = 2.dp,
                 )
             } else {
-                if (leadingIcon != null) {
-                    Icon(
-                        imageVector = leadingIcon,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(AppSpacingTokens.Small))
-                }
-                MiuixText(text = text, style = MiuixTheme.textStyles.button)
+                // 隐藏、减少动态效果和退出淡出阶段不保留无限动画；静态弧仍表达未知进度。
+                AppCircularProgressIndicator(
+                    progress = { 0.75f },
+                    modifier = Modifier
+                        .size(indicatorSize)
+                        .clearAndSetSemantics {
+                            if (isLoading) progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+                        },
+                    color = indicatorColor,
+                    strokeWidth = 2.dp,
+                )
             }
         }
     }

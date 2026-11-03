@@ -1,6 +1,8 @@
 package com.android.purebilibili.feature.home
 
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -8,6 +10,7 @@ import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import com.android.purebilibili.core.store.CommonListHeaderCollapseMode
@@ -28,24 +31,30 @@ internal data class HomeHeaderScrollConfiguration(
     val useSideNavigation: Boolean,
     val liquidGlassEnabled: Boolean,
     val hideType: HomeBarHideType,
-)
+    val collapseMode: CommonListHeaderCollapseMode = CommonListHeaderCollapseMode.SHOW_ON_REVERSE_SCROLL,
+) {
+    val coordinatesChrome: Boolean
+        get() = collapseEnabled || (bottomBarAutoHideEnabled && !useSideNavigation) || liquidGlassEnabled
+}
 
 @Composable
 internal fun rememberHomeHeaderScrollConnection(
     configuration: HomeHeaderScrollConfiguration,
     pagerState: PagerState,
     topTabEntries: List<HomeTopTabEntry>,
-    activeGridState: LazyStaggeredGridState?,
+    activeGridStateProvider: () -> HomeFeedGridState?,
     subscriptionListState: LazyStaggeredGridState,
+    partitionListState: LazyListState = rememberLazyListState(),
     revealLocked: Boolean,
     headerOffsetProvider: () -> Float,
     globalScrollOffset: MutableFloatState,
     onHeaderOffsetChanged: (Float, Boolean) -> Unit,
     onTabsCollapsedChanged: (Boolean) -> Unit,
     onBottomBarVisibleChanged: (Boolean) -> Unit,
-    refreshInteractionActive: Boolean = false,
+    refreshInteractionActiveProvider: () -> Boolean = { false },
 ): NestedScrollConnection {
-    val currentRefreshInteractionActive = rememberUpdatedState(refreshInteractionActive)
+    val currentRefreshInteractionActive = rememberUpdatedState(refreshInteractionActiveProvider)
+    val currentActiveGridState = rememberUpdatedState(activeGridStateProvider)
     val currentOnHeaderOffsetChanged = rememberUpdatedState(onHeaderOffsetChanged)
     val currentOnTabsCollapsedChanged = rememberUpdatedState(onTabsCollapsedChanged)
     val currentOnBottomBarVisibleChanged = rememberUpdatedState(onBottomBarVisibleChanged)
@@ -53,74 +62,97 @@ internal fun rememberHomeHeaderScrollConnection(
         configuration,
         pagerState,
         topTabEntries,
-        activeGridState,
         subscriptionListState,
+        partitionListState,
         revealLocked,
         headerOffsetProvider,
         globalScrollOffset,
     ) {
         object : NestedScrollConnection {
+            private var lastUserVerticalDelta = 0f
+
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // 下拉、请求及回弹共用保护，不让同一刷新会话反向收起顶栏。
-                if (currentRefreshInteractionActive.value) {
-                    currentOnHeaderOffsetChanged.value(0f, false)
-                    currentOnTabsCollapsedChanged.value(false)
-                    return Offset.Zero
-                }
-                if (revealLocked || !shouldHandleHomeVerticalPreScroll(
+                if (revealLocked || pagerState.isScrollInProgress || !shouldHandleHomeVerticalPreScroll(
                         deltaX = available.x,
                         deltaY = available.y,
                     )
                 ) {
                     return Offset.Zero
                 }
-                val onSubscriptionTab = resolveHomeTopTabEntryOrNull(
+                if (source == NestedScrollSource.UserInput) lastUserVerticalDelta = available.y
+                val currentEntry = resolveHomeTopTabEntryOrNull(
                     topTabEntries,
                     pagerState.currentPage,
-                ) == HomeTopTabEntry.Subscriptions
+                )
+                val onSubscriptionTab = currentEntry == HomeTopTabEntry.Subscriptions
+                val onPartitionTab = currentEntry == HomeTopTabEntry.Partition
+                val activeGridState = currentActiveGridState.value()
+                val listAtTop = when {
+                    onPartitionTab -> !partitionListState.canScrollBackward
+                    onSubscriptionTab -> !subscriptionListState.canScrollBackward
+                    else -> activeGridState?.canScrollBackward == false
+                }
+                // 刷新保护只在当前列表顶部生效，避免请求中或切页残留状态强制展开。
+                if (currentRefreshInteractionActive.value() && listAtTop) {
+                    currentOnHeaderOffsetChanged.value(0f, false)
+                    currentOnTabsCollapsedChanged.value(false)
+                    return Offset.Zero
+                }
+                // Native fixed bars still report scroll for dock/search behavior, but
+                // need no header reducer or tab visibility writes. Keep refresh and
+                // gesture guards above shared with the full coordinator.
+                if (!configuration.coordinatesChrome) {
+                    resolveNextHomeGlobalScrollOffset(
+                        currentOffset = globalScrollOffset.floatValue,
+                        scrollDeltaY = available.y,
+                        liquidGlassEnabled = false,
+                    )?.let { globalScrollOffset.floatValue = it }
+                    return Offset.Zero
+                }
                 val headerListIndex = resolveHomeHeaderListIndex(
                     displayedEntryIsSubscription = onSubscriptionTab,
                     categoryFirstVisibleIndex = activeGridState?.firstVisibleItemIndex ?: 0,
                     subscriptionFirstVisibleIndex = subscriptionListState.firstVisibleItemIndex,
                 )
-                val activeList = if (onSubscriptionTab) subscriptionListState else activeGridState
-                // 展开判定沿用首项可见语义：item 0 露出即可跟随回顶展开，避免手势
-                // 恰好在到顶瞬间结束导致顶栏滞留收起；消费判定才要求真正贴顶。
-                val canRevealHeader = canRevealHomeHeaderForList(
+                // 仅回顶模式依据当前列表位置决定是否恢复；反向恢复模式允许浏览中展开。
+                val canRevealHeader = if (onPartitionTab) partitionListState.firstVisibleItemIndex == 0 else canRevealHomeHeaderForList(
                     firstVisibleItemIndex = headerListIndex,
                     listMissing = !onSubscriptionTab && activeGridState == null,
                 )
-                val listAtTop = activeList?.let { !it.canScrollBackward } == true
                 val oldHeaderOffset = headerOffsetProvider()
                 val revealConsumedY = resolveHomeHeaderRevealConsumedY(
                     currentHeaderOffsetPx = oldHeaderOffset,
                     deltaY = available.y,
                     listAtTop = listAtTop,
                     collapseEnabled = configuration.collapseEnabled,
-                    userInput = source == NestedScrollSource.UserInput,
                 )
                 val scrollUpdate = reduceHomePreScroll(
                     currentHeaderOffsetPx = oldHeaderOffset,
                     deltaY = available.y,
                     minHeaderOffsetPx = -configuration.collapseDistancePx,
                     canRevealHeader = canRevealHeader,
-                    collapseMode = CommonListHeaderCollapseMode.SHOW_AT_TOP_ONLY,
+                    collapseMode = configuration.collapseMode,
                     isHeaderCollapseEnabled = configuration.collapseEnabled,
                     isBottomBarAutoHideEnabled = configuration.bottomBarAutoHideEnabled,
                     useSideNavigation = configuration.useSideNavigation,
                     liquidGlassEnabled = configuration.liquidGlassEnabled,
                     currentGlobalScrollOffset = globalScrollOffset.floatValue,
                     hideType = configuration.hideType,
+                    // 惯性不在列表中途改变顶栏方向；到顶后仍允许剩余位移展开。
+                    headerDeltaY = if (source == NestedScrollSource.UserInput || listAtTop) available.y else 0f,
                     isHeaderRevealLocked = revealLocked,
                     headerConsumedY = revealConsumedY,
+                    listAtTop = listAtTop,
                 )
-                currentOnHeaderOffsetChanged.value(
-                    scrollUpdate.headerOffsetPx,
-                    scrollUpdate.shouldAnimateHeader,
-                )
+                if (scrollUpdate.headerOffsetPx != oldHeaderOffset) {
+                    currentOnHeaderOffsetChanged.value(
+                        scrollUpdate.headerOffsetPx,
+                        scrollUpdate.shouldAnimateHeader,
+                    )
+                }
                 currentOnTabsCollapsedChanged.value(
                     configuration.collapseTabs && !revealLocked &&
-                        (headerListIndex > 0 || headerOffsetProvider() < -0.5f)
+                        headerOffsetProvider() < -0.5f
                 )
                 scrollUpdate.globalScrollOffset?.let { globalScrollOffset.floatValue = it }
                 when (scrollUpdate.bottomBarVisibilityIntent) {
@@ -128,11 +160,42 @@ internal fun rememberHomeHeaderScrollConnection(
                     BottomBarVisibilityIntent.HIDE -> currentOnBottomBarVisibleChanged.value(false)
                     null -> Unit
                 }
-                if (headerListIndex == 0 && headerOffsetProvider() >= -0.5f) {
+                if (headerOffsetProvider() >= -0.5f) {
                     currentOnTabsCollapsedChanged.value(false)
                 }
                 // 浏览时只观察列表；贴顶下拉先展开顶栏，剩余位移由刷新容器处理。
                 return Offset(0f, revealConsumedY)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (revealLocked || pagerState.isScrollInProgress || !configuration.collapseEnabled || available.y <= 0f) return Offset.Zero
+                val currentEntry = resolveHomeTopTabEntryOrNull(
+                    topTabEntries, pagerState.currentPage,
+                )
+                val onSubscriptionTab = currentEntry == HomeTopTabEntry.Subscriptions
+                val activeList = if (onSubscriptionTab) subscriptionListState else currentActiveGridState.value()
+                if (if (currentEntry == HomeTopTabEntry.Partition) partitionListState.canScrollBackward else activeList?.canScrollBackward == true) return Offset.Zero
+                // 内嵌页面自行持有列表状态，向父级交出的向下剩余位移表示内容已到顶。
+                // 同一帧内列表刚到顶时，用剩余位移展开；手指或惯性恰好结束也不依赖下一次 preScroll。
+                val oldOffset = headerOffsetProvider()
+                val reveal = minOf(available.y, (-oldOffset).coerceAtLeast(0f))
+                if (reveal <= 0f) return Offset.Zero
+                val nextOffset = oldOffset + reveal
+                currentOnHeaderOffsetChanged.value(nextOffset, false)
+                currentOnTabsCollapsedChanged.value(configuration.collapseTabs && nextOffset < -0.5f)
+                return Offset(0f, reveal)
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (!revealLocked && !pagerState.isScrollInProgress && configuration.collapseEnabled &&
+                    resolveHomeTopTabEntryOrNull(topTabEntries, pagerState.currentPage) == HomeTopTabEntry.Partition &&
+                    lastUserVerticalDelta > 0f && !partitionListState.canScrollBackward && headerOffsetProvider() < -0.5f
+                ) {
+                    currentOnHeaderOffsetChanged.value(0f, true)
+                    currentOnTabsCollapsedChanged.value(false)
+                }
+                lastUserVerticalDelta = 0f
+                return Velocity.Zero
             }
         }
     }

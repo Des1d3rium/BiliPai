@@ -26,6 +26,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 //  Cupertino Icons - iOS SF Symbols 风格图标
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Sort
+import com.android.purebilibili.core.ui.components.AppWindowAction
+import com.android.purebilibili.core.ui.components.AppWindowActionMenu
+import com.android.purebilibili.core.store.AccountSessionIdentity
+import com.android.purebilibili.core.store.TokenManager
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
@@ -212,6 +220,31 @@ class FollowingListViewModel : ViewModel() {
 
     private val _followGroupTags = MutableStateFlow<List<RelationTagItem>>(emptyList())
     val followGroupTags = _followGroupTags.asStateFlow()
+    private var preferredGroupOrder: Pair<AccountSessionIdentity, List<Long>>? = null
+    private var groupOrderRevision = 0L
+
+    private fun orderForCurrentAccount(tags: List<RelationTagItem>): List<RelationTagItem> {
+        val preferred = preferredGroupOrder
+        return if (preferred != null && preferred.first == TokenManager.accountIdentity.value && currentMid == preferred.first.mid) {
+            applyFollowGroupOrder(tags, preferred.second)
+        } else tags
+    }
+
+    internal fun acceptSavedGroupOrder(identity: AccountSessionIdentity, ordered: List<RelationTagItem>) {
+        if (identity != TokenManager.accountIdentity.value || currentMid != identity.mid) return
+        val validIds = ordered.map { it.tagid }.toSet()
+        val deletedIds = _followGroupTags.value.filter { isSortableFollowGroup(it.tagid) && it.tagid !in validIds }.map { it.tagid }.toSet()
+        groupOrderRevision++
+        preferredGroupOrder = identity to ordered.map { it.tagid }
+        _followGroupTags.update { current -> orderForCurrentAccount(replaceSavedFollowGroups(current, ordered)) }
+        if (deletedIds.isNotEmpty()) {
+            // 旧成员查询可能仍携带已删除分组，先停止回填，再清理现有映射。
+            followGroupRefreshJob?.cancel()
+            followGroupRefreshJob = null
+            _isFollowGroupMetaLoading.value = false
+            _userFollowGroupIds.update { mappings -> mappings.mapValues { (_, ids) -> ids - deletedIds } }
+        }
+    }
 
     private val _userFollowGroupIds = MutableStateFlow<Map<Long, Set<Long>>>(emptyMap())
     val userFollowGroupIds = _userFollowGroupIds.asStateFlow()
@@ -522,12 +555,16 @@ class FollowingListViewModel : ViewModel() {
         if (users.isEmpty()) return
 
         followGroupRefreshJob?.cancel()
+        val requestIdentity = TokenManager.accountIdentity.value
+        val requestMid = currentMid
+        val requestOrderRevision = groupOrderRevision
         followGroupRefreshJob = viewModelScope.launch {
             if (_followGroupTags.value.isEmpty()) {
                 ActionRepository.getFollowGroupTags().onSuccess { tags ->
-                    _followGroupTags.value = tags
+                    if (requestIdentity != TokenManager.accountIdentity.value || requestMid != currentMid || requestOrderRevision != groupOrderRevision) return@onSuccess
+                    _followGroupTags.value = orderForCurrentAccount(tags
                         .filter { it.tagid != DEFAULT_FOLLOW_TAG_ID }
-                        .sortedBy { it.tagid != SPECIAL_FOLLOW_TAG_ID }
+                        .sortedBy { it.tagid != SPECIAL_FOLLOW_TAG_ID })
                 }
             }
 
@@ -658,6 +695,9 @@ fun FollowingListScreen(
     viewModel: FollowingListViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val accountIdentity by TokenManager.accountIdentity.collectAsStateWithLifecycle()
+    var showGroupOrder by remember(mid, accountIdentity) { mutableStateOf(false) }
+
     val isBatchUnfollowing by viewModel.isBatchUnfollowing.collectAsStateWithLifecycle()
     val followGroupTags by viewModel.followGroupTags.collectAsStateWithLifecycle()
     val userFollowGroupIds by viewModel.userFollowGroupIds.collectAsStateWithLifecycle()
@@ -724,7 +764,18 @@ fun FollowingListScreen(
                 },
                 actions = {
                     if (!isEditMode) {
-                        AppTextButton(onClick = { onFansClick(mid) }) { AppText("粉丝") }
+                        if (mid > 0L && mid == accountIdentity.mid) {
+                            AppWindowActionMenu(groups = listOf(listOf(
+                                AppWindowAction(label = "粉丝列表", icon = Icons.Outlined.People, onClick = { onFansClick(mid) }),
+                                AppWindowAction(
+                                    label = "关注分组排序", icon = Icons.Outlined.Sort,
+                                    enabled = !isBatchUnfollowing,
+                                    onClick = { showGroupOrder = true },
+                                ),
+                            ))) { AppIcon(Icons.Outlined.MoreVert, "关注管理") }
+                        } else {
+                            AppTextButton(onClick = { onFansClick(mid) }) { AppText("粉丝") }
+                        }
                     }
                     if (uiState is FollowingListUiState.Success) {
                         if ((uiState as? FollowingListUiState.Success)?.hasMore == true) {
@@ -1235,6 +1286,19 @@ fun FollowingListScreen(
                         }
             }
         }
+    }
+    if (showGroupOrder && accountIdentity.mid == mid) {
+        FollowGroupOrderDialog(
+            ownerMid = mid,
+            onDismiss = { showGroupOrder = false },
+            onSaved = { identity, ordered ->
+                viewModel.acceptSavedGroupOrder(identity, ordered)
+                selectedGroupFilter?.takeIf { isSortableFollowGroup(it) }?.let { selected ->
+                    if (ordered.none { it.tagid == selected }) selectedGroupFilter = null
+                }
+                scope.launch { snackbarHostState.showSnackbar("关注分组顺序已保存") }
+            },
+        )
     }
 }
 

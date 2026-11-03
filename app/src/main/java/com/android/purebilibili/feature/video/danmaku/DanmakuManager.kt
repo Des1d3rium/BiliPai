@@ -117,6 +117,7 @@ class DanmakuManager private constructor(
         val changed = renderPauseState.setPaused(view, paused)
         if (!changed || danmakuView !== view) return
         if (paused) {
+            clearTapSelection()
             controller?.pause()
             view.visibility = android.view.View.INVISIBLE
             isPlaying = false
@@ -158,7 +159,7 @@ class DanmakuManager private constructor(
     // 弹幕状态
     private var isPlaying = false
     private var isLoading = false
-    private var danmakuClickListener: ((String, Long, String, Boolean) -> Unit)? = null
+    private var danmakuClickListener: ((String, Long, String, Boolean, DanmakuTapAnchor?) -> Unit)? = null
     
     // 缓存解析后的弹幕数据（横竖屏切换时复用）
     private var cachedDanmakuList: List<DanmakuItem>? = null
@@ -216,8 +217,6 @@ class DanmakuManager private constructor(
     private var currentVideoSpeed: Float = 1.0f
     private var pluginObserverJob: Job? = null
     private var lastDanmakuPluginUpdateToken: Long = 0L
-    private var currentFaceAwareBand: DanmakuDisplayBand? = null
-    private val faceBandStabilizer = FaceOcclusionBandStabilizer()
     private var wasBufferingWhilePlaying = false
     
     // 配置
@@ -399,25 +398,6 @@ class DanmakuManager private constructor(
             config.weightFilterLevel = value.coerceIn(0, 11)
             applyConfigToController("filter_changed")
         }
-
-    internal fun updateFaceOcclusion(faceRegions: List<FaceOcclusionRegion>) {
-        if (!config.smartOcclusionEnabled) return
-
-        val targetBand = resolveFaceAwareDisplayBand(
-            faceRegions = faceRegions,
-            defaultBand = DanmakuDisplayBand(0f, config.displayAreaRatio)
-        )
-        val nextBand = faceBandStabilizer.step(
-            detectedBand = targetBand,
-            hasFace = faceRegions.isNotEmpty(),
-            nowRealtimeMs = SystemClock.elapsedRealtime()
-        ) ?: return
-
-        currentFaceAwareBand = nextBand
-        config.safeBandTopRatio = nextBand.topRatio
-        config.safeBandBottomRatio = nextBand.bottomRatio
-        applyConfigToController("face_occlusion")
-    }
 
     private fun startDanmakuPluginObserver() {
         pluginObserverJob?.cancel()
@@ -994,7 +974,8 @@ class DanmakuManager private constructor(
                 textSizeScale = (textSizeScale * style.scale).coerceIn(0.3f, 4f)
             }
         }
-        typeface = if (style?.bold == true) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        // 未要求加粗时继承渲染配置的字重，不能用默认字体覆盖用户的粗细设置。
+        typeface = if (style?.bold == true) Typeface.DEFAULT_BOLD else null
     }
 
     private fun runDanmakuFilters(
@@ -1189,13 +1170,6 @@ class DanmakuManager private constructor(
 
         if (occlusionChanged) {
             if (smartOcclusion) {
-                currentFaceAwareBand = DanmakuDisplayBand(0f, config.displayAreaRatio)
-                config.safeBandTopRatio = currentFaceAwareBand?.topRatio ?: 0f
-                config.safeBandBottomRatio = currentFaceAwareBand?.bottomRatio ?: config.displayAreaRatio
-                faceBandStabilizer.reset(
-                    defaultBand = currentFaceAwareBand,
-                    nowRealtimeMs = SystemClock.elapsedRealtime()
-                )
                 if (webMaskBytes == null && cachedCid > 0L && cachedBvid.isNotBlank()) {
                     val expectedCid = cachedCid
                     val expectedGeneration = loadGeneration
@@ -1220,10 +1194,6 @@ class DanmakuManager private constructor(
                 maskFetchJob?.cancel()
                 webMaskWindowStartMs = Long.MIN_VALUE
                 webMaskWindowEndMs = Long.MIN_VALUE
-                currentFaceAwareBand = null
-                config.safeBandTopRatio = 0f
-                config.safeBandBottomRatio = 1f
-                faceBandStabilizer.reset()
                 controller?.replaceMaskFrames(emptyList(), player?.currentPosition ?: 0L)
             }
         }
@@ -1270,6 +1240,7 @@ class DanmakuManager private constructor(
     /** The player host supplies the same geometry to the engine and Compose overlays. */
     fun updateViewport(value: DanmakuViewport) {
         if (viewport == value) return
+        clearTapSelection()
         viewport = value
         val view = danmakuView ?: return
         // A pending layout will apply this configuration in attachView's resize path.
@@ -1342,7 +1313,7 @@ class DanmakuManager private constructor(
                     "area=${config.displayAreaRatio}, strokeWidth=${config.strokeWidth}, lineHeight=${config.lineHeight}, " +
                     "staticSeconds=${config.staticDurationSeconds}, fixedVelocity=${config.scrollFixedVelocity}, " +
                     "massiveMode=${config.massiveMode}, staticToScroll=${config.staticDanmakuToScroll}, " +
-                    "smartOcclusion=${config.smartOcclusionEnabled}, band=${config.safeBandTopRatio}-${config.safeBandBottomRatio}, " +
+                    "smartOcclusion=${config.smartOcclusionEnabled}, " +
                     "allowScroll=${config.allowScroll}, allowTop=${config.allowTop}, allowBottom=${config.allowBottom}, " +
                     "allowColorful=${config.allowColorful}, allowSpecial=${config.allowSpecial}, " +
                     "baseMoveTime=$originalMoveTime, videoSpeed=$currentVideoSpeed, " +
@@ -1383,6 +1354,7 @@ class DanmakuManager private constructor(
      * 当同一个视图的尺寸发生变化时，也会重新设置弹幕数据
      */
     fun attachView(view: DanmakuRenderView) {
+        if (danmakuView !== view) clearTapSelection()
         // 使用 Log.w (warning) 确保日志可见
         Log.w(TAG, "========== attachView CALLED ==========")
         Log.w(TAG, "📎 View size: width=${view.width}, height=${view.height}, lastApplied=${lastAppliedWidth}x${lastAppliedHeight}")
@@ -1515,6 +1487,7 @@ class DanmakuManager private constructor(
     
     /** Detach a render target. A stale target is only allowed to release itself. */
     fun detachView(view: DanmakuRenderView) {
+        if (danmakuView === view) clearTapSelection()
         renderPauseState.detach(view)
         renderTargets.remove(view)
         if (danmakuView !== view) {
@@ -2612,6 +2585,7 @@ class DanmakuManager private constructor(
     }
     
     fun hide() {
+        clearTapSelection()
         Log.d(TAG, "🙈 hide()")
         controller?.pause()
         controller?.clear()
@@ -2624,6 +2598,7 @@ class DanmakuManager private constructor(
      *  清除当前显示的弹幕（拖动进度条时调用）
      */
     fun clear() {
+        clearTapSelection()
         Log.d(TAG, "🧹 clear() - clearing displayed danmakus")
         controller?.clear()
     }
@@ -2633,6 +2608,7 @@ class DanmakuManager private constructor(
      * 否则旧请求可能在新页面封面阶段回填到同一个 DanmakuView。
      */
     fun clearForVideoChange() {
+        clearTapSelection()
         isSeekScrubbing = false
         Log.d(TAG, "clearForVideoChange() - canceling active load and clearing displayed danmakus")
         updateHotDanmakuPresentation(emptyList(), 0)
@@ -2679,6 +2655,7 @@ class DanmakuManager private constructor(
      * 仅用于显式 seek scrub，避免用户拖动时继续看到旧时间线弹幕。
      */
     fun prepareForSeekScrub() {
+        clearTapSelection()
         if (isSeekScrubbing) return
         isSeekScrubbing = true
         maskLoadJob?.cancel()
@@ -2738,6 +2715,7 @@ class DanmakuManager private constructor(
      * @param positionMs 目标位置（毫秒）
      */
     fun seekTo(positionMs: Long) {
+        clearTapSelection()
         isSeekScrubbing = false
         cancelObsoleteWindowRequest(positionMs)
         requestSpecialDanmakuWindow(positionMs, "manual_seek")
@@ -3015,7 +2993,7 @@ class DanmakuManager private constructor(
     fun captureTap(
         source: androidx.compose.ui.layout.LayoutCoordinates?,
         position: androidx.compose.ui.geometry.Offset
-    ): (() -> Unit)? {
+    ): com.android.purebilibili.danmaku.engine.DanmakuClickCapture? {
         val view = danmakuView ?: return null
         val listener = danmakuClickListener ?: return null
         if (source == null || !source.isAttached || !view.isShown || !isRenderingEnabled) return null
@@ -3025,21 +3003,37 @@ class DanmakuManager private constructor(
         val x = windowPosition.x - location[0]
         val y = windowPosition.y - location[1]
         if (x < 0f || y < 0f || x >= view.width || y >= view.height) return null
+        clearTapSelection()
         val click = controller?.captureClick(x, y) ?: return null
         val generation = loadGeneration
-        return {
-            if (danmakuView === view && danmakuClickListener === listener &&
-                loadGeneration == generation && isRenderingEnabled
-            ) click()
-        }
+        isTapSelectionActive = true
+        return com.android.purebilibili.danmaku.engine.DanmakuClickCapture(
+            confirm = {
+                if (danmakuView === view && danmakuClickListener === listener &&
+                    loadGeneration == generation && isRenderingEnabled
+                ) click() else click.cancel()
+            },
+            release = { click.cancel(); isTapSelectionActive = false },
+        )
+    }
+
+    val tapSelectionOwner = Any()
+
+    var isTapSelectionActive by mutableStateOf(false)
+        private set
+
+    fun clearTapSelection() {
+        controller?.clearClickSelection()
+        isTapSelectionActive = false
     }
 
     /**
      * 设置弹幕点击监听器
      *
-     * @param listener 回调函数，参数为 (text, dmid, userHash, isSelf)
+     * @param listener 回调提供文本、身份、自发状态及窗口内锚点
      */
-    fun setOnDanmakuClickListener(listener: ((String, Long, String, Boolean) -> Unit)?) {
+    fun setOnDanmakuClickListener(listener: ((String, Long, String, Boolean, DanmakuTapAnchor?) -> Unit)?) {
+        clearTapSelection()
         danmakuClickListener = listener
         applyDanmakuClickListener()
     }
@@ -3052,14 +3046,29 @@ class DanmakuManager private constructor(
         }
         controller?.let { ctrl ->
             try {
-                ctrl.setOnItemClickListener { danmaku, _, _ ->
+                ctrl.setOnItemClickListener { danmaku, rect, point ->
                     val text = danmaku.text.orEmpty()
                     val dmid = danmaku.danmakuId
                     val userHash = resolveDanmakuClickUserHash(danmaku.userHash)
                     val currentMid = com.android.purebilibili.core.store.TokenManager.midCache ?: 0L
                     val isSelf = danmaku.isSelf ||
                         resolveDanmakuClickIsSelf(userHash = userHash, currentMid = currentMid)
-                    callback(text, dmid, userHash, isSelf)
+                    val view = danmakuView
+                    val anchor = view?.let {
+                        val location = IntArray(2)
+                        it.getLocationInWindow(location)
+                        DanmakuTapAnchor(
+                            left = rect.left + location[0], top = rect.top + location[1],
+                            right = rect.right + location[0], bottom = rect.bottom + location[1],
+                            tapX = point.x + location[0],
+                            owner = tapSelectionOwner,
+                            likeCount = danmaku.likeCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
+                            viewportLeft = location[0].toFloat(), viewportTop = location[1].toFloat(),
+                            viewportRight = (location[0] + it.width).toFloat(),
+                            viewportBottom = (location[1] + it.height).toFloat(),
+                        )
+                    }
+                    callback(text, dmid, userHash, isSelf, anchor)
                 }
                 Log.d(TAG, "setOnDanmakuClickListener set (DanmakuRenderEngine)")
             } catch (e: Exception) {
@@ -3074,6 +3083,7 @@ class DanmakuManager private constructor(
      * 释放所有资源
      */
     fun release() {
+        clearTapSelection()
         Log.d(TAG, " release")
         updateHotDanmakuPresentation(emptyList(), 0)
         clearViewReference()

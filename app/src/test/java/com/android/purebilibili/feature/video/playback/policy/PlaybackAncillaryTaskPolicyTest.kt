@@ -36,12 +36,6 @@ class PlaybackAncillaryTaskPolicyTest {
     }
 
     @Test
-    fun `online count polling should back off harder in background`() {
-        assertEquals(30_000L, resolveOnlineCountPollingDelayMs(isInBackground = false))
-        assertEquals(90_000L, resolveOnlineCountPollingDelayMs(isInBackground = true))
-    }
-
-    @Test
     fun `heartbeat should only send for active foreground playback`() {
         assertTrue(
             shouldSendPlaybackHeartbeat(
@@ -182,5 +176,17 @@ class PlaybackAncillaryTaskPolicyTest {
                 lastReportedSnapshot = advancedSnapshot
             )
         )
+    }
+
+    @Test
+    fun `backward seek including restart is flushed without extra watch time`() {
+        val previous = PlaybackHeartbeatSnapshot(playedTimeSec = 120L, realPlayedTimeSec = 30L)
+        listOf(60L, 0L).forEach { position ->
+            assertTrue(shouldFlushPlaybackHeartbeatSnapshot(
+                currentBvid = "BV1test", currentCid = 456L,
+                snapshot = PlaybackHeartbeatSnapshot(position, 30L),
+                lastReportedSnapshot = previous,
+            ))
+        }
     }
 }

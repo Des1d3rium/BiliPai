@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.android.purebilibili.core.ui.components.appActionClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import com.android.purebilibili.feature.video.ui.gesture.detectPlayerTapGestures
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +61,7 @@ import com.android.purebilibili.core.ui.components.AppSurface
 import com.android.purebilibili.feature.live.resolveLiveVisualSpec
 import com.android.purebilibili.feature.live.LiveStatusPalette
 import com.android.purebilibili.feature.live.LivePlayerGesturePolicy
+import com.android.purebilibili.feature.live.shouldToggleLiveFullscreenForDrag
 import com.android.purebilibili.feature.video.ui.gesture.GestureLevelKind
 import com.android.purebilibili.feature.video.ui.gesture.GestureLevelOverlayHost
 import com.android.purebilibili.feature.video.ui.section.VideoGestureMode
@@ -76,7 +79,7 @@ import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsInputComponent
-import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -84,6 +87,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.android.purebilibili.feature.live.rememberLiveChromePalette
 import com.android.purebilibili.feature.live.resolveLivePlayerControlVisualSpec
+import com.android.purebilibili.feature.video.ui.overlay.PlayerGlassIconButtonSize
 import com.android.purebilibili.feature.video.ui.overlay.PlayerControlGlassDock
 import com.android.purebilibili.feature.video.ui.overlay.PlayerControlsBackdropHost
 import com.android.purebilibili.feature.video.ui.overlay.LocalPlayerControlGlassEnabled
@@ -107,12 +111,11 @@ private fun LivePlayerIconButton(
     /** 点击振动档位；null 关闭（如调用方已自行触发更强的状态反馈）。 */
     hapticType: HapticType? = HapticType.LIGHT,
     modifier: Modifier = Modifier,
-    glassShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(percent = 50),
+    glassShape: androidx.compose.ui.graphics.Shape = CircleShape,
     iconContent: (@Composable (Color) -> Unit)? = null,
 ) {
     require(label.isNotBlank()) { "Live player icon button label must not be blank" }
 
-    val palette = rememberLiveChromePalette()
     val playerChromeProfile = rememberAppPlayerChromeProfile()
     val visualSpec = remember(playerChromeProfile.tabPresentation) {
         resolveLiveVisualSpec(playerChromeProfile.tabPresentation)
@@ -129,7 +132,7 @@ private fun LivePlayerIconButton(
     ) {
         Box(
             modifier = Modifier
-                .then(if (glass) Modifier.size(width = 42.dp, height = 34.dp) else Modifier.size(touchTargetSize))
+                .then(if (glass) Modifier.size(PlayerGlassIconButtonSize) else Modifier.size(touchTargetSize))
                 .appElasticPress(enabled = enabled && !glass, visualSize = visualSize)
                 .clickable(
                     enabled = enabled,
@@ -151,13 +154,16 @@ private fun LivePlayerIconButton(
         ) {
             AppSurface(
                 shape = CircleShape,
-                color = Color.Transparent,
+                // 未开启仍是可用操作，保持图标对比度；状态由底衬与语义区分。
+                color = if (enabled && stateDescription != null && selected) {
+                    LiveStatusPalette.MediaContent.copy(alpha = 0.16f)
+                } else Color.Transparent,
                 modifier = Modifier
                     .size(visualSize)
                     .alpha(if (enabled) 1f else 0.38f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    val tint = LiveStatusPalette.MediaContent.copy(alpha = if (stateDescription != null && !selected) 0.45f else 1f)
+                    val tint = LiveStatusPalette.MediaContent
                     if (iconContent != null) iconContent(tint) else AppIcon(
                         imageVector = requireNotNull(icon), contentDescription = null,
                         tint = tint, modifier = Modifier.size(18.dp),
@@ -193,6 +199,8 @@ fun LivePlayerControls(
     isDanmakuEnabled: Boolean = true,
     onToggleDanmaku: () -> Unit = {},
     onOpenDanmakuSettings: () -> Unit = {},
+    danmakuSettingsSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
+    danmakuSettingsVisible: Boolean = false,
     onOpenBlockSettings: () -> Unit = {},
     // [新增] 刷新
     onRefresh: () -> Unit = {},
@@ -205,6 +213,10 @@ fun LivePlayerControls(
     onOpenVolume: () -> Unit = {},
     onOpenPlaybackPreferences: () -> Unit = {},
     onOpenSend: () -> Unit = {},
+    showInteractionToggle: Boolean = false,
+    interactionWindowVisible: Boolean = false,
+    interactionWindowSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
+    onToggleInteractionWindow: () -> Unit = {},
     videoFitDesc: String = "",
     videoFitOptions: List<AppWindowAction> = emptyList(),
     currentQualityDesc: String = "",
@@ -225,22 +237,36 @@ fun LivePlayerControls(
     onCaptureScreenshot: () -> Unit = {},
     // [新增] 点赞连击
     gesturePolicy: LivePlayerGesturePolicy = LivePlayerGesturePolicy.Shared,
+    fullscreenGestureReverse: Boolean = false,
+    captureDanmakuTap: (androidx.compose.ui.geometry.Offset) -> com.android.purebilibili.danmaku.engine.DanmakuClickCapture? = { null },
+    onDanmakuInteractionEnabledChange: (Boolean) -> Unit = {},
     // 玻璃调用方显式开启，横竖屏共用材质；原生路径沿用既有尺寸和背景。
     glassEnabled: Boolean = false,
     onBackdropRequiredChange: (Boolean) -> Unit = {},
+    // 手势按请求意图判定方向，旋转尚未完成时重复上滑不会反向取消全屏。
+    fullscreenRequested: Boolean = isFullscreen,
 ) {
+    var controlsWindowOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val latestCaptureDanmakuTap by rememberUpdatedState(captureDanmakuTap)
     var isControlsVisible by remember { mutableStateOf(true) }
     var menuExpanded by remember { mutableStateOf(false) }
     // 全屏锁屏状态（仅 showLockButton 场景生效）
     var isLocked by rememberSaveable { mutableStateOf(false) }
+    val latestInteractionEnabledChange by rememberUpdatedState(onDanmakuInteractionEnabledChange)
+    DisposableEffect(isLocked) {
+        latestInteractionEnabledChange(!isLocked)
+        onDispose { latestInteractionEnabledChange(false) }
+    }
     val palette = rememberLiveChromePalette()
     val controlVisualSpec = remember { resolveLivePlayerControlVisualSpec() }
 
+    val autoHide = com.android.purebilibili.feature.video.ui.overlay.rememberPlayerControlsAutoHide(3_000L)
     // 自动隐藏控制器（锁定时保持隐藏）
-    LaunchedEffect(isControlsVisible, isPlaying, isLocked, menuExpanded) {
-        if (isControlsVisible && !isLocked && isPlaying && !menuExpanded) {
-            kotlinx.coroutines.delay(3000)
-            isControlsVisible = false
+    LaunchedEffect(isControlsVisible, isPlaying, isLocked, menuExpanded, danmakuSettingsVisible, autoHide.timeoutMillis) {
+        val timeout = autoHide.timeoutMillis ?: return@LaunchedEffect
+        if (isControlsVisible && !isLocked && isPlaying && !menuExpanded && !danmakuSettingsVisible) {
+            kotlinx.coroutines.delay(timeout)
+            if (autoHide.canHide()) isControlsVisible = false
         }
     }
 
@@ -264,28 +290,31 @@ fun LivePlayerControls(
     val refreshIcon = rememberAppRefreshIcon()
     var gestureKind by remember { mutableStateOf(GestureLevelKind.Volume) }
     var gesturePercent by remember { mutableFloatStateOf(0f) }
-    // 竖向直播不响应中间区域的全屏手势。
+    // 中部手势按当前全屏状态决定进入或退出。
     var gestureZone by remember { mutableStateOf(LiveGestureZone.None) }
-    var centerDragAccumulator by remember { mutableFloatStateOf(0f) }
     val latestPlayPause by rememberUpdatedState(onPlayPause)
     val latestToggleFullscreen by rememberUpdatedState(onToggleFullscreen)
+    val latestFullscreen by rememberUpdatedState(fullscreenRequested)
+    val latestFullscreenGestureReverse by rememberUpdatedState(fullscreenGestureReverse)
     val latestOnScale by rememberUpdatedState(onScale)
     // 锁定/解锁、双击播放与手势切全屏的状态切换反馈；按钮点击由 LivePlayerIconButton 统一触发。
     val stateHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.PLAYER_GESTURES)
 
     // 锁定时控制栏强制隐藏
-    val effectiveControlsVisible = isControlsVisible && !isLocked
+    val effectiveControlsVisible = (isControlsVisible || interactionWindowVisible) && !isLocked
     // 将需求交给页面控制录制周期；锁定时解锁按钮仍消费玻璃背景。
     SideEffect {
-        onBackdropRequiredChange(effectiveControlsVisible || isLocked || isGestureVisible || menuExpanded)
+        onBackdropRequiredChange(effectiveControlsVisible || isLocked || isGestureVisible || menuExpanded || danmakuSettingsVisible)
     }
 
     val glass = glassEnabled && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     PlayerControlsBackdropHost(
         enabled = glass,
         modifier = modifier
+            .then(autoHide.focusModifier)
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .onGloballyPositioned { controlsWindowOffset = it.positionInWindow() }
             // 锁定时移除全部手势（单击/双击/亮度/音量拖拽）
             .then(
                 if (isLocked) {
@@ -305,7 +334,9 @@ fun LivePlayerControls(
                             }
                         }
                         .pointerInput(gesturePolicy.doubleTapPlayback) {
-                            detectTapGestures(
+                            detectPlayerTapGestures(
+                                doubleTapSlopPx = 100.dp.toPx(),
+                                captureSingleTap = { latestCaptureDanmakuTap(it + controlsWindowOffset) },
                                 onTap = { isControlsVisible = !isControlsVisible },
                                 onDoubleTap = { if (gesturePolicy.doubleTapPlayback) {
                                     stateHaptic(HapticType.LIGHT)
@@ -320,6 +351,8 @@ fun LivePlayerControls(
                             // 使用 Float 累积变化量，解决"不跟手"问题
                             var volumeAccumulator = 0f
                             var brightnessAccumulator = 0f
+                            var centerDragAccumulator = 0f
+                            var centerDragResolved = false
 
                             var maxVolume = 0
 
@@ -333,6 +366,7 @@ fun LivePlayerControls(
                                         else -> LiveGestureZone.None
                                     }
                                     centerDragAccumulator = 0f
+                                    centerDragResolved = false
                                     when (gestureZone) {
                                         LiveGestureZone.Brightness -> {
                                             // 左侧：亮度
@@ -363,13 +397,6 @@ fun LivePlayerControls(
                                         gestureZone == LiveGestureZone.Volume
                                 },
                                 onDragEnd = {
-                                    // 中间区域：上下滑动超过阈值则切换全屏
-                                    if (gestureZone == LiveGestureZone.FullscreenToggle &&
-                                        kotlin.math.abs(centerDragAccumulator) > screenHeight * 0.15f
-                                    ) {
-                                        stateHaptic(HapticType.MEDIUM)
-                                        latestToggleFullscreen()
-                                    }
                                     isGestureVisible = false
                                     gestureZone = LiveGestureZone.None
                                 },
@@ -422,6 +449,20 @@ fun LivePlayerControls(
                                         }
                                         LiveGestureZone.FullscreenToggle -> {
                                             centerDragAccumulator += dragAmount
+                                            val threshold = 2.5.dp.toPx()
+                                            if (!centerDragResolved && kotlin.math.abs(centerDragAccumulator) > threshold) {
+                                                centerDragResolved = true
+                                                if (shouldToggleLiveFullscreenForDrag(
+                                                        dragY = centerDragAccumulator,
+                                                        threshold = threshold,
+                                                        isFullscreen = latestFullscreen,
+                                                        reverse = latestFullscreenGestureReverse,
+                                                    )
+                                                ) {
+                                                    stateHaptic(HapticType.MEDIUM)
+                                                    latestToggleFullscreen()
+                                                }
+                                            }
                                         }
                                         LiveGestureZone.None -> {}
                                     }
@@ -431,10 +472,10 @@ fun LivePlayerControls(
                 }
             )
     ) {
-        // 与普通视频共用同一 Host：亮度贴左边缘，音量贴右边缘。
+        // 亮度、音量与普通视频共用同一反馈入口；全屏使用完整玻璃轨道，内嵌播放使用紧凑尺寸。
         GestureLevelOverlayHost(
             visible = isGestureVisible,
-            compact = true,
+            compact = if (glass) !isFullscreen else true,
             mode = if (gestureKind == GestureLevelKind.Brightness) {
                 VideoGestureMode.Brightness
             } else {
@@ -443,6 +484,12 @@ fun LivePlayerControls(
             percent = gesturePercent,
             glassBackdrop = com.android.purebilibili.feature.video.ui.overlay.LocalPlayerPageBackdrop.current
                 .takeIf { glass },
+            glassEnabled = glass,
+            // 44dp 提示与顶部 34dp 玻璃按钮共用中心线（顶部间距 13dp）。
+            glassTopInset = if (isFullscreen) 8.dp else 16.dp,
+            glassApplyTopSystemInsets = applyTopSystemBarPadding,
+            glassTopSystemInsets = WindowInsets.statusBars,
+            glassContentColorOverride = Color.White,
         )
 
         // 横竖屏共用按钮顺序；短窗口仅把放不下的文字工具收进同一菜单。
@@ -472,9 +519,12 @@ fun LivePlayerControls(
                     if (isFullscreen && !compactTop) {
                         LivePlayerStatus(Modifier.padding(end = 10.dp))
                     }
-                    if (isFullscreen) LivePlayerIconButton(
-                        null, "发弹幕", false, true, onOpenSend, glassShape = CircleShape,
-                        iconContent = { tint -> PiliPlusDanmakuSendIcon(tint = tint, size = 22.dp) },
+                    if (showInteractionToggle) LivePlayerIconButton(
+                        Icons.Outlined.ChatBubbleOutline, "弹幕互动窗", interactionWindowVisible, true,
+                        onToggleInteractionWindow, stateDescription = if (interactionWindowVisible) "已打开" else "已关闭",
+                        modifier = if (glass && interactionWindowSource != null) {
+                            Modifier.appGlassMenuSource(interactionWindowSource, onToggleInteractionWindow)
+                        } else Modifier,
                     )
                     if (!compactTop && showPipButton) LivePlayerIconButton(Icons.Outlined.PictureInPictureAlt, "画中画", false, true, onEnterPip, glassShape = CircleShape)
                     if (!compactTop) LivePlayerIconButton(Icons.Outlined.MusicNote, "仅播放音频", isAudioOnly, true, onToggleAudioOnly, if (isAudioOnly) "已开启" else "已关闭", glassShape = CircleShape)
@@ -484,7 +534,7 @@ fun LivePlayerControls(
                         compact = true,
                         glassShape = CircleShape,
                         onExpandedChange = { menuExpanded = it },
-                        anchorModifier = if (glass) Modifier.size(width = 42.dp, height = 34.dp) else Modifier.size(30.dp),
+                        anchorModifier = if (glass) Modifier.size(PlayerGlassIconButtonSize) else Modifier.size(30.dp),
                         groups = listOf(buildList {
                             add(AppWindowAction("切换路线", onClick = onSourceClick))
                             add(AppWindowAction("播放信息", onClick = onOpenPlayerInfo))
@@ -497,7 +547,7 @@ fun LivePlayerControls(
                                 add(AppWindowAction("定时关闭", onClick = onOpenShutdownTimer))
                             }
                         }),
-                    ) { AppIcon(Icons.Outlined.MoreVert, "更多播放设置", tint = Color.White, modifier = Modifier.size(18.dp)) }
+                    ) { AppIcon(Icons.Outlined.Settings, "播放设置", tint = Color.White, modifier = Modifier.size(18.dp)) }
                 }
             }
         }
@@ -526,9 +576,14 @@ fun LivePlayerControls(
                     if (!collapseTools) LivePlayerIconButton(Icons.Outlined.Block, "屏蔽", false, true, onOpenBlockSettings)
                     LivePlayerDanmakuControls(
                         enabled = isDanmakuEnabled,
-                        showSettings = !collapseTools,
+                        showSettings = isFullscreen || !collapseTools,
                         onToggle = onToggleDanmaku,
                         onOpenSettings = onOpenDanmakuSettings,
+                        source = danmakuSettingsSource,
+                    )
+                    if (isFullscreen) LivePlayerIconButton(
+                        null, "发弹幕", false, true, onOpenSend, glassShape = CircleShape,
+                        iconContent = { tint -> PiliPlusDanmakuSendIcon(tint = tint, size = 22.dp) },
                     )
                     if (!compact) {
                         LivePlayerActionMenu(
@@ -551,9 +606,10 @@ fun LivePlayerControls(
                         }
                     } else {
                         LivePlayerActionMenu(
+                            sourceOverride = danmakuSettingsSource.takeIf { collapseTools },
                             compact = true,
                             onExpandedChange = { menuExpanded = it },
-                            anchorModifier = if (glass) Modifier.size(width = 42.dp, height = 34.dp) else Modifier.size(30.dp),
+                            anchorModifier = if (glass) Modifier.size(PlayerGlassIconButtonSize) else Modifier.size(30.dp),
                             groups = listOf(buildList {
                                 if (collapseRefresh) add(AppWindowAction("刷新", onClick = onRefresh))
                                 if (collapseTools) {
@@ -563,7 +619,7 @@ fun LivePlayerControls(
                                 add(AppWindowAction("画面比例：$videoFitDesc", children = videoFitOptions))
                                 add(AppWindowAction("画质：$currentQualityDesc", children = qualityOptions))
                             }),
-                        ) { AppIcon(Icons.Outlined.MoreVert, if (collapseTools) "更多播放工具" else "画面比例与画质", tint = Color.White, modifier = Modifier.size(18.dp)) }
+                        ) { AppIcon(Icons.Outlined.Tune, if (collapseTools) "播放工具" else "画面比例与画质", tint = Color.White, modifier = Modifier.size(18.dp)) }
                     }
                     LivePlayerIconButton(if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, if (isFullscreen) "退出全屏" else "全屏", false, true, onToggleFullscreen)
                 }
@@ -618,10 +674,11 @@ private fun LivePlayerActionMenu(
     groups: List<List<AppWindowAction>>,
     modifier: Modifier = Modifier,
     glassShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(percent = 50),
+    sourceOverride: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
     content: @Composable () -> Unit,
 ) {
     val glass = LocalPlayerControlGlassEnabled.current
-    val source = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    val source = sourceOverride ?: com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
     LivePlayerGlassDock(
         enabled = glass,
         // 外层材质与内容共用捕获层，菜单打开后不在原位留下玻璃空壳。
@@ -655,13 +712,14 @@ private fun LivePlayerGlassDock(
     }
 }
 
-/** 横竖屏共用普通视频的弹幕开关与设置字形，玻璃模式由整组胶囊提供材质。 */
+/** 横竖屏共用普通视频的弹幕字形；玻璃开关与设置分别使用圆形材质。 */
 @Composable
 private fun LivePlayerDanmakuControls(
     enabled: Boolean,
     showSettings: Boolean,
     onToggle: () -> Unit,
     onOpenSettings: () -> Unit,
+    source: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
     modifier: Modifier = Modifier,
 ) {
     val glass = LocalPlayerControlGlassEnabled.current
@@ -669,9 +727,13 @@ private fun LivePlayerDanmakuControls(
     val nativeSize = remember(playerChromeProfile.tabPresentation) {
         resolveLiveVisualSpec(playerChromeProfile.tabPresentation).playerButtonTouchTargetDp.dp
     }
-    val buttonModifier = if (glass) Modifier.size(width = 42.dp, height = 34.dp) else Modifier.size(nativeSize)
-    LivePlayerGlassDock(enabled = glass, modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    val buttonModifier = if (glass) Modifier.size(PlayerGlassIconButtonSize) else Modifier.size(nativeSize)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (glass) 4.dp else 0.dp),
+    ) {
+        LivePlayerGlassDock(enabled = glass, shape = CircleShape) {
             NativeDanmakuToggleButton(
                 enabled = enabled,
                 onToggle = onToggle,
@@ -680,7 +742,13 @@ private fun LivePlayerDanmakuControls(
                 modifier = buttonModifier,
                 iconSize = 22.dp,
             )
-            if (showSettings) {
+        }
+        if (showSettings) {
+            LivePlayerGlassDock(
+                enabled = glass,
+                shape = CircleShape,
+                modifier = if (glass && source != null) Modifier.appGlassMenuSource(source, onOpenSettings) else Modifier,
+            ) {
                 AppIconButton(onClick = onOpenSettings, modifier = buttonModifier) {
                     PiliPlusDanmakuSettingsIcon(tint = Color.White.copy(alpha = 0.9f), size = 22.dp)
                 }

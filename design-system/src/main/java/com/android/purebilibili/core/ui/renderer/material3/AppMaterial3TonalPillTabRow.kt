@@ -1,5 +1,7 @@
 package com.android.purebilibili.core.ui.renderer.material3
 
+import com.android.purebilibili.core.ui.components.ElasticTabIndicatorBounds
+import com.android.purebilibili.core.ui.components.tabIndicatorBounds
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -72,6 +74,7 @@ fun <T> AppTonalPillTabRow(
     selectedContentColor: androidx.compose.ui.graphics.Color? = null,
     unselectedContentColor: androidx.compose.ui.graphics.Color? = null,
     indicatorPositionProvider: (() -> Float)? = null,
+    centerSelectedTab: Boolean = false,
 ) {
     if (options.isEmpty()) return
     val selectedIndex = options.indexOfFirst { it.value == selectedValue }.coerceAtLeast(0)
@@ -109,24 +112,22 @@ fun <T> AppTonalPillTabRow(
         }
     } else emptyList()
 
-    val animatedPosition by animateFloatAsState(
+    val animatedPosition = animateFloatAsState(
         targetValue = selectedIndex.toFloat(),
         animationSpec = if (!com.android.purebilibili.core.ui.LocalComponentMotionEnabled.current ||
             indicatorPositionProvider != null) snap() else spring(),
         label = "tonalPillTabPosition",
     )
-    val followPosition = indicatorPositionProvider?.invoke()
-    val pillPosition = followPosition ?: animatedPosition
 
-    fun pillBounds(lefts: List<Dp>, widths: List<Dp>): Pair<Dp, Dp> {
+    fun pillBounds(lefts: List<Dp>, widths: List<Dp>): ElasticTabIndicatorBounds {
         val bounds = resolveElasticTabIndicatorBounds(
-            position = pillPosition,
+            position = indicatorPositionProvider?.invoke() ?: animatedPosition.value,
             tabLeftsDp = lefts.map { it.value },
             tabWidthsDp = widths.map { it.value },
             contentWidthsDp = widths.map { it.value },
             matchContentSize = false,
         )
-        return bounds.leftDp.dp to bounds.widthDp.dp
+        return bounds
     }
 
     val pillColor = selectedContainerColor ?: colorScheme.secondaryContainer
@@ -153,12 +154,13 @@ fun <T> AppTonalPillTabRow(
             }
             val contentWidth = widths.fold(padding * 2) { total, width -> total + width }
             val viewportWidth = minOf(contentWidth, maxWidth)
-            LaunchedEffect(selectedIndex, widths, viewportWidth, rowScrollState.maxValue, motionEnabled, density, scrollable) {
+            LaunchedEffect(selectedIndex, widths, viewportWidth, rowScrollState.maxValue, motionEnabled, density, scrollable, centerSelectedTab) {
                 if (scrollable) {
                     val left = with(density) { lefts[selectedIndex].roundToPx() }
                     val right = left + with(density) { widths[selectedIndex].roundToPx() }
                     val viewport = with(density) { viewportWidth.roundToPx() }
                     val target = when {
+                        centerSelectedTab -> left + (right - left) / 2 - viewport / 2
                         left < rowScrollState.value -> left
                         right > rowScrollState.value + viewport -> right - viewport
                         else -> rowScrollState.value
@@ -168,14 +170,13 @@ fun <T> AppTonalPillTabRow(
                     } else rowScrollState.scrollTo(target)
                 }
             }
-            val (pillLeft, pillWidth) = pillBounds(lefts, widths)
             Box(
                 modifier = Modifier.width(viewportWidth).height(height)
                     .horizontalScroll(rowScrollState, enabled = scrollable)
                     .selectableGroup(),
             ) {
                 Box(
-                    modifier = Modifier.offset(x = pillLeft).width(pillWidth).fillMaxHeight()
+                    modifier = Modifier.tabIndicatorBounds { pillBounds(lefts, widths) }.fillMaxHeight()
                         .clip(pillShape).background(pillColor),
                 )
                 Row(modifier = Modifier.height(height).padding(horizontal = padding)) {

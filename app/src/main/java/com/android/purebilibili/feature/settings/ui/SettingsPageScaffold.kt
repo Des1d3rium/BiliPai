@@ -34,8 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.android.purebilibili.feature.home.components.BiliPaiImmersiveTopBar
 import com.android.purebilibili.feature.home.components.shouldUseBiliPaiProgressiveTopBlur
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import com.android.purebilibili.core.ui.blur.rememberChromeBackdropSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.ui.LocalAppThemeConfig
@@ -154,6 +153,12 @@ internal fun SettingsPageScaffold(
         LocalBottomBarContentPadding.current,
     )
     val appThemeConfig = LocalAppThemeConfig.current
+    // 设置页导航槽补足窗口边距；大标题沿用顶栏自身的原生边距。
+    val navigationStartInset = when {
+        topBarStyle == AppTopBarStyle.LARGE -> 0.dp
+        LocalAppUiStyle.current == AppUiStyle.MIUIX -> 12.dp
+        else -> 8.dp
+    }
     val headerBlurEnabled = topBarBlurEnabled ?: appThemeConfig.headerBlurEnabled
     val lowBlurBudget = isLowBlurBudgetForced()
     val nonGlassMiuix = isMiuixNonGlassEnabled()
@@ -173,7 +178,8 @@ internal fun SettingsPageScaffold(
     val fadeActive = appThemeConfig.progressiveTopFadeEnabled && !headerBlurEnabled
     // Keep this backdrop in the scaffold chrome. The scroll content is its source,
     // so passing it into a search dock inside that content would create a render-layer cycle.
-    val backdrop = if (progressiveBlurEnabled) rememberLayerBackdrop() else null
+    val chromeSource = if (progressiveBlurEnabled) rememberChromeBackdropSource() else null
+    val backdrop = chromeSource?.takeIf { it.isReady }?.backdrop
     val hazeState = if (
         headerBlurEnabled && !lowBlurBudget &&
         shouldAllowRenderEffectBackedHazeEffect(android.os.Build.VERSION.SDK_INT)
@@ -200,6 +206,7 @@ internal fun SettingsPageScaffold(
     ) {
         AppScaffold(
             modifier = modifier.appTopBarNestedScroll(collapseBehavior),
+            topBarIconBackdropSource = chromeSource,
             topBar = {
                 BiliPaiImmersiveTopBar(
                     backdrop = backdrop,
@@ -222,15 +229,18 @@ internal fun SettingsPageScaffold(
                                 )
                         } else Modifier,
                         navigationIcon = {
-                            AdaptivePlainTooltipBox(
-                                text = backContentDescription,
-                                enabled = true,
-                            ) {
-                                AppIconButton(onClick = onBack) {
-                                    AppIcon(
-                                        imageVector = rememberAppBackIcon(),
-                                        contentDescription = backContentDescription,
-                                    )
+                            // 设置页自行提供导航边距；不修改共用顶栏默认值，玻璃与原生路径共用。
+                            Box(modifier = Modifier.padding(start = navigationStartInset)) {
+                                AdaptivePlainTooltipBox(
+                                    text = backContentDescription,
+                                    enabled = true,
+                                ) {
+                                    AppIconButton(onClick = onBack) {
+                                        AppIcon(
+                                            imageVector = rememberAppBackIcon(),
+                                            contentDescription = backContentDescription,
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -255,7 +265,7 @@ internal fun SettingsPageScaffold(
         ) { padding ->
             val scrollModifier = Modifier
                 .fillMaxSize()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                .then(chromeSource?.modifier ?: Modifier)
                 .then(if (hazeState != null) Modifier.hazeSourceCompat(hazeState) else Modifier)
                 .globalWallpaperAwareBackground(pageContainerColor)
 

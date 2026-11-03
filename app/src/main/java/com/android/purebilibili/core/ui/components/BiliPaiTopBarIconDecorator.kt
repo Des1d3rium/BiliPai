@@ -35,7 +35,9 @@ object BiliPaiTopBarIconDecorator : AppTopBarIconDecorator {
                         onDrag = { change, _ -> change.consume() },
                     )
                 } else Modifier),
-            backdrop = LocalAppTopBarIconBackdrop.current,
+            backdrop = com.android.purebilibili.core.ui.blur.rememberSurfaceOverlayBackdrop(
+                LocalAppTopBarIconBackdrop.current, LocalAppTopBarSurfaceColor.current,
+            ),
             reuseEnabled = true,
             elasticFeedbackEnabled = enabled,
             allowConsumedDrag = { ownsDrag.value },

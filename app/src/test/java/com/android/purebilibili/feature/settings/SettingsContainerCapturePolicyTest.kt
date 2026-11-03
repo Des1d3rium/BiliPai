@@ -10,6 +10,17 @@ import kotlin.test.assertNull
 
 class SettingsContainerCapturePolicyTest {
     @Test
+    fun cardDepthScalingDoesNotInvalidateTheCapturedOriginButRealScrollingDoes() {
+        val captured = Rect(16f, 200f, 384f, 280f)
+        val host = IntSize(400, 900)
+        val scaled = Rect(21.52f, 207.5f, 378.48f, 285.1f)
+        kotlin.test.assertTrue(matchesSettingsContainerSourceBounds(captured, captured, host, 0.97f))
+        kotlin.test.assertTrue(matchesSettingsContainerSourceBounds(scaled, captured, host, 0.97f))
+        kotlin.test.assertFalse(matchesSettingsContainerSourceBounds(scaled.translate(Offset(0f, 20f)), captured, host, 0.97f))
+        kotlin.test.assertFalse(matchesSettingsContainerSourceBounds(scaled, captured, host, 1f))
+    }
+
+    @Test
     fun aMeasuredRowSuppliesTheFullExpansionOriginInHostCoordinates() {
         assertEquals(
             Rect(16f, 200f, 384f, 280f),

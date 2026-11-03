@@ -97,8 +97,10 @@ private fun AppIconButtonImpl(
         return@AppExactTouchTargets
     }
     // 玻璃图标的弹性由外层 dock 提供，普通 MD3 图标保留原生涟漪与固定形状。
-    val elasticFeedbackEnabled = enabled && (LocalAppUiStyle.current == AppUiStyle.MIUIX ||
-        LocalAppIconButtonGlassSurfaceProvided.current)
+    val elasticFeedbackEnabled = enabled &&
+        ((LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+            com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) ||
+            LocalAppIconButtonGlassSurfaceProvided.current)
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         when (LocalAppUiStyle.current) {
             AppUiStyle.MATERIAL3 -> AppMaterial3IconButton(
@@ -113,7 +115,7 @@ private fun AppIconButtonImpl(
             AppUiStyle.MIUIX -> AppMiuixIconButton(
                 onClick = feedbackClick,
                 modifier = modifier.appElasticPress(
-                    enabled = enabled,
+                    enabled = elasticFeedbackEnabled,
                     highlightShape = androidx.compose.foundation.shape.RoundedCornerShape(
                         com.android.purebilibili.core.ui.AppChromeSizeTokens.MiuixNativeCompactCornerRadiusDp.dp,
                     ),

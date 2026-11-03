@@ -192,6 +192,7 @@ data class VideoItem(
     val id: Long = 0,
     val bvid: String = "",
     val dynamicId: String = "", // Home Follow 动态卡片跳转详情用
+    val trackId: String = "", // 推荐流卡片追踪 ID（负反馈上报用）
     val aid: Long = 0,   // [修复] 新增 aid 字段，移动端推荐流可能只返回 aid
     val cid: Long = 0,   //  明确的 CID 字段，用于播放
     val title: String = "",
@@ -265,7 +266,13 @@ data class RecommendationFeedbackMetadata(
     val goto: String = "",
     val param: String = "",
     val reasons: List<RecommendationFeedbackReason> = emptyList(),
-    val supportsServerSync: Boolean = false
+    val supportsServerSync: Boolean = false,
+    /** 推荐流卡片追踪 ID，服务端靠它把负反馈关联到具体那条推荐。 */
+    val trackId: String = "",
+    /** 来源页面标识，首页推荐固定 tm.recommend.0.0。 */
+    val spmid: String = "tm.recommend.0.0",
+    /** UP 主 mid，负反馈里作为 mid 字段上报。 */
+    val creatorMid: Long = 0L,
 )
 
 @Serializable
@@ -386,6 +393,10 @@ data class RecommendItem(
     val recommendationReason: String = "",
     val param: String = "",
     @SerialName("ad_info") val adInfo: kotlinx.serialization.json.JsonElement? = null,
+    /** 广告卡标记，官方 App 用 "cm" 表示商业推广。 */
+    @SerialName("card_type") val cardType: String = "",
+    /** 商业化信息，非空通常代表广告或推广内容。 */
+    @SerialName("business_info") val businessInfo: kotlinx.serialization.json.JsonElement? = null,
     @SerialName("is_steins")
     @Serializable(with = FlexibleBooleanSerializer::class)
     val isSteins: Boolean = false,
@@ -402,6 +413,13 @@ data class RecommendItem(
     @Serializable(with = FlexibleBooleanSerializer::class)
     val cooperation: Boolean = false
 ) {
+    /** 与 [MobileFeedItem.isSupportedRecommendation] 同口径：广告与非常规卡片一律丢弃。 */
+    val isSupportedRecommendation: Boolean
+        get() = adInfo == null &&
+            businessInfo == null &&
+            cardType != "cm" &&
+            goto.orEmpty().ifBlank { "av" } in setOf("av", "bangumi", "picture")
+
     fun toVideoItem(): VideoItem {
         val type = goto.orEmpty().ifBlank { "av" }
         val episode = if (type == "bangumi") recommendationEpisodeId(param, uri.orEmpty()) else 0L
@@ -726,6 +744,7 @@ data class MobileFeedItem(
     val cover: String = "",
     val title: String = "",
     val duration: Long = 0,
+    val pubdate: Long = 0,
     val args: MobileFeedArgs? = null,
     @SerialName("player_args") val playerArgs: MobileFeedPlayerArgs? = null,
     @SerialName("three_point_v2") val threePointV2: List<MobileFeedThreePoint> = emptyList(),
@@ -739,7 +758,13 @@ data class MobileFeedItem(
     @Serializable(with = RecommendationReasonSerializer::class)
     val recommendationReason: String = "",
     @SerialName("card_goto") val cardGoto: String = "",
+    // 推荐卡片的追踪 ID，负反馈要靠它关联到具体那条推荐。
+    @SerialName("track_id") val trackId: String = "",
     @SerialName("ad_info") val adInfo: kotlinx.serialization.json.JsonElement? = null,
+    /** 广告卡标记，官方 App 用 "cm" 表示商业推广。 */
+    @SerialName("card_type") val cardType: String = "",
+    /** 商业化信息，非空通常代表广告或推广内容。 */
+    @SerialName("business_info") val businessInfo: kotlinx.serialization.json.JsonElement? = null,
     @SerialName("desc_button") val descButton: MobileFeedDescButton? = null,
     @SerialName("is_steins")
     @Serializable(with = FlexibleBooleanSerializer::class)
@@ -759,7 +784,10 @@ data class MobileFeedItem(
 ) {
     val recommendationType: String get() = cardGoto.ifBlank { goto }.ifBlank { "av" }
     val isSupportedRecommendation: Boolean
-        get() = adInfo == null && recommendationType in setOf("av", "bangumi", "picture")
+        get() = adInfo == null &&
+            businessInfo == null &&
+            cardType != "cm" &&
+            recommendationType in setOf("av", "bangumi", "picture")
 
     fun toVideoItem(): VideoItem {
         val type = recommendationType
@@ -769,7 +797,10 @@ data class MobileFeedItem(
         // 1. 优先从 uri 提取 (格式: bilibili://video/BV1xxx)
         // 2. 如果 param 以 "BV" 开头，使用 param
         // 3. 否则 bvid 置空，依赖 aid 回退
-        val extractedBvid = uri.substringAfterLast("/").takeIf { it.startsWith("BV") }
+        // uri 可能带 query（?player_width=...），必须先剥离再取路径末段，
+        // 否则 bvid 会被污染成 "BV1xx?player_width=1080&..."，后续所有接口请求都失效。
+        val extractedBvid = uri.substringAfterLast("/").substringBefore("?")
+            .takeIf { it.startsWith("BV") }
             ?: param.takeIf { it.startsWith("BV") }
             ?: ""
         
@@ -792,6 +823,7 @@ data class MobileFeedItem(
             navigationUrl = uri,
             episodeId = episode,
             dynamicId = dynamic,
+            trackId = trackId,
             aid = if (type == "av") extractedAid else 0L,  // [修复] 填充 aid，用于 bvid 为空时的回退
             cid = if (type == "av") playerArgs?.cid ?: 0L else 0L,
             title = title,
@@ -809,6 +841,10 @@ data class MobileFeedItem(
             tid = args?.tid?.takeIf { it > 0 } ?: args?.rid ?: 0,
             tname = args?.let { it.tname.ifBlank { it.rname } }.orEmpty(),
             duration = if (type == "picture") 0 else (playerArgs?.duration?.takeIf { it > 0 } ?: duration).toInt(),
+            pubdate = pubdate.takeIf { it > 0L } ?: 0L,
+            // App 端推荐的 uri 自带播放尺寸，列表阶段就能确定横竖屏；
+            // 详情页首帧据此直接进入正确布局，不必等播放器接口回包。
+            isVertical = resolveVerticalVideoFromFeedUri(uri) ?: false,
             isSteins = isSteins,
             isLessonVideo = isLessonVideo,
             isChargingArc = isChargingArc,
@@ -824,6 +860,8 @@ data class MobileFeedItem(
             recommendationFeedback = RecommendationFeedbackMetadata(
                 goto = type,
                 param = param,
+                trackId = trackId,
+                creatorMid = args?.upId ?: 0L,
                 reasons = threePointV2.flatMap { group ->
                     val type = when (group.type) {
                         "feedback" -> RecommendationFeedbackType.FEEDBACK

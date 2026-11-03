@@ -1,4 +1,5 @@
 package com.android.purebilibili.feature.live
+import android.content.pm.ActivityInfo
 import com.android.purebilibili.core.util.AppDisplayContext
 import com.android.purebilibili.core.util.shouldUsePhonePlayerOrientation
 import kotlin.math.roundToInt
@@ -30,12 +31,31 @@ fun resolveLiveRequestedOrientationMode(
     isPortraitLive: Boolean = false,
 ): LiveRequestedOrientationMode {
     return when {
-        displayContext.usesInWindowFullscreen -> LiveRequestedOrientationMode.Unspecified
+        displayContext.usesInWindowFullscreen || displayContext.isInMultiWindowMode -> LiveRequestedOrientationMode.Unspecified
         !shouldUsePhonePlayerOrientation(displayContext) -> LiveRequestedOrientationMode.Unspecified
         isFullscreen && isPortraitLive -> LiveRequestedOrientationMode.SensorPortrait
         isFullscreen -> LiveRequestedOrientationMode.SensorLandscape
         else -> LiveRequestedOrientationMode.Portrait
     }
+}
+
+internal fun LiveRequestedOrientationMode.toActivityOrientation(): Int = when (this) {
+    LiveRequestedOrientationMode.Unspecified -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    LiveRequestedOrientationMode.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    LiveRequestedOrientationMode.SensorPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+    LiveRequestedOrientationMode.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+}
+
+/** 方向驱动的全屏先等待窗口到达目标方向，避免在旋转前先铺满竖屏；窗口内全屏直接呈现。 */
+internal fun shouldPresentLiveFullscreen(
+    fullscreenRequested: Boolean,
+    isLandscape: Boolean,
+    orientationMode: LiveRequestedOrientationMode,
+): Boolean = fullscreenRequested && when (orientationMode) {
+    LiveRequestedOrientationMode.SensorLandscape -> isLandscape
+    LiveRequestedOrientationMode.SensorPortrait,
+    LiveRequestedOrientationMode.Portrait -> !isLandscape
+    LiveRequestedOrientationMode.Unspecified -> true
 }
 
 fun resolveLiveRequestedOrientationMode(

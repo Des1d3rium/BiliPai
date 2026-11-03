@@ -13,6 +13,9 @@ interface AppTopBarIconDecorator {
 
 val LocalAppTopBarIconDecorator = staticCompositionLocalOf<AppTopBarIconDecorator?> { null }
 val LocalAppTopBarIconDecorationEnabled = staticCompositionLocalOf { false }
+/** 图标下方实际顶栏容器的遮色，独立于底层内容录制。 */
+val LocalAppTopBarSurfaceColor = staticCompositionLocalOf { androidx.compose.ui.graphics.Color.Transparent }
+
 val LocalAppTopBarIconBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /** True only when the surrounding decorator actually drew a glass material. */

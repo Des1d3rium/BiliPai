@@ -41,6 +41,7 @@ internal fun ProfileIdentityHeader(
     listState: LazyListState,
     flingBehavior: FlingBehavior,
     onAvatarClick: () -> Unit,
+    avatarSourceRect: androidx.compose.runtime.MutableState<androidx.compose.ui.geometry.Rect?>,
     modifier: Modifier = Modifier,
     photoState: ProfileAvatarExpansionState? = null,
     photoFractionProvider: () -> Float = { 0f },
@@ -60,6 +61,7 @@ internal fun ProfileIdentityHeader(
             listState = listState,
             flingBehavior = flingBehavior,
             onAvatarClick = onAvatarClick,
+            avatarSourceRect = avatarSourceRect,
             photoScrollConnection = photoScrollConnection,
             modifier = Modifier
                 .matchParentSize()

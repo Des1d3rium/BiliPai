@@ -71,16 +71,14 @@ class VideoActionFeedbackPolicyTest {
     fun `detail action active colors derive from active theme roles`() {
         val primary = Color(0xFF3366FF)
         val secondary = Color(0xFF00A884)
-        val tertiary = Color(0xFFFF8A00)
 
         val colors = resolveVideoDetailActionActiveColors(
             primary = primary,
-            secondary = secondary,
-            tertiary = tertiary
+            secondary = secondary
         )
 
         assertEquals(primary, colors.primaryAction)
-        assertEquals(tertiary, colors.watchLater)
+        assertEquals(primary, colors.watchLater)
         assertEquals(secondary, colors.downloadInProgress)
         assertEquals(primary, colors.downloaded)
     }
@@ -91,7 +89,6 @@ class VideoActionFeedbackPolicyTest {
         val colors = resolveVideoDetailActionActiveColors(
             primary = primary,
             secondary = Color.Gray,
-            tertiary = Color.Gray,
             uiStyle = AppUiStyle.MIUIX,
         )
 

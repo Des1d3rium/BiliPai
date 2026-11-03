@@ -6,8 +6,9 @@ import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import com.android.purebilibili.core.ui.rememberCompatibleStaggeredGridState
+import com.android.purebilibili.core.ui.LocalFullVideoCardContentVisible
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +42,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FavoriteDragSelectionUiRegressionTest {
     @get:Rule val rule = createComposeRule()
-    private lateinit var grid: LazyGridState
+    private lateinit var grid: LazyStaggeredGridState
+    private lateinit var titles: List<String>
     private val selected = mutableStateOf(emptySet<String>())
     private var played: String? = null
     private var origin = Offset.Zero
@@ -49,18 +51,25 @@ class FavoriteDragSelectionUiRegressionTest {
     private var downTime = 0L
     private var finger: Offset? = null
 
-    private fun show(columns: Int, topPadding: Int = 0, scrollUnderHeader: Boolean = true) {
-        val items = (1L..60L).map { VideoItem(id = it, aid = it, bvid = "BV$it", title = "收藏视频$it") }
+    private fun show(columns: Int, topPadding: Int = 0, scrollUnderHeader: Boolean = true, unevenTitles: Boolean = false) {
+        titles = (1..60).map { index ->
+            "收藏视频$index" + if (unevenTitles && index % 2 == 1) "：完整显示的较长视频标题，检查卡片高度不同时的拖选范围" else ""
+        }
+        val items = (1L..60L).map { VideoItem(id = it, aid = it, bvid = "BV$it", title = titles[it.toInt() - 1]) }
         rule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(1f),
+                LocalFullVideoCardContentVisible provides unevenTitles,
+            ) {
                 MaterialTheme {
-                    grid = rememberLazyGridState()
+                    grid = rememberCompatibleStaggeredGridState()
                     Box(Modifier.size(360.dp, 640.dp).onGloballyPositioned {
                         origin = it.localToScreen(Offset.Zero)
                         rootOrigin = it.positionInRoot()
                     }) {
                         CommonListContent(
                             items = items,
+                            isFavoritePersonalList = unevenTitles,
                             allowAutomaticLoadMore = false,
                             isLoading = false,
                             error = null,
@@ -91,10 +100,10 @@ class FavoriteDragSelectionUiRegressionTest {
         }
     }
 
-    // Use measured UI bounds, not LazyGridItemInfo offsets: the latter omit content padding.
+    // Use measured UI bounds, not LazyStaggeredGridItemInfo offsets: the latter omit content padding.
     private fun cardBounds(index: Int): Rect = rule.onNode(
         keyIsDefined(SemanticsProperties.Selected) and
-            hasAnyDescendant(hasText("收藏视频${index + 1}")),
+            hasAnyDescendant(hasText(titles[index])),
         useUnmergedTree = true,
     ).fetchSemanticsNode().boundsInRoot.translate(-rootOrigin)
 
@@ -104,7 +113,7 @@ class FavoriteDragSelectionUiRegressionTest {
     }
 
     private fun titlePoint(index: Int): Offset = rule.onNodeWithText(
-        "收藏视频${index + 1}", useUnmergedTree = true,
+        titles[index], useUnmergedTree = true,
     ).fetchSemanticsNode().boundsInRoot.center - rootOrigin
 
     // 边缘自动滚动期间界面本就不会空闲，不能在抬手前经 Espresso 等待 idle。
@@ -164,6 +173,23 @@ class FavoriteDragSelectionUiRegressionTest {
             startHolding(anchor)
             move(target)
             rule.waitUntil(5_000) { selected.value == setOf("BV1", "BV2", "BV3", "BV4") }
+        } finally {
+            release()
+        }
+        rule.runOnIdle { assertEquals(null, played) }
+    }
+
+    @Test fun unevenFullTitlesKeepDragRangeAndReverseSelectionInSourceOrder() {
+        show(2, topPadding = 116, unevenTitles = true)
+        assertTrue(cardBounds(0).height > cardBounds(1).height)
+        val anchor = titlePoint(0)
+        val target = titlePoint(3)
+        try {
+            startHolding(anchor)
+            move(target)
+            rule.waitUntil(5_000) { selected.value == setOf("BV1", "BV2", "BV3", "BV4") }
+            move(anchor)
+            rule.waitUntil(5_000) { selected.value == setOf("BV1") }
         } finally {
             release()
         }

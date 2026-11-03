@@ -87,6 +87,7 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private val accountRequests = AccountScopedRequests(viewModelScope)
     private var messageLoadMutex = Mutex()
+    private var readAckMutex = Mutex()
     private var latestMessagesJob: Job? = null
     private var lastReadSeqno = 0L
     
@@ -108,6 +109,7 @@ class ChatViewModel(
         accountRequests.observe {
             latestMessagesJob = null
             messageLoadMutex = Mutex()
+            readAckMutex = Mutex()
             lastReadSeqno = 0L
             videoPreviewCache.clear()
             loadingBvids.clear()
@@ -194,7 +196,7 @@ class ChatViewModel(
                         videoPreviews = videoPreviewCache.toMap(),
                     )
                 }
-                data.max_seqno.takeIf { it > 0L }?.let(::markAsRead)
+                resolveChatReadSeqno(data.messages.orEmpty())?.let(::markAsRead)
                 scanAndLoadVideoPreviews(incoming)
             } catch (e: CancellationException) {
                 throw e
@@ -451,10 +453,17 @@ class ChatViewModel(
             )
         }
     }
-    fun loadChatUser() {
+    fun loadChatUser(fallbackName: String = "") {
+        if (sessionType != 1) return
+        val cached = MessageUserInfoLoader.cached(talkerId)
+        val initial = InboxUserInfoResolver.mergeFetchedUserInfo(
+            UserBasicInfo(talkerId, fallbackName, ""),
+            cached,
+        )
+        _uiState.update { it.copy(userInfo = InboxUserInfoResolver.mergeFetchedUserInfo(it.userInfo, initial)) }
         accountRequests.launch {
             val user = MessageUserInfoLoader.fetch(talkerId)
-            _uiState.update { it.copy(userInfo = user) }
+            _uiState.update { it.copy(userInfo = InboxUserInfoResolver.mergeFetchedUserInfo(it.userInfo, user)) }
         }
     }
     fun togglePinned() {
@@ -557,9 +566,18 @@ class ChatViewModel(
      */
     private fun markAsRead(seqno: Long) {
         if (seqno <= lastReadSeqno) return
+        val requestedIdentity = accountRequests.identity
+        val requestMutex = readAckMutex
         accountRequests.launch {
-            MessageRepository.markAsRead(talkerId, sessionType, seqno).onSuccess {
-                lastReadSeqno = maxOf(lastReadSeqno, seqno)
+            requestMutex.withLock {
+                if (!accountRequests.isCurrent(requestedIdentity) || seqno <= lastReadSeqno) return@withLock
+                val result = MessageRepository.markAsRead(talkerId, sessionType, seqno)
+                if (!accountRequests.isCurrent(requestedIdentity)) return@withLock
+                result.onSuccess {
+                    lastReadSeqno = maxOf(lastReadSeqno, seqno)
+                }.onFailure { error ->
+                    _uiState.update { it.copy(refreshError = "标记已读失败：${error.message ?: "请稍后重试"}") }
+                }
             }
         }
     }

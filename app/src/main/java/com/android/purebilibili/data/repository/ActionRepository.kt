@@ -34,7 +34,10 @@ internal data class RecommendationFeedbackRequest(
     val goto: String,
     val resourceId: String,
     val reasonId: Long?,
-    val feedbackId: Long?
+    val feedbackId: Long?,
+    val trackId: String = "",
+    val spmid: String = "tm.recommend.0.0",
+    val creatorMid: Long = 0L,
 )
 
 internal fun buildRecommendationFeedbackRequest(
@@ -49,14 +52,18 @@ internal fun buildRecommendationFeedbackRequest(
         goto = metadata.goto,
         resourceId = metadata.param,
         reasonId = reasonId.takeIf { reason.type == RecommendationFeedbackType.DISLIKE },
-        feedbackId = reasonId.takeIf { reason.type == RecommendationFeedbackType.FEEDBACK }
+        feedbackId = reasonId.takeIf { reason.type == RecommendationFeedbackType.FEEDBACK },
+        trackId = metadata.trackId,
+        spmid = metadata.spmid,
+        creatorMid = metadata.creatorMid,
     )
 }
 
 internal fun buildRecommendationFeedbackParams(
     request: RecommendationFeedbackRequest,
     accessToken: String,
-    timestamp: Long
+    timestamp: Long,
+    tokenPlatform: String = TokenManager.ACCESS_TOKEN_PLATFORM_TV,
 ): Map<String, String> {
     require((request.reasonId != null) xor (request.feedbackId != null)) {
         "reason_id 与 feedback_id 必须且只能提供一个"
@@ -66,10 +73,21 @@ internal fun buildRecommendationFeedbackParams(
         put("id", request.resourceId)
         request.reasonId?.let { put("reason_id", it.toString()) }
         request.feedbackId?.let { put("feedback_id", it.toString()) }
+        // 官方 /x/feed/dislike 还带这几个：没有 spmid 服务端不知道反馈来自首页推荐，
+        // 没有 track_id 就无法把反馈关联到具体那条推荐卡片。
+        put("spmid", request.spmid)
+        request.trackId.takeIf { it.isNotBlank() }?.let { put("track_id", it) }
+        request.creatorMid.takeIf { it > 0L }?.let { put("mid", it.toString()) }
+        request.resourceId.takeIf { it.isNotBlank() }?.let { put("rid", it) }
         put("build", "1")
-        put("mobi_app", "android")
+        put("mobi_app", if (tokenPlatform == TokenManager.ACCESS_TOKEN_PLATFORM_ANDROID_HD) "android_hd" else "android")
         put("access_key", accessToken)
-        put("appkey", AppSignUtils.TV_APP_KEY)
+        put("appkey", when (tokenPlatform) {
+            TokenManager.ACCESS_TOKEN_PLATFORM_TV -> AppSignUtils.TV_APP_KEY
+            TokenManager.ACCESS_TOKEN_PLATFORM_ANDROID -> AppSignUtils.ANDROID_APP_KEY
+            TokenManager.ACCESS_TOKEN_PLATFORM_ANDROID_HD -> AppSignUtils.ANDROID_HD_APP_KEY
+            else -> throw IllegalArgumentException("当前授权不支持推荐反馈")
+        })
         put("ts", timestamp.toString())
     }
 }
@@ -336,18 +354,35 @@ object ActionRepository {
         metadata: RecommendationFeedbackMetadata,
         reason: RecommendationFeedbackReason
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        val accessToken = TokenManager.accessTokenCache
+        TokenManager.awaitRestore()
+        val account = try {
+            com.android.purebilibili.core.network.purposeAccount(com.android.purebilibili.core.store.AccountPurpose.RECOMMENDATION)
+        } catch (e: java.io.IOException) { return@withContext Result.failure(e) }
+        val session = account?.let { com.android.purebilibili.core.network.AccountCookieSession.from(it) }
+            ?: com.android.purebilibili.core.network.AccountCookieSession.main()
+        val accessToken = (if (account != null) account.accessToken else TokenManager.accessTokenCache)
             ?.takeIf { it.isNotBlank() }
             ?: return@withContext Result.failure(Exception("缺少移动端登录凭证"))
         val request = buildRecommendationFeedbackRequest(metadata, reason)
             ?: return@withContext Result.failure(Exception("当前推荐不支持服务器同步"))
         try {
+            val tokenPlatform = account?.accessTokenPlatform ?: TokenManager.accessTokenPlatformCache
             val params = buildRecommendationFeedbackParams(
                 request = request,
                 accessToken = accessToken,
-                timestamp = AppSignUtils.getTimestamp()
+                timestamp = AppSignUtils.getTimestamp(),
+                tokenPlatform = tokenPlatform,
             )
-            val response = api.submitMobileFeedDislike(AppSignUtils.signForTvLogin(params))
+            val signed = when (tokenPlatform) {
+                TokenManager.ACCESS_TOKEN_PLATFORM_ANDROID_HD -> AppSignUtils.signForAndroidHdLogin(params)
+                TokenManager.ACCESS_TOKEN_PLATFORM_ANDROID -> AppSignUtils.signForAndroidApi(params)
+                else -> AppSignUtils.signForTvLogin(params)
+            }
+            val response = api.submitMobileFeedDislike(signed, session)
+            com.android.purebilibili.core.util.Logger.d(
+                "FeedDislike",
+                "response code=${response.code} msg=${response.message} id=${signed["id"]}",
+            )
             if (response.code != 0) {
                 throw Exception(response.message.ifBlank { "反馈失败: ${response.code}" })
             }

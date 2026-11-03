@@ -4,8 +4,19 @@ import com.android.purebilibili.data.model.response.PrivateMessageItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 
 class ChatTimelinePolicyTest {
+    @Test
+    fun readCursorIgnoresNewConversationTipAndUsesActualMessages() {
+        val tip = PrivateMessageItem(msg_type = 18, msg_source = 18, msg_seqno = 100)
+        assertNull(resolveChatReadSeqno(emptyList()))
+        assertNull(resolveChatReadSeqno(listOf(tip)))
+        assertNull(resolveChatReadSeqno(listOf(PrivateMessageItem(msg_seqno = 0))))
+        assertEquals(12L, resolveChatReadSeqno(listOf(message(12), tip, message(10))))
+        assertEquals(13L, resolveChatReadSeqno(listOf(PrivateMessageItem(msg_type = 18, msg_source = 1, msg_seqno = 13))))
+    }
+
     private fun message(sequence: Long, status: Int = 0) = PrivateMessageItem(
         msg_key = sequence,
         msg_seqno = sequence,

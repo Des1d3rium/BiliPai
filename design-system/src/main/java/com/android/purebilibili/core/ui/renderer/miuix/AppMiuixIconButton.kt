@@ -21,6 +21,8 @@ import com.android.purebilibili.core.ui.components.appDesktopFocusableItemVisual
 import com.android.purebilibili.core.ui.AppChromeSizeTokens
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
+import top.yukonga.miuix.kmp.basic.IconButtonDefaults
+import com.android.purebilibili.core.ui.isMiuixNonGlassEnabled
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.theme.LocalContentColor as MiuixLocalContentColor
 
@@ -70,11 +72,13 @@ internal fun AppMiuixIconButton(
     } else {
         Modifier
     }
+    val cornerRadius = if (isMiuixNonGlassEnabled()) IconButtonDefaults.CornerRadius
+        else AppChromeSizeTokens.MiuixNativeCompactCornerRadiusDp.dp
     // Leave explicit sizes to the caller and default sizing to the native control.
     val nativeModifier = modifier
         .appDesktopFocusableItemVisuals(
             enabled = enabled,
-            shape = RoundedCornerShape(AppChromeSizeTokens.MiuixNativeCompactCornerRadiusDp.dp),
+            shape = RoundedCornerShape(cornerRadius),
         )
         .then(pointerMirror)
 
@@ -93,7 +97,7 @@ internal fun AppMiuixIconButton(
             modifier = nativeModifier,
             enabled = enabled,
             backgroundColor = if (LocalAppIconButtonGlassSurfaceProvided.current) Color.Transparent else backgroundColor,
-            cornerRadius = AppChromeSizeTokens.MiuixNativeCompactCornerRadiusDp.dp,
+            cornerRadius = cornerRadius,
             content = content,
         )
     }

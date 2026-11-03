@@ -416,3 +416,14 @@ internal fun shouldAcceptFloatingDockDragAtWindowX(
 /** 原生前景始终可见；只有玻璃捕获副本接管文字时才淡出底层。 */
 internal fun resolveFloatingDockBaseContentAlpha(isLiquidGlass: Boolean, coverage: Float): Float =
     if (isLiquidGlass) 1f - coverage.coerceIn(0f, 1f) else 1f
+
+/** 导航指示器与外壳使用相同内缩轮廓；横纵布局都先按移动轴/跨轴归一化。 */
+internal fun resolveFloatingDockIndicatorCornerRadiusDp(
+    shellThicknessDp: Float,
+    indicatorThicknessDp: Float,
+    indicatorSlotExtentDp: Float,
+): Float {
+    val inset = ((shellThicknessDp - indicatorThicknessDp) / 2f).coerceAtLeast(0f)
+    return (shellThicknessDp / 2f - inset)
+        .coerceIn(0f, minOf(indicatorThicknessDp, indicatorSlotExtentDp).coerceAtLeast(0f) / 2f)
+}

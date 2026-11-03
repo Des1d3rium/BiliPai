@@ -52,6 +52,7 @@ import com.android.purebilibili.core.ui.components.AppHorizontalDivider
 import com.android.purebilibili.core.ui.components.AppIcon
 import com.android.purebilibili.core.ui.components.AppIconButton
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
+import com.android.purebilibili.core.ui.components.AppTextButton
 import com.android.purebilibili.core.ui.components.AppText
 import com.android.purebilibili.data.model.response.ReplyItem
 import com.android.purebilibili.feature.dynamic.components.ImagePreviewSourceAnchor
@@ -258,6 +259,50 @@ internal fun resolveSubReplyTargetListIndex(
 
 
 @Composable
+internal fun SubReplyInitialContent(
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val appearance = rememberVideoCommentAppearance()
+    Column(modifier.fillMaxSize().background(appearance.panelColor)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppText(
+                text = "评论详情",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.weight(1f),
+            )
+            AppIconButton(onClick = onDismiss, modifier = Modifier.testTag(SUB_REPLY_DETAIL_CLOSE_TAG)) {
+                AppIcon(Icons.Outlined.Close, contentDescription = "关闭评论详情")
+            }
+        }
+        AppHorizontalDivider(thickness = 0.5.dp, color = appearance.dividerColor)
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            if (isLoading) {
+                AdaptiveLoadingIndicator()
+            } else {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AppText(
+                        text = error ?: "回复加载失败",
+                        textAlign = TextAlign.Center,
+                        color = appearance.secondaryTextColor,
+                    )
+                    AppTextButton(onClick = onRetry) { AppText("重试") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun VideoInlineSubReplyDetailContent(
     state: SubReplyUiState,
     commentState: CommentUiState,
@@ -285,7 +330,20 @@ internal fun VideoInlineSubReplyDetailContent(
     modifier: Modifier = Modifier,
 ) {
     val rootReply = state.rootReply
-    if (!state.visible || rootReply == null) return
+    if (!state.visible) return
+    com.android.purebilibili.core.ui.LocalNavigationBackHandler(enabled = true) {
+        onDismiss()
+    }
+    if (rootReply == null) {
+        SubReplyInitialContent(
+            isLoading = state.isLoading,
+            error = state.error,
+            onRetry = onLoadMore,
+            onDismiss = onDismiss,
+            modifier = modifier,
+        )
+        return
+    }
 
     // Inline hosts replace the main list directly, unlike window sheets and the
     // portrait overlay host. Give this panel its own full-height bottom-up entry.
@@ -303,9 +361,6 @@ internal fun VideoInlineSubReplyDetailContent(
         }
     }
 
-    com.android.purebilibili.core.ui.LocalNavigationBackHandler(enabled = true) {
-        onDismiss()
-    }
 
     SubReplyDetailContent(
         rootReply = rootReply,
@@ -438,6 +493,7 @@ internal fun SubReplyDetailContent(
     }
     var highlightedTargetId by remember(rootReply.rpid) { mutableLongStateOf(0L) }
     var targetReplyHandled by remember(rootReply.rpid, targetReplyId) { mutableStateOf(false) }
+    var targetReplyMissing by remember(rootReply.rpid, targetReplyId) { mutableStateOf(false) }
     LaunchedEffect(highlightedTargetId) {
         if (highlightedTargetId <= 0L) return@LaunchedEffect
         delay(1_400)
@@ -587,7 +643,7 @@ internal fun SubReplyDetailContent(
         }
         // This is an entry-time navigation request, not a persistent scroll anchor.
         // Loading/refreshing changes the effect keys but must not replay the jump.
-        if (targetReplyHandled) return@LaunchedEffect
+        if (targetReplyHandled || effectiveConversationMode) return@LaunchedEffect
         val targetIndex = resolveSubReplyTargetListIndex(
             rootReplyId = rootReply.rpid,
             visibleReplies = visibleReplies,
@@ -595,13 +651,17 @@ internal fun SubReplyDetailContent(
         )
         when {
             targetIndex != null -> {
-                // Consume before suspending: a page update or user scroll may cancel
-                // the animation, and must not cause a later update to restart it.
+                // Commit the entry jump without a long animation that a page update
+                // could cancel after the navigation request has already been consumed.
+                listState.scrollToItem(targetIndex)
                 targetReplyHandled = true
                 highlightedTargetId = targetReplyId
-                listState.animateScrollToItem(targetIndex)
             }
-            targetReplyId > 0L && error == null && !isLoading && !isEnd && !effectiveConversationMode -> onLoadMore()
+            error == null && !isLoading && !isEnd -> onLoadMore()
+            error == null && !isLoading && isEnd -> {
+                targetReplyHandled = true
+                targetReplyMissing = true
+            }
         }
     }
 
@@ -652,6 +712,15 @@ internal fun SubReplyDetailContent(
             }
         }
         AppHorizontalDivider(thickness = 0.5.dp, color = appearance.dividerColor)
+        if (targetReplyMissing && !effectiveConversationMode) {
+            AppText(
+                text = "未找到目标回复，可能已删除或不可见",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                color = appearance.secondaryTextColor,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+        }
 
         CommentCascadingContent(
             targetState = SubReplyDetailPage(
@@ -883,7 +952,7 @@ internal fun SubReplyDetailContent(
                                     text = "$error，点击重试",
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable(onClick = onRefresh)
+                                        .clickable(onClick = onLoadMore)
                                         .sizeIn(minHeight = 48.dp)
                                         .padding(16.dp),
                                     textAlign = TextAlign.Center,

@@ -5,5 +5,9 @@ import com.android.purebilibili.feature.share.ContentDynamicShareSheet
 
 @Composable
 internal fun VideoShareToDynamicDialog(payload: VideoSharePayload, onDismiss: () -> Unit) {
-    ContentDynamicShareSheet(payload.asContentSharePayload(), onDismiss) { VideoShareFeedbackEvents.prepared(payload.bvid) }
+    ContentDynamicShareSheet(
+        payload.asContentSharePayload(),
+        onDismiss,
+        presentationOverride = videoSharePresentation(isLandscapeVideoShare()),
+    ) { VideoShareFeedbackEvents.prepared(payload.bvid) }
 }

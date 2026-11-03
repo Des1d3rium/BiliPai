@@ -7,27 +7,25 @@ import kotlin.test.assertTrue
 class VideoPlayerBufferPolicyTest {
 
     @Test
-    fun wifiPolicyShouldUseLowerStartupBufferForFasterAutoplay() {
-        val policy = resolvePlayerBufferPolicy(isOnWifi = true)
-
-        assertEquals(10000, policy.minBufferMs)
-        assertEquals(40000, policy.maxBufferMs)
-        assertEquals(700, policy.bufferForPlaybackMs)
-        assertEquals(1400, policy.bufferForPlaybackAfterRebufferMs)
-        assertEquals(2000, policy.earlyPlaybackMaxBufferMs)
+    fun resilientPolicyDeepensBufferWithoutIncreasingStartupThreshold() {
+        for (wifi in listOf(true, false)) {
+            val normal = resolvePlayerBufferPolicy(isOnWifi = wifi)
+            val resilient = resolvePlayerBufferPolicy(isOnWifi = wifi, resilient = true)
+            assertEquals(normal.bufferForPlaybackMs, resilient.bufferForPlaybackMs)
+            assertTrue(resilient.earlyPlaybackMaxBufferMs > normal.earlyPlaybackMaxBufferMs)
+            assertTrue(resilient.minBufferMs >= normal.minBufferMs)
+            assertTrue(resilient.maxBufferMs >= normal.maxBufferMs)
+            assertTrue(resilient.bufferForPlaybackAfterRebufferMs >= normal.bufferForPlaybackAfterRebufferMs)
+            listOf(1f, 2f, 3f).forEach { speed ->
+                val limitUs = resolveEarlyPlaybackBufferLimitUs(
+                    resilient.earlyPlaybackMaxBufferMs, resilient.bufferForPlaybackMs,
+                    resilient.bufferForPlaybackAfterRebufferMs, speed,
+                )
+                assertTrue(limitUs > resilient.bufferForPlaybackAfterRebufferMs * 1_000L * speed)
+            }
+        }
     }
 
-    @Test
-    fun mobilePolicyShouldUseFasterStartupWhileKeepingRebufferSafetyMargin() {
-        val policy = resolvePlayerBufferPolicy(isOnWifi = false)
-
-        assertEquals(12000, policy.minBufferMs)
-        assertEquals(45000, policy.maxBufferMs)
-        assertEquals(1000, policy.bufferForPlaybackMs)
-        assertEquals(2200, policy.bufferForPlaybackAfterRebufferMs)
-        assertEquals(2000, policy.earlyPlaybackMaxBufferMs)
-        assertTrue(policy.bufferForPlaybackAfterRebufferMs >= policy.bufferForPlaybackMs)
-    }
 
     @Test
     fun firstQuarterLimitsForwardBufferButLaterPlaybackDoesNot() {
@@ -83,7 +81,7 @@ class VideoPlayerBufferPolicyTest {
     fun earlyLimitAlwaysAllowsStartupAndRebufferAtSupportedSpeeds() {
         listOf(true, false).forEach { wifi ->
             val policy = resolvePlayerBufferPolicy(wifi)
-            listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { speed ->
+            listOf(0.1f, 0.5f, 1f, 1.5f, 2f, 3f).forEach { speed ->
                 val limitUs = resolveEarlyPlaybackBufferLimitUs(
                     policy.earlyPlaybackMaxBufferMs,
                     policy.bufferForPlaybackMs,
@@ -94,8 +92,36 @@ class VideoPlayerBufferPolicyTest {
                 val rebufferUs = policy.bufferForPlaybackAfterRebufferMs * 1_000.0 * speed
                 assertTrue(limitUs > startupUs, "startup wifi=$wifi speed=$speed")
                 assertTrue(limitUs > rebufferUs, "rebuffer wifi=$wifi speed=$speed")
-                assertTrue(limitUs >= policy.earlyPlaybackMaxBufferMs * 1_000L)
             }
+        }
+    }
+
+    @Test
+    fun earlyLimitPreservesWallTimeAtSlowAndFastSpeeds() {
+        val normalLimit = resolveEarlyPlaybackBufferLimitUs(8_000, 600, 1_600, 1f)
+        assertEquals(normalLimit / 2, resolveEarlyPlaybackBufferLimitUs(8_000, 600, 1_600, 0.5f))
+        assertEquals(normalLimit * 3, resolveEarlyPlaybackBufferLimitUs(8_000, 600, 1_600, 3f))
+    }
+
+    @Test
+    fun invalidSpeedUsesNormalPlaybackBudget() {
+        val normalLimit = resolveEarlyPlaybackBufferLimitUs(8_000, 600, 1_600, 1f)
+        for (speed in listOf(0f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            assertEquals(normalLimit, resolveEarlyPlaybackBufferLimitUs(8_000, 600, 1_600, speed))
+        }
+    }
+
+    @Test
+    fun normalForwardBufferHonorsNetworkPlaybackTimeTargets() {
+        for ((wifi, playbackTimeUs) in listOf(true to 6_000_000L, false to 4_000_000L)) {
+            val policy = resolvePlayerBufferPolicy(isOnWifi = wifi)
+            val mediaTimeUs = resolveEarlyPlaybackBufferLimitUs(
+                policy.earlyPlaybackMaxBufferMs,
+                policy.bufferForPlaybackMs,
+                policy.bufferForPlaybackAfterRebufferMs,
+                playbackSpeed = 2f,
+            )
+            assertEquals(playbackTimeUs, mediaTimeUs / 2, "wall-clock buffer wifi=$wifi")
         }
     }
 

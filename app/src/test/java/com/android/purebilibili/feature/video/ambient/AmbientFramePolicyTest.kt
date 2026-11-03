@@ -16,9 +16,10 @@ class AmbientFramePolicyTest {
     @Test fun defaultsAndIntervalsKeepLegacySamplingAndLimitGlow() {
         assertFalse(AmbientSettings().enabled)
         assertEquals(0.30f, AmbientSettings().opacity)
-        // 非 glow 只服务状态栏模糊条：动态画面收紧到 500ms，静止后放宽省电。
-        assertEquals(500L, ambientIntervalMs(false, false, false))
-        assertEquals(1500L, ambientIntervalMs(false, false, true))
+        // 模糊条在动态画面下及时更新，静态或省电时降低频率。
+        assertEquals(125L, ambientIntervalMs(false, false, false))
+        assertEquals(250L, ambientIntervalMs(false, false, true))
+        assertEquals(250L, ambientIntervalMs(false, true, false))
         assertEquals(125L, ambientIntervalMs(true, false, false))
         assertEquals(250L, ambientIntervalMs(true, true, false))
         assertEquals(250L, ambientIntervalMs(true, false, true))

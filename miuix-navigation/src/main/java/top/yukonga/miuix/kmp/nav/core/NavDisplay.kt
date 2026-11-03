@@ -72,6 +72,8 @@ import top.yukonga.miuix.kmp.nav.state.rememberNavEntryViewModelStores
 import top.yukonga.miuix.kmp.nav.state.rememberNavSaveableStateHolder
 import top.yukonga.miuix.kmp.nav.transition.NavGesture
 import top.yukonga.miuix.kmp.nav.transition.NavMotion
+import top.yukonga.miuix.kmp.nav.transition.NavRole
+import top.yukonga.miuix.kmp.nav.transition.NavTransitionScope
 import top.yukonga.miuix.kmp.nav.transition.NavSettlePhase
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
@@ -386,8 +388,7 @@ private fun NavDisplayLayout(
         val newContentKeys = currentEntries.map { it.contentKey }
         // Content keys are the entry identity everywhere downstream (presentation reconcile,
         // index map, saveable state, ViewModel store). A duplicate would fold two stack positions
-        // into one instance and wedge the presentation (index teleport -> transient d <= -1 ->
-        // lifecycle DESTROYED), so reject it here with an actionable message instead.
+        // into one instance and wedge the presentation, so reject it with an actionable message.
         // Saveable state is the one subsystem keyed by contentKey.toString() rather than by the
         // key object (SaveableStateProvider needs a Bundle-storable key), so distinct-by-equals
         // keys with an equal toString() would still collapse into one rememberSaveable slot:
@@ -616,7 +617,9 @@ private fun NavDisplayLayout(
                 val e = presented[i]
                 if (!e.presentation.isRemoving) continue
                 val index = indexByContentKey[e.contentKey]
-                if (index == null || top - index <= -1f || index < currentSize) {
+                val springRunning = (e.transitionOrNull() ?: transition).retainsSpringOvershoot &&
+                    presentation.animatedTop.isRunning
+                if (index == null || (top - index <= -1f && !springRunning) || index < currentSize) {
                     (result ?: ArrayList<NavEntry<*>>(presented.size).also { result = it }).add(e)
                 }
             }
@@ -711,7 +714,10 @@ private fun NavDisplayLayout(
                 for (i in presented.indices) {
                     val entry = presented[i]
                     val index = indexByContentKey[entry.contentKey] ?: continue
-                    if (isVisibleAt(relativeDepth(top, index), windowDepth)) {
+                    val settlingSpring = entry.presentation.isRemoving &&
+                        (entry.transitionOrNull() ?: transition).retainsSpringOvershoot &&
+                        presentation.animatedTop.isRunning
+                    if (isVisibleAt(relativeDepth(top, index), windowDepth) || settlingSpring) {
                         val list = result ?: ArrayList<NavEntry<*>>(presented.size).also { result = it }
                         // Insertion-sorted by stack index: composition order is draw order, and a
                         // pure back-stack reorder leaves `presented` in its old order. Stable, so a
@@ -907,7 +913,15 @@ private fun NavEntryHost(
     // Choose the governing transition at the bucketed depth: own transition while at or entering
     // the top (d <= 0), the upper neighbour's transition while covered (0 < d). The per-frame
     // visual is then a pure deferred read inside the transition's own graphicsLayer.
-    val activeTransition = if ((depthBuckets and DEPTH_BUCKET_GOVERNS_OWN) != 0) ownTransition else upperTransition
+    val sourceSpringLanding by remember(presentation, entryIndex, upperTransition, entry.presentation.isRemoving) {
+        derivedStateOf {
+            !entry.presentation.isRemoving && upperTransition.retainsSpringOvershoot &&
+                presentation.animatedTop.isRunning && presentation.animatedTop.targetValue == entryIndex.toFloat() &&
+                presentation.animatedTop.value <= entryIndex.toFloat()
+        }
+    }
+    val activeTransition = if (sourceSpringLanding) upperTransition else
+        if ((depthBuckets and DEPTH_BUCKET_GOVERNS_OWN) != 0) ownTransition else upperTransition
     val transitionScope = remember(
         presentation,
         entryIndex,
@@ -927,8 +941,14 @@ private fun NavEntryHost(
             density = density,
         )
     }
+    val visualScope = remember(transitionScope, sourceSpringLanding) {
+        if (!sourceSpringLanding) transitionScope else object : NavTransitionScope by transitionScope {
+            override val relativeDepth: Float get() = transitionScope.relativeDepth.coerceAtLeast(0f)
+            override val role: NavRole get() = NavRole.Covered
+        }
+    }
     val entryModifier = with(activeTransition) {
-        Modifier.transformEntry(transitionScope)
+        Modifier.transformEntry(visualScope)
     }
 
     val clipModifier = if (!activeTransition.handlesOwnClipping && (depthBuckets and DEPTH_BUCKET_CLIP_CORNERS) != 0) {

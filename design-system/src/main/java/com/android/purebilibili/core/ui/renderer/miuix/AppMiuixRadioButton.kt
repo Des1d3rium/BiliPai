@@ -16,7 +16,9 @@ internal fun AppMiuixRadioButton(
     enabled: Boolean,
 ) {
     val scheme = MiuixTheme.colorScheme
-    val colors = RadioButtonDefaults.radioButtonColors(
+    val colors = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        RadioButtonDefaults.radioButtonColors()
+    } else RadioButtonDefaults.radioButtonColors(
         selectedColor = resolveControlGlyphColor(scheme.primary, scheme.surface, scheme.surface),
     )
     ProvideAppMiuixHapticFeedback(scene = com.android.purebilibili.core.ui.AppHapticScene.MENUS) {

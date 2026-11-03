@@ -21,6 +21,17 @@ internal fun shouldDeferVideoCardSourceHeavyWork(
     exposure: VideoCardTransitionExposure,
 ): Boolean = exposure != VideoCardTransitionExposure.Idle
 
+/** 仅在视频详情稳态且没有悬浮消费者时暂停玻璃底栏的背景采样。 */
+internal fun shouldRecordVideoCardFloatingBackdrop(
+    liquidGlassEnabled: Boolean,
+    isVideoDetailDestination: Boolean,
+    exposure: VideoCardTransitionExposure,
+    hasActiveAudioPlayback: Boolean,
+    hasFloatingConsumer: Boolean,
+): Boolean = !liquidGlassEnabled || !isVideoDetailDestination ||
+    exposure != VideoCardTransitionExposure.SettledHidden ||
+    hasActiveAudioPlayback || hasFloatingConsumer
+
 internal data class VideoCardTransitionRenderDecision(
     val retainSourceSnapshot: Boolean,
     val drawSourceNormally: Boolean,

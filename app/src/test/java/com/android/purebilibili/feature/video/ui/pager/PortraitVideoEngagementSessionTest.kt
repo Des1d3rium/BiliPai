@@ -21,6 +21,24 @@ class PortraitVideoEngagementSessionTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun teardown() { Dispatchers.resetMain() }
 
+    @Test fun `metadata fills unknown aid without treating loading as identity mismatch`() {
+        val actual = subject("BV_CURRENT", 120L)
+        val requested = actual.copy(aid = 0L, cid = 0L, ownerMid = 0L)
+        val resolved = resolvePortraitEngagementSubject(requested, info(actual))
+        assertNotNull(resolved)
+        assertEquals(120L, resolved?.aid)
+        assertEquals(actual.ownerMid, resolved?.ownerMid)
+        assertEquals(requested.cid, resolved?.cid)
+        assertEquals(requested.generation, resolved?.generation)
+    }
+
+    @Test fun `metadata from another video or conflicting known aid remains rejected`() {
+        val actual = subject("BV_CURRENT", 120L)
+        assertNull(resolvePortraitEngagementSubject(actual, info(subject("BV_OTHER", 130L))))
+        assertNull(resolvePortraitEngagementSubject(actual, info(actual).copy(aid = 130L)))
+        assertNull(resolvePortraitEngagementSubject(actual.copy(aid = 0L), info(actual).copy(aid = 0L)))
+    }
+
     @Test fun `foreign coin dialog waits for its real status and spends only that video`() = runTest(dispatcher) {
         val backend = Backend()
         val root = model(backend)

@@ -215,7 +215,7 @@ fun InboxScreen(
                                 items = buildMessageCenterTopItems(uiState.feedUnreadData).map { if (disabledLikes && it.destination == MessageCenterDestination.LikeMe) it.copy(unreadCount = 0) else it },
                                 onItemClick = { destination ->
                                     if (disabledLikes && destination == MessageCenterDestination.LikeMe) android.widget.Toast.makeText(context, "已禁用", android.widget.Toast.LENGTH_SHORT).show()
-                                    else { viewModel.clearFeedBadge(destination); onTopItemClick(destination) }
+                                    else onTopItemClick(destination)
                                 }
                             )
                         }
@@ -314,8 +314,8 @@ fun InboxScreen(
                                         val entry = viewModel.entry(session)
                                         if (!viewModel.openFolder(session)) {
                                             when {
-                                                entry?.systemNotice == true -> { viewModel.clearFeedBadge(MessageCenterDestination.SystemNotice); onTopItemClick(MessageCenterDestination.SystemNotice) }
-                                                entry?.isPrivate == true -> { viewModel.onOpenSession(session); onSessionClick(session.talker_id, 1, userName) }
+                                                entry?.systemNotice == true -> onTopItemClick(MessageCenterDestination.SystemNotice)
+                                                entry?.isPrivate == true -> onSessionClick(session.talker_id, 1, userName)
                                                 !entry?.chatUrl.isNullOrBlank() -> onOpenLink(entry!!.chatUrl)
                                                 session.talker_id > 0 -> onSessionClick(session.talker_id, session.session_type, userName)
                                             }

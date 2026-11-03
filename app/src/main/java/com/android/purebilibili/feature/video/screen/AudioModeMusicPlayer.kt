@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import com.android.purebilibili.core.store.PlayLastSession
 import com.android.purebilibili.feature.video.player.PlaylistItem
 import com.android.purebilibili.feature.video.player.PlaylistManager
 import com.android.purebilibili.feature.video.subtitle.buildSubtitleTrackOptions
+import com.android.purebilibili.feature.video.usecase.playPlayerFromUserAction
 import com.android.purebilibili.feature.video.playback.audio.resolveAudioQualityControlPresentation
 import com.android.purebilibili.feature.video.share.VideoShareSheet
 import com.android.purebilibili.feature.video.share.buildVideoSharePayload
@@ -154,7 +156,9 @@ internal fun AudioModeMusicPlayer(
     val lyricsViewModel = androidx.lifecycle.viewmodel.compose.viewModel<MusicViewModel>(
         key = "audio_mode_lyrics"
     )
-    val lyricsState by lyricsViewModel.uiState.collectAsStateWithLifecycle()
+    val suppliedLyricsState by lyricsViewModel.uiState.collectAsStateWithLifecycle()
+    val lyricsState = suppliedLyricsState.takeIf { it.lyricsOwnerKey == "video:${info.bvid}:${info.cid}" }
+        ?: com.android.purebilibili.feature.audio.viewmodel.MusicUiState(isLyricsSearching = true)
     var showCollectionSheet by remember { mutableStateOf(false) }
     var showPageSelector by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
@@ -221,10 +225,18 @@ internal fun AudioModeMusicPlayer(
         )
         viewModel.loadVideo(bvid = session.bvid, cid = session.cid, autoPlay = true)
     }
+    val coinSuccessHaptic = rememberUpdatedState(
+        com.android.purebilibili.feature.video.ui.components.rememberVideoActionSuccessHaptic()
+    )
     LaunchedEffect(engagementViewModel) {
         engagementViewModel.events.collect { event ->
             if (event is com.android.purebilibili.feature.video.viewmodel.VideoEngagementEvent.Message) {
                 viewModel.toast(event.text)
+            } else if (event is com.android.purebilibili.feature.video.viewmodel.VideoEngagementEvent.CoinSucceeded &&
+                engagementViewModel.uiState.value.subject == event.subject &&
+                com.android.purebilibili.feature.video.viewmodel.matchesVideoEngagementAccount(event.accountSession)
+            ) {
+                coinSuccessHaptic.value()
             }
         }
     }
@@ -250,55 +262,64 @@ internal fun AudioModeMusicPlayer(
             artist = lyricMetadata.artist,
             bvid = info.bvid,
             cid = info.cid,
-            durationMs = lyricsDurationMs
+            durationMs = lyricsDurationMs,
+            originalTitle = displayTitle,
+            artistIsUploader = lyricMetadata.artist == info.owner.name,
         )
     }
 
-    val queue = if (playlist.isEmpty()) {
-        if (info.pages.size > 1) {
-            info.pages.mapIndexed { index, page ->
-                MusicQueueItemUi(
-                    stableId = "video:${info.bvid}:${page.cid}",
-                    title = if (page.part.isNotBlank()) page.part else "${displayTitle} P${page.page}",
-                    artist = info.owner.name,
-                    coverUrl = FormatUtils.fixImageUrl(info.pic)
-                )
-            }
-        } else if (successState.related.isNotEmpty()) {
-            val currentItem = MusicQueueItemUi(
-                stableId = "video:${info.bvid}:${info.cid}",
-                title = displayTitle,
-                artist = info.owner.name,
-                coverUrl = FormatUtils.fixImageUrl(info.pic)
-            )
-            listOf(currentItem) + successState.related.take(10).map { rel ->
-                MusicQueueItemUi(
-                    stableId = "video:${rel.bvid}:${rel.cid}",
-                    title = rel.title,
-                    artist = rel.owner.name,
-                    coverUrl = FormatUtils.fixImageUrl(rel.pic)
-                )
-            }
-        } else {
-            listOf(
-                MusicQueueItemUi(
+    val queue = remember(playlist, info, displayTitle, successState.related) {
+        if (playlist.isEmpty()) {
+            if (info.pages.size > 1) {
+                info.pages.mapIndexed { index, page ->
+                    MusicQueueItemUi(
+                        stableId = "video:${info.bvid}:${page.cid}",
+                        title = if (page.part.isNotBlank()) page.part else "${displayTitle} P${page.page}",
+                        artist = info.owner.name,
+                        coverUrl = FormatUtils.fixImageUrl(info.pic)
+                    )
+                }
+            } else if (successState.related.isNotEmpty()) {
+                val currentItem = MusicQueueItemUi(
                     stableId = "video:${info.bvid}:${info.cid}",
                     title = displayTitle,
                     artist = info.owner.name,
                     coverUrl = FormatUtils.fixImageUrl(info.pic)
                 )
-            )
-        }
-    } else {
-        playlist.mapIndexed { index, item ->
-            MusicQueueItemUi(
-                stableId = "video:${item.bvid}:$index",
-                title = item.title,
-                artist = item.owner,
-                coverUrl = FormatUtils.fixImageUrl(item.cover)
-            )
+                listOf(currentItem) + successState.related.take(10).map { rel ->
+                    MusicQueueItemUi(
+                        stableId = "video:${rel.bvid}:${rel.cid}",
+                        title = rel.title,
+                        artist = rel.owner.name,
+                        coverUrl = FormatUtils.fixImageUrl(rel.pic)
+                    )
+                }
+            } else {
+                listOf(
+                    MusicQueueItemUi(
+                        stableId = "video:${info.bvid}:${info.cid}",
+                        title = displayTitle,
+                        artist = info.owner.name,
+                        coverUrl = FormatUtils.fixImageUrl(info.pic)
+                    )
+                )
+            }
+        } else {
+            val occurrences = mutableMapOf<Pair<String, Long>, Int>()
+            playlist.map { item ->
+                val identity = item.bvid to item.cid
+                val occurrence = occurrences.getOrDefault(identity, 0)
+                occurrences[identity] = occurrence + 1
+                MusicQueueItemUi(
+                    stableId = "video:${item.bvid}:${item.cid}:$occurrence",
+                    title = item.title,
+                    artist = item.owner,
+                    coverUrl = FormatUtils.fixImageUrl(item.cover)
+                )
+            }
         }
     }
+    val sleepAfterCurrent by viewModel.sleepAfterCurrent.collectAsStateWithLifecycle()
     val currentIndex = if (playlist.isNotEmpty()) {
         playlistIndex.takeIf { it in queue.indices } ?: 0
     } else if (info.pages.size > 1) {
@@ -336,9 +357,34 @@ internal fun AudioModeMusicPlayer(
         .getQuickSaveDefaultFolder(LocalContext.current)
         .collectAsStateWithLifecycle(initialValue = false)
 
+    var audioSecondaryTrackKey by remember(info.bvid, info.cid) { mutableStateOf<String?>(null) }
+    var audioSecondaryRequestId by remember(info.bvid, info.cid) { androidx.compose.runtime.mutableIntStateOf(0) }
+    val secondaryTrack = successState.subtitleTracks.firstOrNull {
+        it.trackKey == (audioSecondaryTrackKey ?: successState.subtitleSecondaryTrackKey) &&
+            it.trackKey != successState.subtitlePrimaryTrackKey
+    }
+    val selectedSecondaryCues = androidx.compose.runtime.key(info.bvid, info.cid, secondaryTrack?.trackKey, audioSecondaryTrackKey, audioSecondaryRequestId) {
+        androidx.compose.runtime.produceState<Result<List<com.android.purebilibili.feature.video.subtitle.SubtitleCue>>?>(initialValue = null) {
+            if (audioSecondaryTrackKey != null && secondaryTrack != null) {
+                value = com.android.purebilibili.data.repository.VideoRepository.getSubtitleCues(
+                    subtitleUrl = secondaryTrack.subtitleUrl,
+                    bvid = info.bvid,
+                    cid = info.cid,
+                    subtitleId = secondaryTrack.id,
+                    subtitleIdStr = secondaryTrack.idStr,
+                    subtitleLan = secondaryTrack.lan,
+                )
+            }
+        }
+    }
+    val audioSecondaryCues = when {
+        secondaryTrack == null -> emptyList()
+        audioSecondaryTrackKey == null -> successState.subtitleSecondaryCues
+        else -> selectedSecondaryCues.value?.getOrNull().orEmpty()
+    }
     val subtitleLyrics = remember(
         successState.subtitlePrimaryCues,
-        successState.subtitleSecondaryCues,
+        audioSecondaryCues,
         successState.subtitlePrimaryLikelyAi,
         successState.subtitlePrimaryLanguage,
         successState.subtitleTracks,
@@ -349,7 +395,7 @@ internal fun AudioModeMusicPlayer(
         }
         BiliSubtitleLyricsPolicy.convertSubtitlesToLyricDocument(
             primaryCues = successState.subtitlePrimaryCues,
-            secondaryCues = successState.subtitleSecondaryCues,
+            secondaryCues = audioSecondaryCues,
             isAiGenerated = successState.subtitlePrimaryLikelyAi,
             languageLabel = selectedTrack?.lanDoc ?: successState.subtitlePrimaryLanguage
         )
@@ -413,6 +459,7 @@ internal fun AudioModeMusicPlayer(
         ),
         // Video audio mode owns this player; the position clock stays inside content.
         playbackPositionSource = player,
+        playbackPositionIdentity = "${info.bvid}:${info.cid}",
         onBack = onBack,
         onPlayPause = { player?.handleAudioModePlayPause() },
         onSeek = { positionMs ->
@@ -421,6 +468,10 @@ internal fun AudioModeMusicPlayer(
         },
         onPrevious = { viewModel.playPreviousAudioModeTrack() },
         onNext = { viewModel.playNextAudioModeTrack() },
+        onQueueMove = if (playlist.isNotEmpty()) PlaylistManager::moveQueueItem else null,
+        onQueueRemove = if (playlist.isNotEmpty()) PlaylistManager::removeQueueItem else null,
+        onQueuePlayNext = if (playlist.isNotEmpty()) PlaylistManager::playQueueItemNext else null,
+        onQueueClear = if (playlist.size > 1) PlaylistManager::clearUpcomingQueue else null,
         onImportToQueue = { importedItems ->
             PlaylistManager.setPlaylist(importedItems)
             importedItems.firstOrNull()?.let { first ->
@@ -438,7 +489,10 @@ internal fun AudioModeMusicPlayer(
             if (playlist.isNotEmpty()) {
                 PlaylistManager.playAt(index)?.let { item ->
                     if (item.bvid == info.bvid && (item.cid == 0L || item.cid == info.cid)) {
-                        if (player != null && !player.isPlaying) player.handleAudioModePlayPause()
+                        if (player != null && !player.isPlaying) {
+                            if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+                            playPlayerFromUserAction(player)
+                        }
                     } else {
                         viewModel.loadVideo(
                             bvid = item.bvid,
@@ -475,6 +529,15 @@ internal fun AudioModeMusicPlayer(
             }
         },
         subtitleLanguageOptions = subtitleLanguageOptions,
+        secondarySubtitleLanguageOptions = subtitleLanguageOptions.filter { it.first != successState.subtitlePrimaryTrackKey },
+        selectedSecondarySubtitleTrackKey = secondaryTrack?.trackKey,
+        onSecondarySubtitleTrackSelected = { trackKey ->
+            videoSubtitlesEnabled = true
+            subtitleLanguageManuallySelected = true
+            audioSecondaryTrackKey = trackKey
+            audioSecondaryRequestId += 1
+        },
+        secondarySubtitleError = selectedSecondaryCues.value?.exceptionOrNull()?.let { "附加字幕加载失败，请重新选择语言重试" },
         videoSubtitlesEnabled = videoSubtitlesEnabled,
         onVideoSubtitlesEnabledChange = { videoSubtitlesEnabled = it },
         selectedSubtitleTrackKey = successState.subtitlePrimaryTrackKey,
@@ -485,7 +548,10 @@ internal fun AudioModeMusicPlayer(
         },
         onLyricsRetry = lyricsViewModel::retryLyrics,
         onLyricsSearch = lyricsViewModel::searchLyrics,
-        onLyricsCandidateSelected = lyricsViewModel::selectLyricsCandidate,
+        onLyricsCandidateSelected = { index ->
+            subtitleLanguageManuallySelected = false
+            lyricsViewModel.selectLyricsCandidate(index)
+        },
         onVideoModeClick = {
             AudioNowPlayingSession.dismiss()
             onVideoModeClick(info.bvid, info.cid)
@@ -496,7 +562,7 @@ internal fun AudioModeMusicPlayer(
             else -> null
         },
         onSleepTimerClick = { showSleepTimerDialog = true },
-        sleepTimerLabel = formatAudioModeSleepTimerButtonLabel(sleepTimerMinutes),
+        sleepTimerLabel = if (sleepAfterCurrent) "播完当前首后停止" else formatAudioModeSleepTimerButtonLabel(sleepTimerMinutes),
         audioQualityLabel = audioQualityPresentation.label,
         audioQualityOptions = successState.availableAudioQualities,
         requestedAudioQuality = successState.requestedAudioQuality,
@@ -641,6 +707,11 @@ internal fun AudioModeMusicPlayer(
     if (showSleepTimerDialog) {
         AudioModeSleepTimerDialog(
             currentMinutes = sleepTimerMinutes,
+            sleepAfterCurrent = sleepAfterCurrent,
+            onSleepAfterCurrent = {
+                viewModel.setSleepAfterCurrent(!sleepAfterCurrent)
+                showSleepTimerDialog = false
+            },
             onDismiss = { showSleepTimerDialog = false },
             onSelectPreset = { minutes ->
                 viewModel.setSleepTimer(minutes)

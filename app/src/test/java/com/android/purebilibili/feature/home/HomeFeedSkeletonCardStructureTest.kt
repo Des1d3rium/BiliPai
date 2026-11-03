@@ -27,12 +27,12 @@ class HomeFeedSkeletonCardStructureTest {
     }
 
     @Test
-    fun featureSkeletonUsesSharedHomeGeometryAndReversePulse() {
+    fun featureSkeletonUsesSharedHomeGeometryAndDrawSweep() {
         val source = loadSource("app/src/main/java/com/android/purebilibili/feature/home/HomeFeedSkeletonCard.kt")
 
-        assertTrue(source.contains("RepeatMode.Reverse"))
-        assertTrue(source.contains("durationMillis = HOME_FEED_SKELETON_PULSE_DURATION_MILLIS"))
-        assertTrue(source.contains("VIDEO_SHARED_COVER_ASPECT_RATIO"))
+        assertTrue(source.contains("rememberSkeletonSweepState()"))
+        assertTrue(source.contains("skeletonBackground(homeFeedSkeletonFill("))
+        assertTrue(source.contains("videoCardCoverAspectRatio()"))
         // 骨架几何与真实视频卡共享 Card 语义，且卡片自身不再叠加底部 padding
         //（间距统一由网格 verticalItemSpacingDp 决定）。
         assertTrue(source.contains("cardCornerRadius = AppShapes.containerCornerDp(cardLevel)"))

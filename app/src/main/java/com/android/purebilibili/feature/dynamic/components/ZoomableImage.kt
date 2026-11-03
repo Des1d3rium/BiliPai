@@ -67,6 +67,9 @@ fun ZoomableImage(
     resetZoomTrigger: Int = 0,
     gesturesEnabled: Boolean = true,
     displayRectTrackingEnabled: Boolean = true,
+    originalImageUrl: String? = null,
+    originalQuality: Boolean = false,
+    publicContent: Boolean = false,
 ) {
     // Gesture coroutines outlive recomposition; always use the current host callbacks.
     val latestOnZoomChange by rememberUpdatedState(onZoomChange)
@@ -433,5 +436,16 @@ fun ZoomableImage(
             // 使用 Fit 模式确保初始完整显示
             contentScale = ContentScale.Fit
         )
+        if (originalImageUrl != null && originalQuality) {
+            OriginalImageRegion(
+                imageUrl = originalImageUrl,
+                publicContent = publicContent,
+                enabled = gesturesEnabled && displayRectTrackingEnabled,
+                viewport = { containerSize },
+                displayRect = { sourceSize ->
+                    resolveZoomableImageLocalDisplayRect(sourceSize, containerSize, scale, offsetX, offsetY)
+                },
+            )
+        }
     }
 }

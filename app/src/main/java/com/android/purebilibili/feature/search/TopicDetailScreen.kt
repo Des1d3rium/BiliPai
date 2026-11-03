@@ -36,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,6 +123,9 @@ fun TopicDetailScreen(
     val skeletonBlockColor = rememberStaticSkeletonBlockColor()
     val topicBackdrop = if (liquidGlassEnabled && !showInitialSkeleton) rememberLayerBackdrop() else null
     var showPublishComposer by remember { mutableStateOf(false) }
+    var composerAccountId by remember { mutableStateOf(0L) }
+    var clearingDraft by remember { mutableStateOf(false) }
+    val draftScope = rememberCoroutineScope()
 
     LaunchedEffect(topicId) {
         viewModel.load(topicId)
@@ -146,7 +151,10 @@ fun TopicDetailScreen(
             TopicParticipateButton(
                 liquidGlassEnabled = liquidGlassEnabled,
                 backdrop = topicBackdrop,
-                onClick = { showPublishComposer = true },
+                onClick = {
+                    composerAccountId = com.android.purebilibili.core.store.TokenManager.midCache ?: 0L
+                    showPublishComposer = true
+                },
             )
         },
     ) { padding ->
@@ -290,15 +298,22 @@ fun TopicDetailScreen(
 
     if (showPublishComposer) {
         val topic = state.details?.topicItem
+        val draftKey = "topic_$topicId"
+        val draft = remember(composerAccountId, topicId) {
+            com.android.purebilibili.feature.dynamic.components.DynamicDraftStore.load(context, composerAccountId, draftKey)
+                ?: com.android.purebilibili.data.model.response.DynamicPublishDraft(
+                    text = "",
+                    topic = topic?.takeIf { it.id > 0L }?.let {
+                        DynamicPublishTopic(id = it.id, name = it.name)
+                    },
+                )
+        }
         DynamicPublishComposer(
-            initialDraft = com.android.purebilibili.data.model.response.DynamicPublishDraft(
-                text = "",
-                topic = topic?.takeIf { it.id > 0L }?.let {
-                    DynamicPublishTopic(id = it.id, name = it.name)
-                },
-            ),
+            initialDraft = draft,
             isEditing = false,
-            submitting = state.isPublishing,
+            submitting = state.isPublishing || clearingDraft,
+            draftAccountId = composerAccountId.takeIf { it > 0 },
+            draftKey = draftKey,
             errorMessage = state.publishError,
             onDismiss = { showPublishComposer = false },
             onSubmit = { draft ->
@@ -308,7 +323,15 @@ fun TopicDetailScreen(
                         message,
                         android.widget.Toast.LENGTH_SHORT,
                     ).show()
-                    if (success) showPublishComposer = false
+                    if (success) {
+                        clearingDraft = true
+                        draftScope.launch {
+                            val result = com.android.purebilibili.feature.dynamic.components.DynamicDraftStore.clear(context, composerAccountId, draftKey)
+                            if (result.isFailure) android.widget.Toast.makeText(context, "发布成功，但草稿清除失败", android.widget.Toast.LENGTH_LONG).show()
+                            clearingDraft = false
+                            showPublishComposer = false
+                        }
+                    }
                 }
             },
         )

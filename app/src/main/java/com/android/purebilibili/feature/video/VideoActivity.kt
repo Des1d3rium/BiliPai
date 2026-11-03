@@ -194,8 +194,11 @@ class VideoActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = true)
             val liquidGlassEnabled by SettingsManager.getAndroidNativeLiquidGlassEnabled(this@VideoActivity)
                 .collectAsStateWithLifecycle(initialValue = true)
+            val liquidSwitchThumbMode by SettingsManager.getLiquidSwitchThumbMode(this@VideoActivity)
+                .collectAsStateWithLifecycle(initialValue = com.android.purebilibili.core.ui.LiquidSwitchThumbMode.THEME)
             val appThemeConfig = remember(
                 liquidGlassEnabled,
+                liquidSwitchThumbMode,
                 blurIntensity,
                 headerBlurEnabled,
                 bottomBarBlurEnabled,
@@ -210,6 +213,7 @@ class VideoActivity : ComponentActivity() {
             ) {
                 AppThemeConfig(
                     liquidGlassEnabled = liquidGlassEnabled,
+                    liquidSwitchThumbMode = liquidSwitchThumbMode,
                     blurIntensity = blurIntensity,
                     headerBlurEnabled = headerBlurEnabled,
                     bottomBarBlurEnabled = bottomBarBlurEnabled,
@@ -277,6 +281,13 @@ class VideoActivity : ComponentActivity() {
                     resumePositionMsFromRoute = nearbyVideo?.positionMs ?: 0L,
                     coverUrl = nearbyVideo?.cover.orEmpty(),
                     onBack = { onBackPressedDispatcher.onBackPressed() },
+                    onHomeClick = {
+                        startActivity(android.content.Intent(this@VideoActivity, com.android.purebilibili.MainActivity::class.java).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            putExtra(com.android.purebilibili.EXTRA_PENDING_NAVIGATION_ROUTE, com.android.purebilibili.navigation.ScreenRoutes.Home.route)
+                        })
+                        finish()
+                    },
                     onNavigateToAudioMode = {
                         viewModel.setAudioMode(true)
                     },

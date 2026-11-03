@@ -66,7 +66,7 @@ internal fun PlayerSideButton(
     }
     PlayerControlGlassDock(
         enabled = true,
-        modifier = modifier.size(PlayerChromeLayout.CircularButtonSizeDp.dp),
+        modifier = modifier.size(PlayerGlassIconButtonSize),
         shape = androidx.compose.foundation.shape.CircleShape,
     ) {
         CompositionLocalProvider(LocalAppButtonSlotColorCorrectionEnabled provides false) {
@@ -78,7 +78,7 @@ internal fun PlayerSideButton(
                 contentColor = Color.White,
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    AppIcon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(24.dp))
+                    AppIcon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(iconSizeDp.dp))
                 }
             }
         }

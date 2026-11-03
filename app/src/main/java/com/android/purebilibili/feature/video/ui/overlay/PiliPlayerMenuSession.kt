@@ -9,10 +9,10 @@ import android.media.audiofx.LoudnessEnhancer
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.android.purebilibili.core.ui.AppAlertDialog as AlertDialog
+import com.android.purebilibili.core.ui.components.AppOutlinedTextField as OutlinedTextField
+import com.android.purebilibili.core.ui.components.AppText as Text
+import com.android.purebilibili.core.ui.components.AppTextButton as TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +96,23 @@ data class PiliPlayerMenuSession(
     val playingVideoCodec: String?,
 )
 
+/** Ignore queued callbacks from an effect that has been replaced or released. */
+internal fun resolveAudioEffectControlAvailability(
+    currentEffect: Any?,
+    callbackEffect: Any,
+    granted: Boolean,
+    readEnabled: () -> Boolean,
+): Boolean? {
+    if (currentEffect !== callbackEffect) return null
+    if (!granted) return false
+    return try {
+        readEnabled()
+    } catch (_: RuntimeException) {
+        // The native effect can be released between the identity check and the read.
+        false
+    }
+}
+
 @Composable
 fun rememberPiliPlayerMenuSession(
     player: ExoPlayer?,
@@ -111,8 +128,15 @@ fun rememberPiliPlayerMenuSession(
     val scope = rememberCoroutineScope()
     val amplification by remember(context) { PiliPlayerMenuStore.amplification(context) }
         .collectAsStateWithLifecycle(initialValue = 1f)
-    val backgroundEnabled by remember(context) { SettingsManager.getBackgroundPlaybackEnabled(context) }
+    val savedBackgroundEnabled by remember(context) { SettingsManager.getBackgroundPlaybackEnabled(context) }
         .collectAsStateWithLifecycle(initialValue = SettingsManager.getBackgroundPlaybackEnabledSync(context))
+    val backgroundManager = remember(context) { com.android.purebilibili.feature.video.player.MiniPlayerManager.getInstance(context) }
+    val backgroundKey = if (player != null && backgroundManager.isPlayerManaged(player) && backgroundManager.isLiveMode) {
+        "live:${backgroundManager.currentRoomId}"
+    } else "video:$bvid"
+    val backgroundSession = com.android.purebilibili.feature.video.player.rememberPlayerBackgroundPlaybackSession(player, backgroundKey)
+    val backgroundOverride by backgroundSession.selection.collectAsStateWithLifecycle()
+    val backgroundEnabled = backgroundOverride ?: savedBackgroundEnabled
     val waitForEnd by remember(context) { PiliPlayerMenuStore.sleepWaitForEnd(context) }
         .collectAsStateWithLifecycle<Boolean?>(initialValue = null)
     val exitApp by remember(context) { PiliPlayerMenuStore.sleepExitApp(context) }
@@ -157,9 +181,16 @@ fun rememberPiliPlayerMenuSession(
     }
 
     DisposableEffect(player) {
-        fun bind(sessionId: Int) {
-            gainEffect?.release()
+        fun releaseGainEffect() {
+            val oldEffect = gainEffect
             gainEffect = null
+            if (oldEffect != null) {
+                runCatching { oldEffect.setControlStatusListener(null) }
+                runCatching { oldEffect.release() }
+            }
+        }
+        fun bind(sessionId: Int) {
+            releaseGainEffect()
             volumeAvailable = false
             volumeFailure = "音频会话尚未就绪"
             if (sessionId <= 0) return
@@ -169,19 +200,28 @@ fun rememberPiliPlayerMenuSession(
                         effect.setTargetGain(playerAmplificationMillibels(currentAmplification))
                         effect.enabled = true
                         check(effect.enabled && effect.hasControl()) { "音频增强效果不可用" }
+                        gainEffect = effect
                         effect.setControlStatusListener { _, granted ->
-                            volumeAvailable = granted && effect.enabled
+                            val available = resolveAudioEffectControlAvailability(
+                                currentEffect = gainEffect,
+                                callbackEffect = effect,
+                                granted = granted,
+                                readEnabled = { effect.enabled },
+                            ) ?: return@setControlStatusListener
+                            if (gainEffect !== effect) return@setControlStatusListener
+                            volumeAvailable = available
                             volumeFailure = if (volumeAvailable) null else "播放器音频增强控制权已被其他音效占用"
                         }
                     } catch (error: RuntimeException) {
-                        effect.release()
+                        if (gainEffect === effect) gainEffect = null
+                        runCatching { effect.setControlStatusListener(null) }
+                        runCatching { effect.release() }
                         throw error
                     }
                 }
             }.onSuccess {
-                gainEffect = it
-                volumeAvailable = true
-                volumeFailure = null
+                volumeAvailable = runCatching { it.enabled && it.hasControl() }.getOrDefault(false)
+                volumeFailure = if (volumeAvailable) null else "播放器音频增强控制权已被其他音效占用"
             }.onFailure { volumeFailure = "此设备的音频会话不支持播放器音量增强" }
         }
         val listener = object : Player.Listener {
@@ -194,8 +234,7 @@ fun rememberPiliPlayerMenuSession(
         bind(player?.audioSessionId ?: 0)
         onDispose {
             player?.removeListener(listener)
-            gainEffect?.release()
-            gainEffect = null
+            releaseGainEffect()
         }
     }
     LaunchedEffect(gainEffect, amplification) {
@@ -265,7 +304,10 @@ fun rememberPiliPlayerMenuSession(
         }) else null,
         playerVolumeUnavailableReason = volumeFailure,
         isBackgroundPlaybackEnabled = backgroundEnabled,
-        onBackgroundPlaybackChange = { value -> scope.launch { SettingsManager.setBackgroundPlaybackEnabled(context, value) } },
+        onBackgroundPlaybackChange = { value ->
+            backgroundSession.select(value)
+            scope.launch { backgroundSession.saveIfRemembered(context, value) }
+        },
         onWatchLater = actions.onWatchLater,
         onShowNotes = actions.onShowNotes,
         onDownloadVideo = actions.onDownloadVideo,

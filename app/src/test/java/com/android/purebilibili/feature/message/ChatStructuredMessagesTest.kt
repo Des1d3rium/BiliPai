@@ -23,6 +23,8 @@ class ChatStructuredMessagesTest {
     @Test
     fun sessionTipJoinsTextWithoutExposingPayload() {
         assertEquals("最多发送1条消息", parseChatTip("""[{"text":"最多发送"},{"text":"1条消息","color_day":"#9499A0"}]"""))
+        assertEquals("对方主动回复或关注你前，最多发送1条消息", parseChatTip("""{"content":[{"text":"对方主动回复或关注你前，最多发送1条消息","color_day":"#9499A0"}]}"""))
+        assertEquals("对方主动回复或关注你前，最多发送1条消息", parseChatTip("""{"content":"[{\"text\":\"对方主动回复或关注你前，最多发送1条消息\",\"color_day\":\"#9499A0\"}]"}"""))
         assertEquals("", parseChatTip("invalid"))
     }
     @Test

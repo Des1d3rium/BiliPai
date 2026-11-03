@@ -516,6 +516,7 @@ private fun PortraitProgressControlStrip(
             PortraitChromeChip(
                 label = "字幕",
                 highlighted = subtitleEnabled,
+                highlightedColor = AppContentColors.accent(),
                 onClick = onSubtitleClick
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -555,7 +556,8 @@ private fun PortraitChromeChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showHiResBadge: Boolean = false,
-    showDolbyBadge: Boolean = false
+    showDolbyBadge: Boolean = false,
+    highlightedColor: Color = MaterialTheme.colorScheme.primaryFixed,
 ) {
     val glass = LocalPlayerControlGlassEnabled.current
     PlayerControlGlassDock(enabled = true, modifier = modifier) {
@@ -565,7 +567,7 @@ private fun PortraitChromeChip(
             shape = AppShapes.container(ContainerLevel.Pill),
             color = if (glass) Color.Transparent else Color.White.copy(alpha = 0.14f),
             contentColor = if (highlighted) {
-                MaterialTheme.colorScheme.primaryFixed
+                highlightedColor
             } else {
                 Color.White
             }
@@ -728,7 +730,9 @@ private fun PortraitVideoInfo(
             // 头像（联合创作时 UP 头像后叠放成员头像）
             if (authorFace.isNotEmpty()) {
                 AsyncImage(
-                    model = FormatUtils.fixImageUrl(authorFace),
+                    model = FormatUtils.fixImageUrl(
+                        authorFace
+                    ),
                     contentDescription = authorName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -745,7 +749,9 @@ private fun PortraitVideoInfo(
                 ) {
                     coCreators.take(2).forEachIndexed { index, member ->
                         AsyncImage(
-                            model = FormatUtils.fixImageUrl(member.face),
+                            model = FormatUtils.fixImageUrl(
+                                member.face
+                            ),
                             contentDescription = member.name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -953,7 +959,9 @@ private fun PortraitStaffSheet(
                     .padding(horizontal = 20.dp, vertical = 8.dp)
             ) {
                 AsyncImage(
-                    model = FormatUtils.fixImageUrl(member.face),
+                    model = FormatUtils.fixImageUrl(
+                        member.face
+                    ),
                     contentDescription = member.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

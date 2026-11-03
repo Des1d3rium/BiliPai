@@ -7,6 +7,27 @@ import kotlin.test.assertTrue
 class AudioWaveformPolicyTest {
 
     @Test
+    fun `analysis follows visible consumers and survives overlapping surfaces`() {
+        val first = Any()
+        val second = Any()
+        try {
+            assertTrue(!AudioWaveformSource.isAnalysisRequested())
+            AudioWaveformSource.setConsumerActive(first, true)
+            AudioWaveformSource.setConsumerActive(second, true)
+            assertTrue(AudioWaveformSource.isAnalysisRequested())
+            AudioWaveformSource.setConsumerActive(first, false)
+            assertTrue(AudioWaveformSource.isAnalysisRequested())
+            AudioWaveformSource.setConsumerActive(second, false)
+            assertTrue(!AudioWaveformSource.isAnalysisRequested())
+            AudioWaveformSource.setConsumerActive(first, true)
+            assertTrue(AudioWaveformSource.isAnalysisRequested())
+        } finally {
+            AudioWaveformSource.setConsumerActive(first, false)
+            AudioWaveformSource.setConsumerActive(second, false)
+        }
+    }
+
+    @Test
     fun soundWaveHistoryCoversNearlyOneSecondWithoutShowingFutureAudio() {
         val samples = (1..100).map { AudioWaveformSample(it * 20_000L, it / 100f) }
         val history = resolveWaveformBars(samples, 1_200_000L, barCount = 48)

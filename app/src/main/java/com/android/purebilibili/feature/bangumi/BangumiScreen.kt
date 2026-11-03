@@ -1,5 +1,6 @@
 package com.android.purebilibili.feature.bangumi
 
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import android.os.Build
 import com.android.purebilibili.core.ui.LocalNavigationBackHandler
 import androidx.compose.foundation.background
@@ -78,6 +79,7 @@ fun BangumiScreen(
     onBack: () -> Unit,
     onBangumiClick: (Long) -> Unit,
     onBangumiEpisodeClick: (Long, Long) -> Unit = { seasonId, _ -> onBangumiClick(seasonId) },
+    onPlayFollow: (Long) -> Unit = onBangumiClick,
     initialType: Int = 1,
     viewModel: BangumiHubViewModel = viewModel(),
     onPlayEpisode: ((Long, com.android.purebilibili.data.model.response.BangumiEpisode) -> Unit)? = null,
@@ -95,6 +97,7 @@ fun BangumiScreen(
             onBack = onBack,
             onBangumiClick = openSeason,
             onBangumiEpisodeClick = openEpisode,
+            onPlayFollow = onPlayFollow,
             initialType = initialType,
             viewModel = viewModel,
             backEnabled = hubVisible,
@@ -107,6 +110,7 @@ private fun BangumiHubScreen(
     onBack: () -> Unit,
     onBangumiClick: (Long) -> Unit,
     onBangumiEpisodeClick: (Long, Long) -> Unit,
+    onPlayFollow: (Long) -> Unit,
     initialType: Int,
     viewModel: BangumiHubViewModel,
     backEnabled: Boolean,
@@ -276,7 +280,7 @@ private fun BangumiHubScreen(
                             options = BangumiChannel.entries.map { AppSegmentOption(it, it.label) },
                             selectedValue = state.channel,
                             indicatorPositionProvider = if (state.page == BangumiHubPage.HOME) {
-                                { channelPager.currentPage + channelPager.currentPageOffsetFraction }
+                                { channelPager.tabIndicatorPosition }
                             } else null,
                             isScrollInProgressProvider = {
                                 state.page == BangumiHubPage.HOME && channelPager.isScrollInProgress
@@ -287,7 +291,6 @@ private fun BangumiHubScreen(
                             tapPressRefractionEnabled = true,
                             // Enlarge only the glass channel dock; native chrome retains its defaults.
                             minTabWidth = if (themeConfig.liquidGlassEnabled) 64.dp else androidx.compose.ui.unit.Dp.Unspecified,
-                            labelFontSize = if (themeConfig.liquidGlassEnabled) 15.sp else androidx.compose.ui.unit.TextUnit.Unspecified,
                             height = if (themeConfig.liquidGlassEnabled) 44.dp else
                                 com.android.purebilibili.core.ui.AppChromeSizeTokens.BottomBarMatchedSegmentedControlHeightDp.dp,
                             indicatorHeight = if (themeConfig.liquidGlassEnabled) 34.dp else
@@ -351,6 +354,7 @@ private fun BangumiHubScreen(
                         onPrepareChannel = viewModel::prepareHomeChannel,
                         onBangumiClick = onBangumiClick,
                         onEpisodeClick = onBangumiEpisodeClick,
+                        onPlayFollow = onPlayFollow,
                         onRefreshHome = { viewModel.refreshHome() },
                         onLoadMoreHomeRecommendations = viewModel::loadMoreHomeRecommendations,
                         onLoadMoreHomeFollows = viewModel::loadMoreHomeFollows,

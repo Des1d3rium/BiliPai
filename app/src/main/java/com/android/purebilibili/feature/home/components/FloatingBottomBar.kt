@@ -87,6 +87,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.constrainHeight
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -507,6 +508,24 @@ fun RowScope.FloatingBottomBarItem(
     }
 }
 
+/** 隐藏采样可包含溢出徽标，外部仍以原槽位高度参与布局。 */
+internal fun Modifier.floatingDockCaptureOverflow(
+    contentHeight: Dp,
+    verticalOverflow: Dp,
+): Modifier = layout { measurable, constraints ->
+    val baseHeight = contentHeight.roundToPx()
+    val overflow = verticalOverflow.roundToPx().coerceAtLeast(0)
+    val captureHeight = baseHeight + overflow * 2
+    val placeable = measurable.measure(constraints.copy(
+        minHeight = captureHeight,
+        maxHeight = captureHeight,
+    ))
+    val height = constraints.constrainHeight(baseHeight)
+    layout(placeable.width, height) {
+        placeable.placeRelative(0, (height - captureHeight) / 2)
+    }
+}
+
 @Composable
 fun FloatingBottomBar(
     selectedIndex: () -> Int,
@@ -550,6 +569,13 @@ fun FloatingBottomBar(
     // Do not use the system night flag here: BiliPai supports an app-only dark theme.
     val isInDark = resolveBottomBarDarkTheme(AppSurfaceTokens.background())
     val isLiquidGlassMode = mode == FloatingBottomBarMode.LiquidGlass
+    val gravityGate = if (isLiquidGlassMode) {
+        com.android.purebilibili.core.ui.rememberDecorativeAnimationGate()
+    } else null
+    val parentGlass = com.android.purebilibili.core.ui.blur.LocalAppGlassContainer.current
+        .takeIf { isLiquidGlassMode && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled }
+    val materialBackdrop = if (parentGlass != null) parentGlass.backdrop else backdrop
+    val inheritDeformation = parentGlass?.ownsDeformation == true
     val segmentedGeometry = geometryMode != FloatingBottomBarGeometryMode.Dock
     val allowOverflow = isLiquidGlassMode || !segmentedGeometry
     val horizontalPadding = contentHorizontalPadding.coerceAtLeast(0.dp)
@@ -626,10 +652,12 @@ fun FloatingBottomBar(
     // Navigation capsules share the shell's rounded contour, inset by the current
     // resting margin. Derive the radius again as the dock changes size.
     val indicatorShape = if (geometryMode != FloatingBottomBarGeometryMode.Segmented) {
-        val restingInset = ((shellHeight - fittedIndicatorHeight) / 2).coerceAtLeast(0.dp)
         RoundedCornerShape(
-            (shellHeight / 2 - restingInset)
-                .coerceIn(0.dp, minOf(fittedIndicatorWidth, fittedIndicatorHeight) / 2),
+            resolveFloatingDockIndicatorCornerRadiusDp(
+                shellThicknessDp = shellHeight.value,
+                indicatorThicknessDp = fittedIndicatorHeight.value,
+                indicatorSlotExtentDp = fittedIndicatorWidth.value,
+            ).dp,
         )
     } else {
         pillShape
@@ -1288,31 +1316,42 @@ fun FloatingBottomBar(
 
     // Kyant button rubber band, driven by the indicator pointer (including vertical deltas).
     // Releasing the shared light position spring also returns the complete dock to its anchor.
-    val dockDragTranslationY: () -> Float = remember(density, shellHeight, interactiveHighlight) {
+    val dockDragTranslationY: () -> Float = remember(density, shellHeight, interactiveHighlight, inheritDeformation) {
         {
             val heightPx = with(density) { shellHeight.toPx() }.coerceAtLeast(1f)
-            heightPx * kotlin.math.tanh(0.05f * (interactiveHighlight?.offset?.y ?: 0f) / heightPx) * DOCK_SHELL_ELASTIC_GAIN
+            if (inheritDeformation) 0f else
+                heightPx * kotlin.math.tanh(0.05f * (interactiveHighlight?.offset?.y ?: 0f) / heightPx) * DOCK_SHELL_ELASTIC_GAIN
         }
     }
     SideEffect { onDockTranslationProviderChanged?.invoke(dockDragTranslationY) }
 
-    val baseHighlight = if (isLiquidGlassMode) rememberBiliPaiGravityHighlight(extraDegrees = -45f) else null
+    val indicatorHighlightVisible = if (isLiquidGlassMode) {
+        remember(dampedDragAnimation) {
+            derivedStateOf { dampedDragAnimation.pressProgress > 0.001f }
+        }.value
+    } else false
+    val baseHighlight = if (isLiquidGlassMode) rememberBiliPaiGravityHighlight(
+        extraDegrees = -45f,
+        active = enabled && drawShell && parentGlass == null && materialBackdrop != null && gravityGate?.active == true,
+    ) else null
     val pillHighlight = if (isLiquidGlassMode) rememberBiliPaiGravityHighlight(
         extraDegrees = 90f,
         width = resolveDockPillHighlightWidthDp(
             indicatorWidthDp = fittedIndicatorWidth.value,
             indicatorHeightDp = fittedIndicatorHeight.value,
         ).dp,
+        active = enabled && materialBackdrop != null && indicatorHighlightVisible && gravityGate?.active == true,
     ) else null
 
-    val combinedBackdrop = if (backdrop != null && tabsBackdrop != null) {
-        rememberCombinedBackdrop(backdrop, tabsBackdrop)
+    val combinedBackdrop = if (materialBackdrop != null && tabsBackdrop != null) {
+        rememberCombinedBackdrop(materialBackdrop, tabsBackdrop)
     } else {
-        backdrop
+        materialBackdrop
     }
 
     Box(
         modifier = modifier
+            .then(gravityGate?.modifier ?: Modifier)
             .trackLiquidGlassAdaptiveReadability(
                 state = adaptiveReadabilityState,
                 enabled = adaptiveReadabilityEnabled,
@@ -1357,41 +1396,45 @@ fun FloatingBottomBar(
                     )
                     .then(
                         when {
-                            isLiquidGlassMode && backdrop != null -> {
+                            isLiquidGlassMode && materialBackdrop != null -> {
                                 Modifier.drawBackdrop(
-                                    backdrop = backdrop,
+                                    backdrop = materialBackdrop,
                                     shape = { pillShape },
                                     effects = {
                                         padding = maxOf(
                                             padding,
                                             shellEffectPaddingPx,
                                         )
-                                        vibrancy(liquidGlassTuning.saturation)
-                                        blur(
-                                            liquidGlassTuning.backdropBlurRadius.dp.toPx(),
-                                            liquidGlassTuning.backdropBlurRadius.dp.toPx()
-                                        )
-                                        lens(
-                                            refractionHeight = shellRefractionHeightPx,
-                                            refractionAmount = shellRefractionAmountPx,
-                                            chromaticAberration =
-                                                liquidGlassTuning.shellChromaticAberrationAmount,
-                                        )
+                                        if (parentGlass == null) {
+                                            vibrancy(liquidGlassTuning.saturation)
+                                            blur(
+                                                liquidGlassTuning.backdropBlurRadius.dp.toPx(),
+                                                liquidGlassTuning.backdropBlurRadius.dp.toPx()
+                                            )
+                                            lens(
+                                                refractionHeight = shellRefractionHeightPx,
+                                                refractionAmount = shellRefractionAmountPx,
+                                                chromaticAberration =
+                                                    liquidGlassTuning.shellChromaticAberrationAmount,
+                                            )
+                                        }
                                     },
-                                    highlight = { baseHighlight?.value?.copy(alpha = 0.75f) },
+                                    highlight = { if (parentGlass == null) baseHighlight?.value?.copy(alpha = 0.75f) else null },
                                     layerBlock = {
-                                        val width = size.width.coerceAtLeast(1f)
-                                        val s = lerp(
-                                            1f,
-                                            1f + pressBloomPx / width,
-                                            dampedDragAnimation.pressProgress
-                                        )
-                                        scaleX = s
-                                        val dragY = kotlin.math.abs(interactiveHighlight?.offset?.y ?: 0f)
-                                        val extraStretch = (4.dp.toPx() / size.height.coerceAtLeast(1f)) *
-                                            (dragY / width) * (size.height / width).coerceAtMost(1f) *
-                                            DOCK_SHELL_ELASTIC_GAIN
-                                        scaleY = s + extraStretch.coerceAtMost(DOCK_SHELL_MAX_EXTRA_STRETCH)
+                                        if (!inheritDeformation) {
+                                            val width = size.width.coerceAtLeast(1f)
+                                            val s = lerp(
+                                                1f,
+                                                1f + pressBloomPx / width,
+                                                dampedDragAnimation.pressProgress
+                                            )
+                                            scaleX = s
+                                            val dragY = kotlin.math.abs(interactiveHighlight?.offset?.y ?: 0f)
+                                            val extraStretch = (4.dp.toPx() / size.height.coerceAtLeast(1f)) *
+                                                (dragY / width) * (size.height / width).coerceAtMost(1f) *
+                                                DOCK_SHELL_ELASTIC_GAIN
+                                            scaleY = s + extraStretch.coerceAtMost(DOCK_SHELL_MAX_EXTRA_STRETCH)
+                                        }
                                     },
                                     onDrawSurface = {
                                         drawRect(containerColor)
@@ -1437,8 +1480,8 @@ fun FloatingBottomBar(
             } else {
                 Modifier
             }
-            // 原生背景与文字分层，让指示器处于背景之上、前景文字之下。
-            if (drawShell && (!isLiquidGlassMode || contentIndicatorWidthsPx.isNotEmpty())) {
+            // 背景与文字分层；玻璃材质只裁剪背景，前景徽标可越过外壳上沿。
+            if (drawShell) {
                 Box(
                     Modifier
                         .matchParentSize()
@@ -1482,7 +1525,6 @@ fun FloatingBottomBar(
                             clip = false
                         }
                     }
-                    .then(if (isLiquidGlassMode && contentIndicatorWidthsPx.isEmpty()) shellModifier else Modifier)
                     .drawWithContent {
                         val scroll = dragScrollState
                         val viewportWidth = dragScrollViewportWidthLatest.value()
@@ -1514,7 +1556,7 @@ fun FloatingBottomBar(
         // No inverse stretch or extra press zoom in the exported labels. The lens
         // applies the same single transform as the home top dock's capture path.
         val indicatorStretchXProvider: () -> Float = { 1f }
-        if (isLiquidGlassMode && backdrop != null) {
+        if (isLiquidGlassMode && materialBackdrop != null) {
             CompositionLocalProvider(
                 LocalFloatingBottomBarTabScale provides { 1f },
                 LocalFloatingBottomBarContentColor provides colors.activeContentColor,
@@ -1524,55 +1566,71 @@ fun FloatingBottomBar(
                 LocalFloatingBottomBarItemAlignmentOffset provides itemAlignmentOffsetProvider,
                 LocalFloatingBottomBarIndicatorStretchX provides indicatorStretchXProvider,
             ) {
-                Row(
+                // 背景材质的轮廓只裁剪背景，不裁剪越过图标上沿的提醒徽标。
+                // 扩大隐藏纹理的上下采样范围，但保持槽位高度、文字基线和命中区域不变。
+                val captureOverflow = 16.dp
+                Box(
                     Modifier
                         .clearAndSetSemantics {}
                         .graphicsLayer {
                             translationX = panelOffset
                             translationY = dockDragTranslationY()
-                            if (allowOverflow) {
-                                clip = false
-                            }
+                            clip = false
                         }
-                        // Record local, unshifted material; source coordinates carry the
-                        // same dock translation as the consuming capsule. Recording the
-                        // transform inside the texture offsets its top/bottom sampling.
+                        .floatingDockCaptureOverflow(capturedContentHeight, captureOverflow)
                         .then(tabsBackdropSource?.modifier ?: Modifier)
-                        .drawBackdrop(
-                            backdrop = backdrop,
-                            shape = { indicatorShape },
-                            effects = {
-                                vibrancy(liquidGlassTuning.saturation)
-                                blur(
-                                    liquidGlassTuning.backdropBlurRadius.dp.toPx(),
-                                    liquidGlassTuning.backdropBlurRadius.dp.toPx()
-                                )
-                                lens(
-                                    refractionHeight = shellRefractionHeightPx,
-                                    refractionAmount = shellRefractionAmountPx,
-                                    chromaticAberration =
-                                        liquidGlassTuning.shellChromaticAberrationAmount,
-                                )
-                            },
-                            onDrawSurface = {
-                                drawRect(containerColor)
-                                if (liquidGlassTuning.contentReadabilityScrimAlpha > 0f) {
-                                    drawRect(
-                                        readabilityScrimColor.copy(
-                                            alpha = liquidGlassTuning.contentReadabilityScrimAlpha
-                                        )
-                                    )
-                                }
-                            },
-                        )
-                        // 捕获按压与滑动高光，供指示器折射和上下缝隙色散采样。
-                        .then(interactiveHighlight?.modifier ?: Modifier)
+                        .padding(vertical = captureOverflow)
                         .height(capturedContentHeight)
-                        .align(Alignment.CenterStart)
-                        .padding(horizontal = horizontalPadding),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .align(Alignment.CenterStart),
                 ) {
-                    content(this)
+                    Box(
+                        Modifier.matchParentSize()
+                            .drawBackdrop(
+                                backdrop = materialBackdrop,
+                                shape = { indicatorShape },
+                                effects = {
+                                    // 捕获层与可见子外壳使用相同材质，不能在隐藏捕获中再做一次折射。
+                                    if (parentGlass == null) {
+                                        // 先声明折射所需边距，避免模糊构建后再扩边导致整条效果重新求值。
+                                        if (top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported() &&
+                                            shellRefractionHeightPx > 0f && shellRefractionAmountPx > 0f
+                                        ) {
+                                            padding = maxOf(padding, shellRefractionAmountPx)
+                                        }
+                                        vibrancy(liquidGlassTuning.saturation)
+                                        blur(
+                                            liquidGlassTuning.backdropBlurRadius.dp.toPx(),
+                                            liquidGlassTuning.backdropBlurRadius.dp.toPx()
+                                        )
+                                        lens(
+                                            refractionHeight = shellRefractionHeightPx,
+                                            refractionAmount = shellRefractionAmountPx,
+                                            chromaticAberration =
+                                                liquidGlassTuning.shellChromaticAberrationAmount,
+                                        )
+                                    }
+                                },
+                                onDrawSurface = {
+                                    drawRect(containerColor)
+                                    if (liquidGlassTuning.contentReadabilityScrimAlpha > 0f) {
+                                        drawRect(
+                                            readabilityScrimColor.copy(
+                                                alpha = liquidGlassTuning.contentReadabilityScrimAlpha
+                                            )
+                                        )
+                                    }
+                                },
+                            ),
+                    )
+                    Row(
+                        Modifier
+                            .fillMaxSize()
+                            .then(interactiveHighlight?.modifier ?: Modifier)
+                            .padding(horizontal = horizontalPadding),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        content(this)
+                    }
                 }
             }
         }
@@ -1610,53 +1668,35 @@ fun FloatingBottomBar(
                             }
                         }
                         .clearAndSetSemantics {}
-                        .drawBackdrop(
+                        .floatingDockIndicatorOptics(
                             backdrop = combinedBackdrop,
-                            shape = { indicatorShape },
-                            effects = {
-                                val progress = indicatorOpticalProgressProvider()
+                            shape = indicatorShape,
+                            width = fittedIndicatorWidth,
+                            height = fittedIndicatorHeight,
+                            shellExtent = shellHeight,
+                            tuning = liquidGlassTuning,
+                            darkTheme = isInDark,
+                            progressProvider = indicatorOpticalProgressProvider,
+                            scaleXProvider = indicatorScaleXProvider,
+                            scaleYProvider = indicatorScaleYProvider,
+                            shellScaleProvider = {
                                 val shellWidth = totalWidthPx.coerceAtLeast(1f)
-                                val shellHeightPx = shellHeight.toPx().coerceAtLeast(1f)
+                                val shellHeightPx = with(density) { shellHeight.toPx().coerceAtLeast(1f) }
                                 val shellBloom = 1f + pressBloomPx / shellWidth * dampedDragAnimation.pressProgress
                                 val dragY = abs(interactiveHighlight?.offset?.y ?: 0f)
-                                val shellStretch = (4.dp.toPx() / shellHeightPx) * (dragY / shellWidth) *
-                                    (shellHeightPx / shellWidth).coerceAtMost(1f) * DOCK_SHELL_ELASTIC_GAIN
-                                homeIndicatorLens(
-                                    restHeightDp = fittedIndicatorHeight.value,
-                                    progress = progress,
-                                    tuning = liquidGlassTuning,
-                                    shellHeightDp = shellHeight.value,
-                                    indicatorScaleY = indicatorScaleYProvider(),
-                                    shellScaleY = if (drawShell) {
-                                        shellBloom + shellStretch.coerceAtMost(DOCK_SHELL_MAX_EXTRA_STRETCH)
-                                    } else 1f,
-                                )
+                                val shellStretch = (with(density) { 4.dp.toPx() } / shellHeightPx) *
+                                    (dragY / shellWidth) * (shellHeightPx / shellWidth).coerceAtMost(1f) * DOCK_SHELL_ELASTIC_GAIN
+                                if (drawShell && !inheritDeformation) {
+                                    shellBloom + shellStretch.coerceAtMost(DOCK_SHELL_MAX_EXTRA_STRETCH)
+                                } else 1f
                             },
-                            highlight = {
+                            highlightProvider = {
                                 if (isLiquidGlassMode || indicatorHighlightFromDrag) {
                                     pillHighlight?.value?.copy(alpha = if (isLiquidGlassMode) dampedDragAnimation.pressProgress else indicatorOpticalProgressProvider())
                                 } else null
                             },
-                            layerBlock = {
-                                scaleY = indicatorScaleYProvider()
-                                scaleX = indicatorScaleXProvider()
-                            },
-                            onDrawSurface = {
-                                drawHomeIndicatorSurface(
-                                    indicatorOpticalProgressProvider(),
-                                    isInDark,
-                                    indicatorIdleSurfaceColorOverride,
-                                )
-                            },
+                            idleColor = indicatorIdleSurfaceColorOverride,
                         )
-                        .innerShadow(shape = indicatorShape) {
-                            InnerShadow(
-                                offset = androidx.compose.ui.unit.DpOffset.Zero,
-                                radius = 8.dp * homeIndicatorOpticalScale(fittedIndicatorHeight.value) * indicatorOpticalProgressProvider(),
-                                color = Color.Black.copy(alpha = 0.15f),
-                                alpha = indicatorOpticalProgressProvider(),
-                            )
-                        }
                         .height(fittedIndicatorHeight)
                         .then(indicatorWidthModifier)
                 )

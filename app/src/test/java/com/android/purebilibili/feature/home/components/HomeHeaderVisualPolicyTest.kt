@@ -26,6 +26,31 @@ import org.junit.Test
 
 class HomeHeaderVisualPolicyTest {
     @Test
+    fun `native protection clears when progressive header controls are fully hidden`() {
+        assertEquals(0f, resolveHomeNativeTopProtectionAlpha(false, true, 0f), 0.0001f)
+        assertEquals(0f, resolveHomeNativeTopProtectionAlpha(false, false, 0f), 0.0001f)
+    }
+
+    @Test
+    fun `native protection follows control reveal without changing glass treatment`() {
+        assertEquals(0.48f, resolveHomeNativeTopProtectionAlpha(false, true, 0.5f), 0.0001f)
+        assertEquals(0.5f, resolveHomeNativeTopProtectionAlpha(false, false, 0.5f), 0.0001f)
+        assertEquals(0f, resolveHomeNativeTopProtectionAlpha(true, true, 0.5f), 0.0001f)
+    }
+
+    @Test
+    fun `native top protection stays solid without blur and readable with ordinary blur`() {
+        assertEquals(1f, resolveHomeNativeTopProtectionAlpha(false, false), 0.0001f)
+        assertEquals(0.96f, resolveHomeNativeTopProtectionAlpha(false, true), 0.0001f)
+    }
+
+    @Test
+    fun `native top protection does not tint either glass material path`() {
+        assertEquals(0f, resolveHomeNativeTopProtectionAlpha(true, false), 0.0001f)
+        assertEquals(0f, resolveHomeNativeTopProtectionAlpha(true, true), 0.0001f)
+    }
+
+    @Test
     fun `collapsed header preserves ordinary status bar blur`() {
         assertEquals(
             HomeTopChromeRenderMode.BLUR,
@@ -286,8 +311,8 @@ class HomeHeaderVisualPolicyTest {
             isHeaderCollapseEnabled = true
         )
 
-        assertEquals(24f, layout.searchBarHeightPx, 0.0001f)
-        assertEquals(0.5f, layout.searchAlpha, 0.0001f)
+        assertEquals(26.666666f, layout.searchBarHeightPx, 0.0001f)
+        assertEquals(1f, layout.searchAlpha, 0.0001f)
         assertEquals(56f, layout.tabRowHeightPx, 0.0001f)
         assertEquals(1f, layout.tabAlpha, 0.0001f)
     }
@@ -360,18 +385,17 @@ class HomeHeaderVisualPolicyTest {
     }
 
     @Test
-    fun `tiny reverse scroll keeps collapsed search row hidden until reveal threshold is crossed`() {
+    fun `search row reveals immediately without a material dependent dead zone`() {
         val layout = resolveHomeHeaderScrollLayout(
             headerOffsetPx = -44f,
             searchBarHeightPx = 48f,
             searchCollapseDistancePx = 54f,
             tabRowHeightPx = 56f,
             isHeaderCollapseEnabled = true,
-            searchRevealDeadZonePx = 8f
         )
 
-        assertEquals(0f, layout.searchBarHeightPx, 0.0001f)
-        assertEquals(0f, layout.searchAlpha, 0.0001f)
+        assertEquals(8.888889f, layout.searchBarHeightPx, 0.0001f)
+        assertEquals(1f, layout.searchAlpha, 0.0001f)
         assertEquals(56f, layout.tabRowHeightPx, 0.0001f)
         assertEquals(1f, layout.tabAlpha, 0.0001f)
     }
@@ -386,19 +410,10 @@ class HomeHeaderVisualPolicyTest {
             searchCollapseDistancePx = 63f,
             tabRowHeightPx = 48f,
             isHeaderCollapseEnabled = true,
-            searchRevealDeadZonePx = resolveHomeTopSearchRevealDeadZone(UiPreset.MD3).value,
-            usesImmediateSearchReveal = true
         )
 
-        assertEquals(8f, layout.searchBarHeightPx, 0.0001f)
-        assertEquals(
-            resolveHomeTopSearchContentRevealFraction(
-                searchRevealFraction = 8f / 52f,
-                usesImmediateReveal = true
-            ),
-            layout.searchAlpha,
-            0.0001f
-        )
+        assertEquals(15.68254f, layout.searchBarHeightPx, 0.0001f)
+        assertEquals(1f, layout.searchAlpha, 0.0001f)
         assertEquals(48f, layout.tabRowHeightPx, 0.0001f)
         assertEquals(1f, layout.tabAlpha, 0.0001f)
     }
@@ -507,21 +522,42 @@ class HomeHeaderVisualPolicyTest {
     }
 
     @Test
-    fun `md3 partial collapse softens search content alpha instead of using linear fade`() {
+    fun `partial collapse preserves search opacity and moves the full row upward`() {
         val layout = resolveHomeHeaderScrollLayout(
             headerOffsetPx = -26f,
             searchBarHeightPx = 52f,
             searchCollapseDistancePx = 63f,
             tabRowHeightPx = 48f,
             isHeaderCollapseEnabled = true,
-            searchRevealDeadZonePx = 0f,
-            usesImmediateSearchReveal = true
         )
 
-        assertEquals(26f, layout.searchBarHeightPx, 0.0001f)
-        assertEquals(0.43f, layout.searchAlpha, 0.0001f)
+        assertEquals(30.539682f, layout.searchBarHeightPx, 0.0001f)
+        assertEquals(1f, layout.searchAlpha, 0.0001f)
+        assertEquals(
+            -21.460318f,
+            resolveHomeTopSearchContentTranslationYPx(layout.searchBarHeightPx / 52f, 52f),
+            0.0001f,
+        )
         assertEquals(48f, layout.tabRowHeightPx, 0.0001f)
         assertEquals(1f, layout.tabAlpha, 0.0001f)
+    }
+
+    @Test
+    fun `search row exit clamps overscroll and restores full geometry`() {
+        for ((offset, height, translation) in listOf(
+            Triple(-100f, 0f, -52f),
+            Triple(-31.5f, 26f, -26f),
+            Triple(0f, 52f, 0f),
+            Triple(20f, 52f, 0f),
+        )) {
+            val layout = resolveHomeHeaderScrollLayout(offset, 52f, 63f, 48f, true)
+            assertEquals(height, layout.searchBarHeightPx, 0.0001f)
+            assertEquals(translation, resolveHomeTopSearchContentTranslationYPx(height / 52f, 52f), 0.0001f)
+            assertEquals(48f, layout.tabRowHeightPx)
+        }
+        val alwaysVisible = resolveHomeHeaderScrollLayout(-63f, 52f, 63f, 48f, false)
+        assertEquals(52f, alwaysVisible.searchBarHeightPx)
+        assertEquals(1f, alwaysVisible.searchAlpha)
     }
 
     @Test

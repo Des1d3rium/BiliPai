@@ -23,24 +23,38 @@ internal fun AppMiuixListItem(
     supportingContent: (@Composable () -> Unit)?,
     leadingContent: (@Composable () -> Unit)?,
     trailingContent: (@Composable () -> Unit)?,
-) = Row(
-    modifier = modifier
-        .fillMaxWidth()
-        .heightIn(min = AppChromeSizeTokens.CompactRowMinHeightDp.dp)
-        .padding(horizontal = 16.dp, vertical = 8.dp),
-    verticalAlignment = Alignment.CenterVertically,
 ) {
-    if (leadingContent != null) {
-        leadingContent()
-        Spacer(modifier = Modifier.width(8.dp))
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = modifier,
+            startAction = leadingContent,
+            endActions = trailingContent?.let { slot -> { slot() } },
+        ) {
+            overlineContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
+            ProvideAppActionContentColor(AppContentColors.primaryText(), headlineContent)
+            supportingContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
+        }
+        return
     }
-    Column(modifier = Modifier.weight(1f)) {
-        overlineContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
-        ProvideAppActionContentColor(AppContentColors.primaryText(), headlineContent)
-        supportingContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
-    }
-    if (trailingContent != null) {
-        Spacer(modifier = Modifier.width(8.dp))
-        ProvideAppActionContentColor(AppContentColors.secondaryText(), trailingContent)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = AppChromeSizeTokens.CompactRowMinHeightDp.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingContent != null) {
+            leadingContent()
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            overlineContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
+            ProvideAppActionContentColor(AppContentColors.primaryText(), headlineContent)
+            supportingContent?.let { ProvideAppActionContentColor(AppContentColors.secondaryText(), it) }
+        }
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            ProvideAppActionContentColor(AppContentColors.secondaryText(), trailingContent)
+        }
     }
 }

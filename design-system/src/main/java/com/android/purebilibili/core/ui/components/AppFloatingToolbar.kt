@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
@@ -26,36 +27,46 @@ fun AppMaterial3Toolbar(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     shape: Shape = MaterialTheme.shapes.extraLarge,
+    tonalElevation: Dp = 3.dp,
+    shadowElevation: Dp = 3.dp,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(8.dp),
     content: @Composable RowScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier,
         shape = shape,
         color = containerColor,
-        tonalElevation = 3.dp,
-        shadowElevation = 3.dp,
+        tonalElevation = tonalElevation,
+        shadowElevation = shadowElevation,
     ) {
         Row(
             modifier = Modifier
                 .horizontalScroll(rememberScrollState())
                 .heightIn(min = 64.dp)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(contentPadding),
+            horizontalArrangement = horizontalArrangement,
             verticalAlignment = Alignment.CenterVertically,
             content = content,
         )
     }
 }
 
-/** Placement and reserved list space belong to the caller. */
+/** Owns the single horizontal scroll container; callers only supply action buttons and placement. */
 @Composable
 fun AppFloatingToolbar(
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable RowScope.() -> Unit,
 ) {
     if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
-        FloatingToolbar(modifier = modifier, outSidePadding = PaddingValues()) { content() }
+        FloatingToolbar(modifier = modifier, outSidePadding = PaddingValues()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
     } else {
-        AppMaterial3Toolbar(modifier = modifier) { content() }
+        AppMaterial3Toolbar(modifier = modifier, content = content)
     }
 }

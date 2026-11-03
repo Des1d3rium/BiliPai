@@ -8,6 +8,14 @@ internal fun chatMessageKey(message: PrivateMessageItem): String = when {
     else -> "${message.sender_uid}_${message.receiver_id}_${message.timestamp}_${message.msg_type}_${message.content}"
 }
 
+/** 仅以实际消息推进已读；新会话的系统提示不代表可确认的消息。 */
+internal fun resolveChatReadSeqno(messages: List<PrivateMessageItem>): Long? =
+    messages.asSequence()
+        .filterNot { it.msg_type == 18 && it.msg_source == 18 }
+        .map { it.msg_seqno }
+        .filter { it > 0L }
+        .maxOrNull()
+
 /** Retains loaded history, updates overlaps, and orders messages by their server sequence. */
 internal fun mergeChatMessages(
     existing: List<PrivateMessageItem>,

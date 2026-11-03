@@ -193,7 +193,7 @@ internal fun shouldShowMd3PaletteStyleControls(source: Md3ColorSource): Boolean 
 
 internal fun resolveAdvancedPaletteSubtitle(uiStyle: AppUiStyle): String =
     if (uiStyle == AppUiStyle.MIUIX) {
-        "已保留配置，仅切换到 Material 3 后生效"
+        "自定义明暗模式的背景、文字与控件色，卡片层次随背景调整"
     } else {
         "自定义明暗模式的背景、文字与控件色"
     }

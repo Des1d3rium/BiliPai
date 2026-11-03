@@ -70,12 +70,13 @@ internal data class ContinuousPlayerFullscreenExtras(
     val onTriple: () -> Unit,
     val onRelatedVideoClick: (String, android.os.Bundle?) -> Unit,
     val onPageSelect: (Int) -> Unit,
-    val hasFavoritePlaylist: Boolean,
-    val onFavoritePlaylistClick: () -> Unit,
+    val hasExternalPlaylist: Boolean,
+    val onExternalPlaylistClick: () -> Unit,
     val onLandscapeCommentClick: () -> Unit,
     val landscapeCommentPanelVisible: Boolean,
     val landscapeCommentPanelOnLeft: Boolean,
     val landscapeCommentCloseProgressProvider: () -> Float = { 0f },
+    val commentStateHandle: androidx.compose.runtime.State<com.android.purebilibili.feature.video.viewmodel.CommentUiState>? = null,
 )
 
 /**
@@ -236,6 +237,8 @@ internal fun PortraitInlineVideoPlayerHost(
             state = VideoPlayerSectionState(
                 playerState = playerState,
                 uiState = uiState,
+                engagementState = engagementState,
+                commentStateHandle = fullscreenExtras?.commentStateHandle,
                 isFullscreen = isFullscreen,
                 isInPipMode = isPipMode,
                 contentTopInset = contentTopInset,
@@ -306,7 +309,7 @@ internal fun PortraitInlineVideoPlayerHost(
                 likeStatusKnown = fullscreenExtras?.likeStatusKnown ?: engagementState.likeStatusKnown,
                 isCoined = fullscreenExtras?.isCoined ?: (engagementState.coinCount > 0),
                 isFavorited = fullscreenExtras?.isFavorited ?: engagementState.isFavorited,
-                hasFavoritePlaylist = fullscreenExtras?.hasFavoritePlaylist == true,
+                hasExternalPlaylist = fullscreenExtras?.hasExternalPlaylist == true,
                 forceCoverOnly = forceCoverOnly,
                 preserveCurrentFrameOnFullscreenChange = preserveCurrentFrameOnFullscreenChange,
                 liveBackPreview = liveBackPreview,
@@ -381,7 +384,7 @@ internal fun PortraitInlineVideoPlayerHost(
                 onPageSelect = fullscreenExtras?.onPageSelect ?: playbackActions.switchPage,
                 onJumpToLastPlayedPart = playbackActions.jumpToLastPlayedPart,
                 onDismissPartResumeNotice = playbackActions.dismissPartResumeNotice,
-                onFavoritePlaylistClick = fullscreenExtras?.onFavoritePlaylistClick ?: {},
+                onExternalPlaylistClick = fullscreenExtras?.onExternalPlaylistClick ?: {},
                 onSubtitleDisplayModePreferenceOverrideChange =
                     onSubtitleDisplayModePreferenceOverrideChange,
                 onSubtitleTrackSelected = playbackActions.selectSubtitleTrack,

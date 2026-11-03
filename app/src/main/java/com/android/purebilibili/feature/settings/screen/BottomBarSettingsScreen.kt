@@ -219,7 +219,9 @@ fun BottomBarSettingsContent(
     val topTabLabelMode = homeConfiguration.topTabLabelMode
     val bottomBarLabelMode = homeConfiguration.bottomBarLabelMode
     val homeTopLayoutOrder = homeConfiguration.homeTopLayoutOrder
-    val homeHeaderCollapseMode = homeConfiguration.homeHeaderCollapseMode
+    val homeHeaderCollapseMode = com.android.purebilibili.feature.home.policy.resolveHomeRecommendationHeaderCollapseMode(
+        homeConfiguration.homeHeaderCollapseMode
+    )
 
     val homeTopRightAction = homeConfiguration.homeTopRightAction
     val isBottomBarFloating = homeConfiguration.isBottomBarFloating
@@ -374,7 +376,7 @@ fun BottomBarSettingsContent(
                             AppSwitchPreference(
                                 icon = rememberSettingsSemanticIcon(SettingsIconRole.BOTTOM_BAR_SCROLL_COMPACT),
                                 title = settingItemTitle("navigation.bottom_bar_scroll_compact_enabled"),
-                                subtitle = "无听视频播放条时，悬浮底栏下滑累计 24dp 收为当前入口圆钮，上滑或点击展开；有播放条时保留原联动",
+                                subtitle = "浏览时收起底栏，上滑或点击展开；有播放条时保持联动",
                                 checked = bottomBarScrollCompactEnabled,
                                 onCheckedChange = { enabled ->
                                     scope.launch { SettingsManager.setBottomBarScrollCompactEnabled(context, enabled) }
@@ -584,25 +586,18 @@ fun BottomBarSettingsContent(
                                 icon = com.android.purebilibili.feature.settings.rememberMaterialSymbol(com.android.purebilibili.R.drawable.ms_troubleshoot_24),
                                 iconTint = AppContentColors.secondaryText(),
                                 title = "首页顶栏显示",
-                                subtitle = when (homeHeaderCollapseMode) {
-                                    HomeHeaderCollapseMode.OFF -> "首页顶栏始终显示"
-                                    HomeHeaderCollapseMode.SEARCH_ONLY -> "下滑时仅收起顶部搜索框，标签页留在顶部"
-                                    HomeHeaderCollapseMode.BOTH -> "首页离开顶部后收起搜索与标签栏，回顶后恢复；其他列表页由列表页顶栏折叠设置控制"
-                                    HomeHeaderCollapseMode.TABS_ONLY -> "下滑时仅收起标签页，搜索框保持显示"
-                                },
+                                subtitle = homeHeaderCollapseMode.description,
                                 optionLeading = { value -> SettingsOptionPreviewThumb(SettingsOptionPreview.HeaderCollapse(
                                     searchVisible = !value.collapseSearch, tabsVisible = !value.collapseTabs,
                                 )) },
-                                options = listOf(
-                                    AppSegmentOption(HomeHeaderCollapseMode.OFF, "始终显示"),
-                                    AppSegmentOption(HomeHeaderCollapseMode.SEARCH_ONLY, "仅收起搜索"),
-                                    AppSegmentOption(HomeHeaderCollapseMode.BOTH, "全部收起"),
-                                ),
-                                selectedValue = if (homeHeaderCollapseMode == HomeHeaderCollapseMode.TABS_ONLY) {
-                                    HomeHeaderCollapseMode.BOTH
-                                } else {
-                                    homeHeaderCollapseMode
+                                options = buildList {
+                                    add(AppSegmentOption(HomeHeaderCollapseMode.OFF, "始终显示"))
+                                    add(AppSegmentOption(HomeHeaderCollapseMode.SEARCH_ONLY, "仅收起搜索"))
+                                    add(AppSegmentOption(HomeHeaderCollapseMode.TABS_ONLY, "仅收起标签"))
+                                    add(AppSegmentOption(HomeHeaderCollapseMode.BOTH, "全部收起"))
+                                    add(AppSegmentOption(HomeHeaderCollapseMode.SHOW_AT_TOP_ONLY, "仅回顶显示"))
                                 },
+                                selectedValue = homeHeaderCollapseMode,
                                 onSelectionChange = { mode ->
                                     scope.launch { SettingsManager.setHomeHeaderCollapseMode(context, mode) }
                                 },

@@ -43,6 +43,23 @@ data class AppWindowAction(
     val children: List<AppWindowAction> = emptyList(),
 )
 
+/** 玻璃菜单将分级选项放入同一个面板，避免切换子级时重新测量材质外壳。 */
+internal fun flattenGlassWindowActionGroups(groups: List<List<AppWindowAction>>): List<List<AppWindowAction>> {
+    fun appendAction(target: MutableList<AppWindowAction>, action: AppWindowAction) {
+        if (action.children.isEmpty()) {
+            target += action
+        } else {
+            target += AppWindowAction(label = action.label, icon = action.icon, iconTint = action.iconTint, enabled = false)
+            action.children.forEach { child ->
+                appendAction(target, if (action.enabled) child else child.copy(enabled = false))
+            }
+        }
+    }
+    return groups.mapNotNull { group ->
+        buildList { group.forEach { appendAction(this, it) } }.takeIf { it.isNotEmpty() }
+    }
+}
+
 /**
  * Miuix window-level action menu used by page-level overflow buttons.
  *
@@ -80,11 +97,12 @@ fun AppWindowActionMenu(
     }
 
     val glassSource = source ?: rememberAppGlassMenuSource()
-    if (appGlassMenuAvailable() || LocalAppUiStyle.current != AppUiStyle.MIUIX || !LocalAppThemeConfig.current.nativeMiuixPopupsEnabled) {
+    val glassMenuAvailable = appGlassMenuAvailable()
+    if (glassMenuAvailable || LocalAppUiStyle.current != AppUiStyle.MIUIX || !LocalAppThemeConfig.current.nativeMiuixPopupsEnabled) {
         var expanded by remember { mutableStateOf(false) }
         var parentActions by remember { mutableStateOf(emptyList<AppWindowAction>()) }
-        val visibleGroups = parentActions.lastOrNull()?.let { listOf(it.children) }
-            ?: groups.filter { it.isNotEmpty() }
+        val visibleGroups = if (glassMenuAvailable) flattenGlassWindowActionGroups(groups)
+            else parentActions.lastOrNull()?.let { listOf(it.children) } ?: groups.filter { it.isNotEmpty() }
         Box(modifier = modifier) {
             AppIconButton(
                 modifier = anchorModifier.appGlassMenuSource(glassSource, enabled = enabled, captureSurface = !sourceCapturedByParent, onOpen = {
@@ -202,10 +220,11 @@ private fun AppCompactWindowActionMenu(
     content: @Composable () -> Unit,
 ) {
     val glassSource = source ?: rememberAppGlassMenuSource()
+    val glassMenuAvailable = appGlassMenuAvailable()
     var expanded by remember { mutableStateOf(false) }
     var parentActions by remember { mutableStateOf(emptyList<AppWindowAction>()) }
-    val visibleGroups = parentActions.lastOrNull()?.let { listOf(it.children) }
-        ?: groups.filter { it.isNotEmpty() }
+    val visibleGroups = if (glassMenuAvailable) flattenGlassWindowActionGroups(groups)
+        else parentActions.lastOrNull()?.let { listOf(it.children) } ?: groups.filter { it.isNotEmpty() }
     fun dismiss() {
         if (expanded) {
             expanded = false

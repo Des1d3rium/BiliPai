@@ -23,6 +23,9 @@ internal data class AccountNotificationState(
     val dynamicUpBaselines: Map<Long, String> = emptyMap(),
     // Includes overflow entries represented only by the Android group summary.
     val pendingDynamicIds: Map<String, Long> = emptyMap(),
+    // Only these pending IDs have an observed lit red dot that can later be cleared.
+    // Older saved states default to unconfirmed instead of treating an unlit dot as a read.
+    val dynamicRedDotObservedIds: Set<String> = emptySet(),
     val pendingPrivateSessionKeys: Set<String> = emptySet(),
     // Null means no count baseline yet; old ID fields are ignored when decoding saved state.
     val replyUnreadCount: Int? = null,

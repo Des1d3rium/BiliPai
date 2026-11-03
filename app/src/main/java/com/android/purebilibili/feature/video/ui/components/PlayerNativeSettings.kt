@@ -8,6 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
+import com.android.purebilibili.core.store.FullscreenActionCountSettings
+import com.android.purebilibili.core.ui.components.AppSwitch
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,12 +49,31 @@ internal fun PlayerNativeSettingsHost(
     content: @Composable () -> Unit,
 ) {
     val windowSize = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
-    // 玻璃复用原生菜单内容；列表自行滚动，宿主只接管外壳与触发按钮开合。
-    val glassPolicy = resolveDanmakuSettingsPanelLayoutPolicy(
-        isFullscreen = isFullscreen,
-        screenWidthDp = LocalConfiguration.current.screenWidthDp,
-        screenHeightDp = LocalConfiguration.current.screenHeightDp,
+    val config = LocalConfiguration.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val sidePanel = isFullscreen && windowSize.width > windowSize.height &&
+        LocalPlayerPanelViewport.current != null
+    val policy = resolveDanmakuSettingsPanelLayoutPolicy(
+        isFullscreen = false,
+        screenWidthDp = config.screenWidthDp,
+        screenHeightDp = config.screenHeightDp,
     )
+    val safeWindow = playerPanelSafeWindowBounds()
+    val menuWidth = with(density) {
+        if (sidePanel) {
+            resolvePlayerPanelBounds(
+                safeWindow, playerBounds, isFullscreen, landscape = true,
+                maxSideWidth = 500.dp.roundToPx(),
+            ).width.toDp()
+        } else {
+            // 原生外层有左右各 12dp 留白；两种材质共用可见面板宽度。
+            (policy.maxWidthDp.dp - 24.dp).coerceAtMost(
+                (safeWindow.width.toDp() - 32.dp).coerceAtLeast(1.dp),
+            ).coerceAtLeast(1.dp)
+        }
+    }
+    val glassMaxHeight = (config.screenHeightDp - 32).coerceAtLeast(1).dp
+    // 玻璃只接管外壳与触发按钮开合，不再单独收窄主菜单及子页。
     if (com.android.purebilibili.core.ui.components.AppGlassMenu(
             expanded = true,
             onDismissRequest = onDismiss,
@@ -58,17 +82,21 @@ internal fun PlayerNativeSettingsHost(
                 com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END
             } else if (isFullscreen) com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END
             else com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.CENTER,
-            minWidth = glassPolicy.minWidthDp.dp,
-            maxWidth = glassPolicy.maxWidthDp.dp,
-            maxHeight = glassPolicy.maxHeightDp.dp,
+            minWidth = menuWidth,
+            maxWidth = menuWidth,
+            maxHeight = glassMaxHeight,
             interactiveContent = true,
+            showScrollbar = false,
+            useAvailableHeight = true,
         ) {
             PlayerNativeMenuTheme {
-                Box(Modifier.fillMaxWidth().heightIn(max = glassPolicy.maxHeightDp.dp)) { content() }
+                CompositionLocalProvider(LocalPlayerGlassSettingsSurface provides true) {
+                    Box(Modifier.width(menuWidth).heightIn(max = glassMaxHeight)) { content() }
+                }
             }
         }) return
     // 播放器提供避让宿主时，横屏更多操作与选集共用侧面板；其他入口保留原有弹窗。
-    if (isFullscreen && windowSize.width > windowSize.height && LocalPlayerPanelViewport.current != null) {
+    if (sidePanel) {
         PlayerNativeMenuTheme {
             PlayerDetailPanel("更多操作", isFullscreen, playerBounds, onDismiss) { requestDismiss ->
                 Row(
@@ -87,20 +115,13 @@ internal fun PlayerNativeSettingsHost(
         }
         return
     }
-    val config = LocalConfiguration.current
-    val policy = resolveDanmakuSettingsPanelLayoutPolicy(
-        isFullscreen = false,
-        screenWidthDp = config.screenWidthDp,
-        screenHeightDp = config.screenHeightDp,
-    )
     PlayerNativeMenuTheme {
         DanmakuSettingsPanelHost(false, policy, onDismiss) {
             Surface(
                 modifier = Modifier
-                    .widthIn(max = policy.maxWidthDp.dp)
-                    .fillMaxWidth()
                     .padding(12.dp)
                     .padding(bottom = bottomPaddingDp.dp)
+                    .width(menuWidth)
                     .heightIn(max = policy.maxHeightDp.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(12.dp),
@@ -122,7 +143,7 @@ internal fun PlayerSettingsRow(title: String, subtitle: String? = null, onClick:
         } else {
         Icon(
             imageVector = when (title) {
-                "添加至「稍后再看」" -> Icons.Outlined.WatchLater
+                "稍后再看（添加 / 移出）" -> Icons.Outlined.WatchLater
                 "查看笔记" -> Icons.Outlined.EditNote
                 "离线缓存" -> Icons.Outlined.FolderZip
                 "保存字幕" -> Icons.Outlined.Download
@@ -130,18 +151,21 @@ internal fun PlayerSettingsRow(title: String, subtitle: String? = null, onClick:
                 "定时关闭" -> Icons.Outlined.HourglassTop
                 "播放地址" -> Icons.Outlined.Link
                 "重载视频" -> Icons.Outlined.Refresh
-                "超分辨率" -> Icons.Outlined.StayCurrentLandscape
+                "画质增强" -> Icons.Outlined.StayCurrentLandscape
                 "播放器音量" -> Icons.Outlined.VolumeUp
+                "画面变换" -> Icons.Outlined.Flip
+                "恢复默认" -> Icons.Outlined.Restore
                 "CDN 设置" -> Icons.Outlined.Cloud
                 "选择画质" -> Icons.Outlined.PlayCircle
                 "选择音质" -> Icons.Outlined.Album
-                "解码格式" -> Icons.Outlined.AvTimer
-                "播放顺序" -> Icons.Outlined.Repeat
+                "首选编码格式" -> Icons.Outlined.AvTimer
+                "播完后行为" -> Icons.Outlined.Repeat
                 "弹幕列表" -> Icons.Outlined.Comment
                 "字幕设置" -> Icons.Outlined.Subtitles
                 "加载字幕" -> Icons.Outlined.FileOpen
                 "播放信息" -> Icons.Outlined.Info
                 "举报" -> Icons.Outlined.ErrorOutline
+                FullscreenActionCountSettings.TITLE -> ImageVector.vectorResource(com.android.purebilibili.R.drawable.ic_settings_action_counts_24)
                 "返回" -> Icons.Outlined.ArrowBack
                 else -> Icons.Outlined.Settings
             },
@@ -169,6 +193,24 @@ internal fun PlayerSettingsPopupRow(
     onSelected: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // 玻璃设置面板内展开选项，不再为内部行创建第二层玻璃弹窗。
+    if (LocalPlayerGlassSettingsSurface.current) {
+        Column(Modifier.fillMaxWidth()) {
+            PlayerSettingsRow(title, current) { expanded = !expanded }
+            if (expanded) {
+                options.forEachIndexed { index, label ->
+                    PlayerSettingsSelectionRow(
+                        title = label,
+                        selected = label == current,
+                        enabled = enabledOptions.getOrElse(index) { true },
+                        allowSelectedClick = true,
+                        onClick = { expanded = false; if (label != current) onSelected(index) },
+                    )
+                }
+            }
+        }
+        return
+    }
     com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { expanded = true }) {
         PlayerSettingsRow(title, current) { expanded = true }
         com.android.purebilibili.core.ui.components.AppDropdownMenu(
@@ -196,13 +238,43 @@ internal fun PlayerSettingsSelectionRow(
     selected: Boolean,
     enabled: Boolean = true,
     subtitle: String? = null,
+    allowSelectedClick: Boolean = false,
     onClick: () -> Unit,
 ) {
     ListItem(
         headlineContent = { Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)) },
         supportingContent = if (subtitle != null) ({ Text(subtitle, fontSize = 12.sp) }) else null,
         trailingContent = { if (selected) Icon(Icons.Outlined.Done, null, tint = MaterialTheme.colorScheme.primary) },
-        modifier = Modifier.fillMaxWidth().appActionClickable(enabled = enabled) { if (!selected) onClick() },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth().appActionClickable(enabled = enabled) { if (!selected || allowSelectedClick) onClick() },
+        // 玻璃容器接管时透出父容器；其他场景保留原生列表底色。
+        colors = ListItemDefaults.colors(
+            containerColor = if (LocalPlayerGlassSettingsSurface.current) Color.Transparent
+            else MaterialTheme.colorScheme.surface,
+        ),
     )
+}
+
+/** 播放器子菜单沿用普通菜单行的字号与留白，不使用全局设置的彩色图标底座。 */
+@Composable
+internal fun PlayerSettingsToggleRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        AppSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
 }

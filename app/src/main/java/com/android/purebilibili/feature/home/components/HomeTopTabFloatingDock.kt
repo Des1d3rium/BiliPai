@@ -153,6 +153,16 @@ internal fun HomeTopTabFloatingDock(
     isPagerNavigatingProvider: (() -> Boolean)? = null,
 ) {
     if (categories.isEmpty()) return
+    if (shouldUseOfficialMiuixHomeTopTabs(LocalAppUiStyle.current, liquidGlassEffectsEnabled) && showText && !showIcon) {
+        com.android.purebilibili.core.ui.components.AppNativeTabRow(
+            options = categories.mapIndexed { index, label -> com.android.purebilibili.core.ui.components.AppSegmentOption(index, label) },
+            selectedValue = selectedIndex,
+            onSelectionChange = { index -> if (index == selectedIndex) onReselected() else onSelected(index) },
+            modifier = modifier,
+            scrollable = true,
+        )
+        return
+    }
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(0.01f)
     if (
         shouldUseOfficialMd3HomeTopToolbar(
@@ -252,7 +262,10 @@ internal fun HomeTopTabFloatingDock(
         darkTheme = isDarkTheme,
         liquidGlassTuning = liquidGlassTuning,
     )
-    val selectedContentColor = resolveHomeTopTabSelectedContentColor(
+    val selectedContentColor = if (shouldUseOfficialMiuixHomeTopTabs(LocalAppUiStyle.current, liquidGlassEffectsEnabled)) {
+        com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()?.selectedContent
+            ?: top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onBackground
+    } else resolveHomeTopTabSelectedContentColor(
         accent = AppContentColors.selectionAccent(liquidGlassEffectsEnabled),
         shellColor = shellColor,
         liquidGlassEnabled = liquidGlassEffectsEnabled,
@@ -265,8 +278,10 @@ internal fun HomeTopTabFloatingDock(
     // Native renderers keep their existing TopNavigation geometry and label policy below.
     val geometryMode = FloatingBottomBarGeometryMode.TopNavigation
     val viewportModifier = if (liquidGlassEffectsEnabled && scrollState != null) {
-        // Own the optical clip at the page viewport, with the same press/velocity margins
-        // as the renderer. Native toolbar placement and clipping retain their existing path.
+        // Own the optical clip at the page viewport: vertical bloom keeps the renderer's
+        // press/velocity margins, while the horizontal clip stays on the shell silhouette so
+        // a scrolling indicator is cut by the dock's rounded ends. Native toolbar placement
+        // and clipping retain their existing path.
         val captureInsets = resolveFloatingDockCaptureInsets(
             shellHeightDp = dockHeight.value,
             requestedIndicatorHeightDp = (dockHeight - AppSpacingTokens.ExtraSmall * 2).coerceAtLeast(0.dp).value,
@@ -275,7 +290,6 @@ internal fun HomeTopTabFloatingDock(
         )
         Modifier.liquidDockViewport(
             verticalOverflow = captureInsets.verticalDp.dp,
-            horizontalOverflow = captureInsets.horizontalDp.dp,
         )
     } else Modifier
     BottomBarFloatingSegmentedControl(
@@ -296,11 +310,11 @@ internal fun HomeTopTabFloatingDock(
         longPressDragSelectionEnabled = scrollState != null,
         miuixBackdrop = miuixBackdrop,
         containerColorOverride = shellColor,
-        // Native Miuix shares the bottom navigation's themed selection fill.
-        // Glass retains its neutral lens and MD3 retains its own renderer defaults.
+        // 图标分类保留自绘布局，非玻璃选中底色遵循原生标签；玻璃与 MD3 独立取色。
         indicatorIdleSurfaceColorOverride = if (
             LocalAppUiStyle.current == AppUiStyle.MIUIX && !liquidGlassEffectsEnabled
-        ) MaterialTheme.colorScheme.secondaryContainer else null,
+        ) com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()?.selectedContainer
+            ?: top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surfaceContainer else null,
         selectedTextColorOverride = selectedContentColor,
         unselectedTextColorOverride = unselectedContentColor,
         indicatorPositionProvider = indicatorPositionProvider,
@@ -313,7 +327,7 @@ internal fun HomeTopTabFloatingDock(
         liquidGlassTuningOverride = liquidGlassTuning,
         onItemReselected = onReselected,
         scrollState = scrollState,
-        adaptIndicatorToLabel = if (liquidGlassEffectsEnabled) false else showText,
+        adaptIndicatorToLabel = showText,
         itemContent = { index, label, selected ->
             val contentColor = LocalFloatingBottomBarContentColor.current
             val selectionScale = LocalFloatingBottomBarItemSelectionScale.current

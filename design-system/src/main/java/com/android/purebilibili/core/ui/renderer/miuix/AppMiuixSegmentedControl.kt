@@ -1,5 +1,6 @@
 package com.android.purebilibili.core.ui.renderer.miuix
 
+import com.android.purebilibili.core.ui.components.tabIndicatorBounds
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.LayoutDirection
 import com.android.purebilibili.core.ui.LocalImmersiveTopChromeActive
 import com.android.purebilibili.core.ui.AppSurfaceTokens
+import com.android.purebilibili.core.ui.isMiuixNonGlassEnabled
 import com.android.purebilibili.core.ui.components.shouldUseOpaqueMiuixTabBackdrop
 import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import androidx.compose.ui.Modifier
@@ -71,6 +73,7 @@ import com.android.purebilibili.core.theme.LocalAppUiStyle
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 import androidx.compose.foundation.layout.Arrangement
@@ -134,6 +137,8 @@ internal fun <T> AppMiuixTabRow(
     fixedItemWidth: Dp? = null,
     labelFontSize: TextUnit = TextUnit.Unspecified,
     containerHorizontalPadding: Dp = 0.dp,
+    stretchToFill: Boolean = false,
+    centerSelectedTab: Boolean = false,
     onSelectionChange: (T) -> Unit,
 ) {
     // Native Miuix controls keep measured, padding-aware slots under either material.
@@ -145,7 +150,7 @@ internal fun <T> AppMiuixTabRow(
             options = options,
             selectedValue = selectedValue,
             enabled = enabled,
-            compact = options.size <= 2 && !scrollable,
+            compact = options.size <= 2 && (!scrollable || isMiuixNonGlassEnabled()),
             scrollable = scrollable,
             minTabWidth = minTabWidth,
             colors = colors,
@@ -155,10 +160,12 @@ internal fun <T> AppMiuixTabRow(
             labelFontSize = labelFontSize,
             containerHorizontalPadding = containerHorizontalPadding,
             indicatorPositionProvider = indicatorPositionProvider,
+            centerSelectedTab = centerSelectedTab,
             drawTrack = drawNonGlassTrack,
             centerContent = centerContent,
             equalizeScrollableItemWidths = equalizeScrollableItemWidths,
             contentSizedMaxItemWidth = contentSizedNonGlassMaxItemWidth,
+            stretchToFill = stretchToFill,
             onSelectionChange = onSelectionChange,
         )
         return
@@ -178,7 +185,9 @@ internal fun <T> AppMiuixTabRow(
             centerContent = centerContent,
             contentSizedItems = true,
             contentSizedMaxItemWidth = contentSizedNonGlassMaxItemWidth,
+            centerSelectedTab = centerSelectedTab,
             drawTrack = drawNonGlassTrack,
+            stretchToFill = stretchToFill,
             onSelectionChange = onSelectionChange,
         )
         return
@@ -211,7 +220,9 @@ internal fun <T> AppMiuixTabRow(
             centerContent = centerContent,
             contentSizedItems = contentSizedNonGlassItems,
             contentSizedMaxItemWidth = contentSizedNonGlassMaxItemWidth,
+            centerSelectedTab = centerSelectedTab,
             drawTrack = drawNonGlassTrack,
+            stretchToFill = stretchToFill,
             onSelectionChange = onSelectionChange,
         )
         return
@@ -264,7 +275,7 @@ private fun <T> AppMiuixNonGlassTabs(
     height: Dp? = null,
     modifier: Modifier,
     equalizeScrollableItemWidths: Boolean = false,
-    centerContent: Boolean = false,
+    centerContent: Boolean = isMiuixNonGlassEnabled(),
     contentSizedItems: Boolean = false,
     contentSizedMaxItemWidth: Dp = 320.dp,
     drawTrack: Boolean = true,
@@ -272,9 +283,14 @@ private fun <T> AppMiuixNonGlassTabs(
     labelFontSize: TextUnit = TextUnit.Unspecified,
     containerHorizontalPadding: Dp = 0.dp,
     indicatorPositionProvider: (() -> Float)? = null,
+    stretchToFill: Boolean = false,
+    centerSelectedTab: Boolean = false,
     onSelectionChange: (T) -> Unit,
 ) {
     val labels = options.map { it.label }
+    val nativeNavigation = com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()
+    val nativeStyle = isMiuixNonGlassEnabled()
+    val measurementLabels = options.map { if (nativeStyle) it.measurementLabel ?: it.label else it.label }
     val selectedIndex = resolveAppSegmentedSelectionIndex(options, selectedValue)
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -283,18 +299,20 @@ private fun <T> AppMiuixNonGlassTabs(
         fontSize = if (labelFontSize.isSpecified) labelFontSize else MiuixTheme.textStyles.body1.fontSize,
         fontWeight = FontWeight.Bold,
     )
-    val labelSizes = remember(labels, style, measurer, density) {
-        labels.map { label ->
+    val labelSizes = remember(labels, measurementLabels, style, measurer, density) {
+        labels.mapIndexed { index, label ->
             // Selected and unselected labels use different weights. Reserve the
             // larger width so switching selection cannot truncate either variant.
-            val sizes = listOf(FontWeight.Normal, FontWeight.Bold).map { weight ->
-                measurer.measure(
-                    AnnotatedString(label), style.copy(fontWeight = weight),
-                    maxLines = 1, softWrap = false,
-                ).size
+            val sizes = listOf(label, measurementLabels[index]).flatMap { text ->
+                listOf(FontWeight.Normal, FontWeight.Bold).map { weight ->
+                    measurer.measure(
+                        AnnotatedString(text), style.copy(fontWeight = weight),
+                        maxLines = 1, softWrap = false,
+                    ).size
+                }
             }
-            // Keep the original bold-label height and native vertical geometry.
-            IntSize(sizes.maxOf { it.width }, sizes.last().height)
+            // 当前文字与测量种子都参与宽高预留，切换字重或计数后不截断。
+            IntSize(sizes.maxOf { it.width }, sizes.maxOf { it.height })
         }
     }
     // Match the two independently rounded 12dp edges in the native item layout.
@@ -310,17 +328,28 @@ private fun <T> AppMiuixNonGlassTabs(
         AppMiuixSizedTabs(
             options = options,
             selectedIndex = selectedIndex,
+            centerSelectedTab = centerSelectedTab,
             enabled = enabled,
             scrollable = scrollable,
             fixedItemWidth = fixedItemWidth,
             measuredItemWidths = resolveMiuixNonGlassContentTabItemWidths(
                 labelSizes.map { with(density) { it.width.toDp() } },
                 maxOf(minTabWidth, AppChromeSizeTokens.MinimumTouchTarget),
-                contentSizedMaxItemWidth,
+                if (nativeStyle) Dp.Infinity else contentSizedMaxItemWidth,
                 horizontalContentPadding = horizontalContentPadding,
             ),
             equalizeItemWidths = equalizeScrollableItemWidths,
-            colors = colors,
+            colors = nativeNavigation?.let { palette -> AppSegmentedControlColors(
+                outerContainerColor = MiuixTheme.colorScheme.surface,
+                activeContainerColor = palette.selectedContainer,
+                activeContentColor = palette.selectedContent,
+                inactiveContentColor = palette.unselectedContent,
+            ) } ?: if (nativeStyle) AppSegmentedControlColors(
+                outerContainerColor = MiuixTheme.colorScheme.surface,
+                activeContainerColor = MiuixTheme.colorScheme.surfaceContainer,
+                activeContentColor = MiuixTheme.colorScheme.onBackground,
+                inactiveContentColor = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            ) else colors,
             height = maxOf(height ?: geometry.height, geometry.height),
             cornerRadius = geometry.cornerRadius,
             labelStyle = style,
@@ -329,6 +358,7 @@ private fun <T> AppMiuixNonGlassTabs(
             modifier = modifier,
             drawTrack = drawTrack,
             centerContent = centerContent,
+            stretchToFill = stretchToFill,
             onSelectionChange = onSelectionChange,
         )
         return
@@ -550,19 +580,23 @@ private fun <T> AppMiuixSizedTabs(
     modifier: Modifier,
     drawTrack: Boolean,
     centerContent: Boolean,
+    stretchToFill: Boolean = false,
+    centerSelectedTab: Boolean = false,
     onSelectionChange: (T) -> Unit,
 ) {
     val tabColors = resolveAppMiuixSegmentedColors(colors)
+    val nativeStyle = isMiuixNonGlassEnabled()
+    val scheme = MiuixTheme.colorScheme
+    val itemClip = Modifier.squircleClip(cornerRadius)
     val density = LocalDensity.current
     val scrollState = rememberScrollState()
     val motionEnabled = com.android.purebilibili.core.ui.LocalComponentMotionEnabled.current
-    val animatedPosition by animateFloatAsState(
+    val animatedPosition = animateFloatAsState(
         targetValue = selectedIndex.toFloat(),
         animationSpec = if (!motionEnabled || indicatorPositionProvider != null) snap() else spring(),
         label = "miuixTabPosition",
     )
-    val position = indicatorPositionProvider?.invoke() ?: animatedPosition
-    val inactiveBackground = if (shouldUseOpaqueMiuixTabBackdrop(true, LocalImmersiveTopChromeActive.current)) {
+    val inactiveBackground = if (nativeStyle) scheme.surface else if (shouldUseOpaqueMiuixTabBackdrop(true, LocalImmersiveTopChromeActive.current)) {
         AppSurfaceTokens.groupedListContainer()
     } else Color.Transparent
     BoxWithConstraints(
@@ -574,7 +608,11 @@ private fun <T> AppMiuixSizedTabs(
         contentAlignment = if (centerContent) Alignment.Center else Alignment.CenterStart,
     ) {
         val padding = minOf(containerHorizontalPadding, maxWidth / 2)
-        val gap = if (fixedItemWidth != null) 0.dp else AppSpacingTokens.Small
+        val gap = when {
+            fixedItemWidth != null -> 0.dp
+            nativeStyle -> 9.dp
+            else -> AppSpacingTokens.Small
+        }
         val readableWidths = measuredItemWidths.map { maxOf(it, fixedItemWidth ?: 0.dp) }
         val preferredWidths = if (equalizeItemWidths) {
             List(options.size) { readableWidths.maxOrNull() ?: 48.dp }
@@ -584,19 +622,21 @@ private fun <T> AppMiuixSizedTabs(
         // A constrained detail toolbar can be narrower than two readable labels.
         // Keep the labels intact and scroll instead of silently ellipsizing them.
         val needsScroll = scrollable || preferredWidths.any { it > equalSlotWidth }
-        val widths = if (needsScroll) preferredWidths else List(options.size) { equalSlotWidth }
+        // 默认逐项定宽；仅调用方显式要求等分时才铺满容器，不让短标签被最长标签撑大。
+        val widths = if ((nativeStyle && !stretchToFill) || needsScroll) preferredWidths else List(options.size) { equalSlotWidth }
         val lefts = remember(widths, padding, gap) {
             var left = padding
             widths.map { width -> left.also { left += width + gap } }
         }
         val contentWidth = widths.fold(padding * 2 + gap * (options.size - 1)) { total, width -> total + width }
         val viewportWidth = minOf(contentWidth, maxWidth)
-        LaunchedEffect(selectedIndex, widths, viewportWidth, scrollState.maxValue, motionEnabled, density, needsScroll) {
+        LaunchedEffect(selectedIndex, widths, viewportWidth, scrollState.maxValue, motionEnabled, density, needsScroll, centerSelectedTab) {
             if (needsScroll) {
                 val left = with(density) { lefts[selectedIndex].roundToPx() }
                 val right = left + with(density) { widths[selectedIndex].roundToPx() }
                 val viewport = with(density) { viewportWidth.roundToPx() }
                 val target = when {
+                    centerSelectedTab -> left + (right - left) / 2 - viewport / 2
                     right - left >= viewport -> left
                     left < scrollState.value -> left
                     right > scrollState.value + viewport -> right - viewport
@@ -605,18 +645,17 @@ private fun <T> AppMiuixSizedTabs(
                 if (motionEnabled) scrollState.animateScrollTo(target) else scrollState.scrollTo(target)
             }
         }
-        val bounds = resolveElasticTabIndicatorBounds(
-            position = position,
-            tabLeftsDp = lefts.map { it.value },
-            tabWidthsDp = widths.map { it.value },
-            contentWidthsDp = widths.map { it.value },
-            matchContentSize = false,
-        )
+        val indicatorLefts = remember(lefts) { lefts.map { it.value } }
+        val indicatorWidths = remember(widths) { widths.map { it.value } }
         Box(
             modifier = Modifier
+                // 放得下时整组居中；溢出时视口靠起始边，保留逐项宽度与横向滚动。
+                .align(if (centerContent && contentWidth <= maxWidth) Alignment.Center else Alignment.CenterStart)
                 .width(viewportWidth)
                 .height(height)
-                .squircleClip(cornerRadius)
+                // 独立标签只裁剪各自轮廓；滚动视口保留矩形边界，避免边缘标签被二次切圆。
+                // 连续分段轨道与玻璃内的原生控件保留原有容器轮廓。
+                .then(if (nativeStyle && !drawTrack) Modifier else itemClip)
                 .background(if (drawTrack) tabColors.backgroundColor else Color.Transparent)
                 .horizontalScroll(scrollState, enabled = needsScroll)
                 .selectableGroup()
@@ -627,13 +666,25 @@ private fun <T> AppMiuixSizedTabs(
                 horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 widths.forEach { width ->
-                    Box(Modifier.width(width).height(height).adaptiveSquircleBackground(inactiveBackground, cornerRadius))
+                    Box(
+                        Modifier
+                            .width(width)
+                            .height(height)
+                            .adaptiveSquircleBackground(inactiveBackground, cornerRadius),
+                    )
                 }
             }
             Box(
                 Modifier
-                    .offset(x = bounds.leftDp.dp)
-                    .width(bounds.widthDp.dp)
+                    .tabIndicatorBounds {
+                        resolveElasticTabIndicatorBounds(
+                            position = indicatorPositionProvider?.invoke() ?: animatedPosition.value,
+                            tabLeftsDp = indicatorLefts,
+                            tabWidthsDp = indicatorWidths,
+                            contentWidthsDp = indicatorWidths,
+                            matchContentSize = false,
+                        )
+                    }
                     .height(height)
                     .adaptiveSquircleBackground(tabColors.selectedBackgroundColor, cornerRadius),
             )
@@ -647,7 +698,8 @@ private fun <T> AppMiuixSizedTabs(
                         modifier = Modifier
                             .width(widths[index])
                             .height(height)
-                            .squircleClip(cornerRadius)
+                            .then(itemClip)
+                            .then(if (nativeStyle && !selected) Modifier.squircleBorder(width = 1.dp, color = scheme.outline, cornerRadius = cornerRadius) else Modifier)
                             .selectable(selected, enabled = enabled, role = Role.Tab) { onSelectionChange(option.value) }
                             .semantics { collectionItemInfo = CollectionItemInfo(0, 1, index, 1) }
                             .padding(horizontal = 12.dp),
@@ -660,7 +712,7 @@ private fun <T> AppMiuixSizedTabs(
                             style = labelStyle,
                             maxLines = 1,
                             softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
+                            overflow = if (nativeStyle) TextOverflow.Clip else TextOverflow.Ellipsis,
                         )
                     }
                 }

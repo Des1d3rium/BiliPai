@@ -24,13 +24,26 @@ internal enum class SettingsIconRole {
     PLAYBACK,
     BOTTOM_BAR,
     PERMISSION,
+    SPACE_PRIVACY,
+    LOGIN_ACTIVITY,
     MESSAGE_NOTIFICATION,
     BLOCKED_LIST,
     SETTINGS_SHARE,
     WEBDAV_BACKUP,
     DOWNLOAD_PATH,
     IMAGE_SAVE_PATH,
+    LIST_IMAGE_QUALITY,
+    PREVIEW_IMAGE_QUALITY,
+    DARK_IMAGE_DIM,
+    SCROLL_FEEDBACK,
+    PLAYER_CONTROLS_TIMEOUT,
+    PLAYER_ADJUSTMENT_PERSISTENCE,
+    PLAYER_ROTATION_SENSITIVITY,
+    DYNAMIC_VISIBILITY_CHECK,
+    RECOMMEND_RETENTION,
     CLEAR_CACHE,
+    AUTO_CLEAR_CACHE,
+    CACHE_CAPACITY_LIMIT,
     PLUGINS,
     NEARBY_HANDOFF,
     EXPORT_LOGS,
@@ -80,11 +93,16 @@ internal enum class SettingsIconRole {
     NOW_PLAYING_BAR,
     AUDIO_MODE_ENTRY,
     AUDIO_TITLE_AUTO_HIDE,
+    AUDIO_BAR_DELETE_BUTTON,
     LOUDNESS_NORMALIZATION,
     AUDIO_SPECTRUM,
     STARTUP_RESUME,
     NEXT_VIDEO_HINT,
     VIDEO_CONTENT_NOTICE,
+    DYNAMIC_CONTENT_NOTICE,
+    MEMBER_SHOP,
+    BLOCK_GOODS_DYNAMIC,
+    BLOCK_GOODS_REPLY,
     COMMENT_EXACT_TIME,
     COMMENT_AVATAR_PUSH,
     VERTICAL_RECOMMENDATIONS,
@@ -92,10 +110,12 @@ internal enum class SettingsIconRole {
     VIDEO_AMBIENT_LIGHT,
     DRAG_FEEDBACK,
     LIQUID_INDICATOR_WOBBLE,
+    LIQUID_INDICATOR_DYNAMIC_LENGTH,
     RETURN_CONTENT_FOLLOW,
     RETURN_GESTURE_TRANSLATION,
     SKELETON_BREATHING,
     PROGRESSIVE_TOP_BLUR,
+    PROGRESSIVE_BLUR_RENDERER,
     PROGRESSIVE_TOP_FADE,
     KEEP_TOP_SEARCH,
     LINKED_DOCK_MERGE,
@@ -154,6 +174,7 @@ internal enum class SettingsIconRole {
     BATTERY_STATUS,
     TIME_STATUS,
     PLAYER_ACTIONS,
+    PLAYER_ACTION_COUNTS,
     PRIVACY_CONTENT_AUTHENTICATION,
     PLAYER_STATS,
     PLAYER_DIAGNOSTIC_LOGS,
@@ -179,6 +200,11 @@ internal enum class SettingsIconRole {
     FULLSCREEN_SWIPE_BACK,
     FOLLOW_BUTTON,
     PRIVACY_HISTORY,
+    PRIVACY_SEARCH_RECOMMENDATION,
+    SEARCH_HOT_SECTION,
+    SEARCH_HISTORY_SECTION,
+    SEARCH_DISCOVER_SECTION,
+    PERSONAL_RECAP,
     CUSTOM_MD3_COLOR,
     THEME_LIGHT_BACKGROUND,
     THEME_LIGHT_PRIMARY_TEXT,
@@ -204,7 +230,6 @@ internal enum class SettingsIconRole {
     BACK_TO_TOP,
     HOME_HEADER_COLLAPSE,
     PGC_TIMELINE,
-    RELATED_VIDEO_TRANSITION,
     RETURN_GESTURE_POSE,
     AUTO_SKIP_OP_ED,
     BLUR_INTENSITY,
@@ -215,6 +240,7 @@ internal enum class SettingsIconRole {
     PLAYER_COLLAPSE_PAUSE,
     BOTTOM_BAR_SEARCH,
     DATA_SAVER_COVER_QUALITY,
+    RESILIENT_VIDEO_BUFFER,
     SEGMENT_LOADING_COMPATIBILITY,
     NOTIFICATION_SCOPE_MESSAGE,
     NOTIFICATION_SCOPE_REPLY,
@@ -255,14 +281,27 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.ANIMATION -> R.drawable.ms_animation_24
     SettingsIconRole.PLAYBACK -> R.drawable.ms_play_circle_24
     SettingsIconRole.BOTTOM_BAR -> R.drawable.ms_widgets_24
+    SettingsIconRole.LOGIN_ACTIVITY -> R.drawable.ic_settings_login_activity_24
+    SettingsIconRole.SPACE_PRIVACY -> R.drawable.ms_visibility_24
     SettingsIconRole.PERMISSION -> R.drawable.ms_security_24
     SettingsIconRole.MESSAGE_NOTIFICATION -> R.drawable.ms_notifications_24
     SettingsIconRole.BLOCKED_LIST -> R.drawable.ms_block_24
     SettingsIconRole.SETTINGS_SHARE -> R.drawable.ms_share_24
     SettingsIconRole.WEBDAV_BACKUP -> R.drawable.ms_cloud_upload_24
     SettingsIconRole.DOWNLOAD_PATH -> R.drawable.ms_folder_24
+    SettingsIconRole.LIST_IMAGE_QUALITY -> R.drawable.ic_settings_list_image_quality_24
+    SettingsIconRole.PREVIEW_IMAGE_QUALITY -> R.drawable.ic_settings_preview_image_quality_24
+    SettingsIconRole.DARK_IMAGE_DIM -> R.drawable.ic_settings_dark_image_dim_24
+    SettingsIconRole.PLAYER_ADJUSTMENT_PERSISTENCE -> R.drawable.ic_settings_player_adjustments_24
+    SettingsIconRole.PLAYER_ROTATION_SENSITIVITY -> R.drawable.ic_settings_rotation_sensitivity_24
+    SettingsIconRole.PLAYER_CONTROLS_TIMEOUT -> R.drawable.ic_settings_player_controls_timeout_24
+    SettingsIconRole.DYNAMIC_VISIBILITY_CHECK -> R.drawable.ic_settings_dynamic_visibility_check_24
+    SettingsIconRole.SCROLL_FEEDBACK -> R.drawable.ic_settings_scroll_feedback_24
+    SettingsIconRole.RECOMMEND_RETENTION -> R.drawable.ic_settings_recommend_retention_24
     SettingsIconRole.IMAGE_SAVE_PATH -> R.drawable.ms_photo_24
     SettingsIconRole.CLEAR_CACHE -> R.drawable.ms_delete_outline_24
+    SettingsIconRole.AUTO_CLEAR_CACHE -> R.drawable.ms_auto_delete_24
+    SettingsIconRole.CACHE_CAPACITY_LIMIT -> R.drawable.ms_storage_fill_24
     SettingsIconRole.PLUGINS -> R.drawable.ms_extension_24
     SettingsIconRole.NEARBY_HANDOFF -> R.drawable.ic_settings_nearby_handoff_24
     SettingsIconRole.EXPORT_LOGS -> R.drawable.ms_article_24
@@ -312,22 +351,29 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.NOW_PLAYING_BAR -> R.drawable.ms_bottom_panel_open_24
     SettingsIconRole.AUDIO_MODE_ENTRY -> R.drawable.ms_library_music_24
     SettingsIconRole.AUDIO_TITLE_AUTO_HIDE -> R.drawable.ms_bottom_panel_close_24
+    SettingsIconRole.AUDIO_BAR_DELETE_BUTTON -> R.drawable.ms_delete_outline_24
     SettingsIconRole.LOUDNESS_NORMALIZATION -> R.drawable.ms_instant_mix_24
-    SettingsIconRole.AUDIO_SPECTRUM -> R.drawable.ms_bar_chart_24
+    SettingsIconRole.AUDIO_SPECTRUM -> R.drawable.ic_settings_cover_pulse_24
     SettingsIconRole.STARTUP_RESUME -> R.drawable.ms_resume_24
     SettingsIconRole.NEXT_VIDEO_HINT -> R.drawable.ms_preview_24
     SettingsIconRole.VIDEO_CONTENT_NOTICE -> R.drawable.ms_report_24
+    SettingsIconRole.MEMBER_SHOP -> R.drawable.ic_settings_member_shop_24
+    SettingsIconRole.DYNAMIC_CONTENT_NOTICE -> R.drawable.ic_settings_dynamic_warning_24
+    SettingsIconRole.BLOCK_GOODS_DYNAMIC -> R.drawable.ic_settings_block_goods_dynamic_24
+    SettingsIconRole.BLOCK_GOODS_REPLY -> R.drawable.ic_settings_block_goods_reply_24
     SettingsIconRole.COMMENT_EXACT_TIME -> R.drawable.ms_calendar_clock_24
     SettingsIconRole.COMMENT_AVATAR_PUSH -> R.drawable.ic_settings_comment_avatar_push_24
     SettingsIconRole.VERTICAL_RECOMMENDATIONS -> R.drawable.ms_view_stream_24
     SettingsIconRole.COMPACT_PLAYER_CONTROLS -> R.drawable.ms_collapse_content_24
     SettingsIconRole.VIDEO_AMBIENT_LIGHT -> R.drawable.ms_lightbulb_circle_24
     SettingsIconRole.DRAG_FEEDBACK -> R.drawable.ms_drag_pan_24
+    SettingsIconRole.LIQUID_INDICATOR_DYNAMIC_LENGTH -> R.drawable.ic_settings_indicator_dynamic_length_24
     SettingsIconRole.LIQUID_INDICATOR_WOBBLE -> R.drawable.ic_settings_indicator_wobble_24
     SettingsIconRole.RETURN_CONTENT_FOLLOW -> R.drawable.ms_move_down_24
     SettingsIconRole.RETURN_GESTURE_TRANSLATION -> R.drawable.ms_drag_indicator_24
     SettingsIconRole.SKELETON_BREATHING -> R.drawable.ic_settings_skeleton_breathing_24
     SettingsIconRole.PROGRESSIVE_TOP_BLUR -> R.drawable.ic_settings_progressive_top_blur_24
+    SettingsIconRole.PROGRESSIVE_BLUR_RENDERER -> R.drawable.ic_settings_progressive_blur_renderer_24
     SettingsIconRole.PROGRESSIVE_TOP_FADE -> R.drawable.ic_settings_progressive_top_fade_24
     SettingsIconRole.KEEP_TOP_SEARCH -> R.drawable.ic_settings_top_search_24
     SettingsIconRole.BOTTOM_BAR_SCROLL_COMPACT -> R.drawable.ic_settings_bottom_bar_compact_24
@@ -385,6 +431,7 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.CLEAN_SCREENSHOT -> R.drawable.ms_screenshot_monitor_24
     SettingsIconRole.BATTERY_STATUS -> R.drawable.ms_battery_full_24
     SettingsIconRole.TIME_STATUS -> R.drawable.ms_access_time_24
+    SettingsIconRole.PLAYER_ACTION_COUNTS -> R.drawable.ic_settings_action_counts_24
     SettingsIconRole.PLAYER_ACTIONS -> R.drawable.ms_more_horiz_24
     SettingsIconRole.PRIVACY_CONTENT_AUTHENTICATION -> R.drawable.ms_verified_24
     SettingsIconRole.PLAYER_STATS -> R.drawable.ms_insert_chart_outlined_24
@@ -410,6 +457,11 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.UI_ENTRANCE_ANIMATION -> R.drawable.ms_motion_photos_on_24
     SettingsIconRole.FULLSCREEN_SWIPE_BACK -> R.drawable.ms_swipe_right_24
     SettingsIconRole.FOLLOW_BUTTON -> R.drawable.ms_person_add_24
+    SettingsIconRole.SEARCH_HOT_SECTION -> R.drawable.ms_trending_up_24
+    SettingsIconRole.SEARCH_HISTORY_SECTION -> R.drawable.ms_history_24
+    SettingsIconRole.SEARCH_DISCOVER_SECTION -> R.drawable.ms_manage_search_24
+    SettingsIconRole.PRIVACY_SEARCH_RECOMMENDATION -> R.drawable.ms_search_24
+    SettingsIconRole.PERSONAL_RECAP -> R.drawable.ms_query_stats_24
     SettingsIconRole.PRIVACY_HISTORY -> R.drawable.ms_history_toggle_off_24
     SettingsIconRole.CUSTOM_MD3_COLOR -> R.drawable.ms_format_paint_24
     SettingsIconRole.THEME_LIGHT_BACKGROUND -> R.drawable.ms_light_mode_24
@@ -432,11 +484,10 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.NAV_ICON_CROSS_SCALE -> R.drawable.ms_compare_arrows_24
     SettingsIconRole.SUB_REPLY_LOADED_COUNT -> R.drawable.ms_numbers_24
     SettingsIconRole.COMMENT_VISIBILITY_CHECK -> R.drawable.ms_fact_check_24
-    SettingsIconRole.PORTRAIT_AMBIENT_HAZE -> R.drawable.ms_filter_hdr_24
+    SettingsIconRole.PORTRAIT_AMBIENT_HAZE -> R.drawable.ic_settings_portrait_ambient_24
     SettingsIconRole.BACK_TO_TOP -> R.drawable.ms_keyboard_double_arrow_up_24
     SettingsIconRole.HOME_HEADER_COLLAPSE -> R.drawable.ms_compress_24
     SettingsIconRole.PGC_TIMELINE -> R.drawable.ms_calendar_month_24
-    SettingsIconRole.RELATED_VIDEO_TRANSITION -> R.drawable.ms_video_library_24
     SettingsIconRole.RETURN_GESTURE_POSE -> R.drawable.ms_rotate90_degrees_ccw_24
     SettingsIconRole.AUTO_SKIP_OP_ED -> R.drawable.ms_skip_next_24
     SettingsIconRole.BLUR_INTENSITY -> R.drawable.ms_flare_24
@@ -447,6 +498,7 @@ internal fun resolveSettingsMaterialSymbolResource(role: SettingsIconRole): Int 
     SettingsIconRole.PLAYER_COLLAPSE_PAUSE -> R.drawable.ms_pause_24
     SettingsIconRole.BOTTOM_BAR_SEARCH -> R.drawable.ms_search_fill_24
     SettingsIconRole.DATA_SAVER_COVER_QUALITY -> R.drawable.ms_wifi_24
+    SettingsIconRole.RESILIENT_VIDEO_BUFFER -> R.drawable.ic_settings_resilient_buffer_24
     SettingsIconRole.SEGMENT_LOADING_COMPATIBILITY -> R.drawable.ms_cloud_download_24
     SettingsIconRole.NOTIFICATION_SCOPE_MESSAGE -> R.drawable.ms_mail_24
     SettingsIconRole.NOTIFICATION_SCOPE_REPLY -> R.drawable.ms_reply_24
@@ -490,6 +542,8 @@ internal fun resolveSettingsSearchTargetIconRole(
     SettingsSearchTarget.PLAYBACK -> SettingsIconRole.PLAYBACK
     SettingsSearchTarget.BOTTOM_BAR -> SettingsIconRole.BOTTOM_BAR
     SettingsSearchTarget.PERMISSION -> SettingsIconRole.PERMISSION
+    SettingsSearchTarget.SPACE_PRIVACY -> SettingsIconRole.SPACE_PRIVACY
+    SettingsSearchTarget.LOGIN_ACTIVITY -> SettingsIconRole.LOGIN_ACTIVITY
     SettingsSearchTarget.MESSAGE_NOTIFICATION -> SettingsIconRole.MESSAGE_NOTIFICATION
     SettingsSearchTarget.BLOCKED_LIST -> SettingsIconRole.BLOCKED_LIST
     SettingsSearchTarget.SETTINGS_SHARE -> SettingsIconRole.SETTINGS_SHARE

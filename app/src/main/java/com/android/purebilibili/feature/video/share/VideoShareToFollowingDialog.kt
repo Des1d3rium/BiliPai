@@ -5,5 +5,10 @@ import com.android.purebilibili.feature.share.ContentMessageShareSheet
 
 @Composable
 internal fun VideoShareToFollowingDialog(payload: VideoSharePayload, onDismiss: () -> Unit, onSuccess: (Int) -> Unit) {
-    ContentMessageShareSheet(payload.asContentSharePayload(), onDismiss, onSuccess = onSuccess)
+    ContentMessageShareSheet(
+        payload.asContentSharePayload(),
+        onDismiss,
+        presentationOverride = videoSharePresentation(isLandscapeVideoShare()),
+        onSuccess = onSuccess,
+    )
 }

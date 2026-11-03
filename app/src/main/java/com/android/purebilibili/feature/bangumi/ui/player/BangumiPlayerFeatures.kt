@@ -90,7 +90,11 @@ internal fun rememberBangumiSubtitles(bvid: String, cid: Long, player: Player): 
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         tracks = loaded
     }
-    val primary = tracks.firstOrNull { it.trackKey == selectedKey } ?: tracks.firstOrNull()
+    // 与视频播放器保持一致：默认主轨优先中文字幕（含 AI 中文）。
+    val defaultLanguages = resolveDefaultSubtitleLanguages(tracks)
+    val primary = tracks.firstOrNull { it.trackKey == selectedKey }
+        ?: tracks.firstOrNull { it.lan == defaultLanguages.primaryLanguage }
+        ?: tracks.firstOrNull()
     val secondary = tracks.firstOrNull { it.trackKey != primary?.trackKey && it.lan.startsWith("en") }
         ?: tracks.firstOrNull { it.trackKey != primary?.trackKey }
     LaunchedEffect(bvid, cid, primary?.trackKey, secondary?.trackKey) {
@@ -109,10 +113,14 @@ internal fun rememberBangumiSubtitles(bvid: String, cid: Long, player: Player): 
     }
     val mode = normalizeSubtitleDisplayMode(
         modeOverride ?: resolveSubtitleDisplayModeByAutoPreference(
-            preference, primary != null, secondary != null,
-            primary?.let(::isLikelyAiSubtitleTrack) == true,
-            secondary?.let(::isLikelyAiSubtitleTrack) == true,
-            isMuted,
+            preference = preference,
+            hasPrimaryTrack = primary != null,
+            hasSecondaryTrack = secondary != null,
+            primaryTrackLikelyAi = primary?.let(::isLikelyAiSubtitleTrack) == true,
+            secondaryTrackLikelyAi = secondary?.let(::isLikelyAiSubtitleTrack) == true,
+            isMuted = isMuted,
+            primaryTrackLanguage = primary?.lan,
+            secondaryTrackLanguage = secondary?.lan,
         ), primary != null, secondary != null,
     )
     return BangumiSubtitleState(

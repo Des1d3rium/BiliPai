@@ -1,11 +1,17 @@
 package com.android.purebilibili.core.ui.transition
 
-import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class VideoCardNativeSnapshotPolicyTest {
+    @Test
+    fun duplicateVideoOnlyHidesTheCapturedCard() {
+        val key = "search:BVsame"
+        assertTrue(isRecordedNativeCardSource("BVsame", "search", key, key, ownsRecordedLayer = true))
+        assertFalse(isRecordedNativeCardSource("BVsame", "search", key, key, ownsRecordedLayer = false))
+    }
+
     @Test
     fun repeatedRelatedClickDoesNotBorrowTheParentHeldTransition() {
         val relatedKey = "video:BVrelated"
@@ -185,27 +191,4 @@ class VideoCardNativeSnapshotPolicyTest {
         }
     }
 
-    @Test
-    fun clickFreezeIsReadByTheAlreadyMountedDrawModifier() {
-        val snapshotSource = sourceFile(
-            "app/src/main/java/com/android/purebilibili/core/ui/transition/VideoCardNativeSnapshot.kt",
-            "src/main/java/com/android/purebilibili/core/ui/transition/VideoCardNativeSnapshot.kt",
-        )
-        val homeCardSource = sourceFile(
-            "app/src/main/java/com/android/purebilibili/feature/home/components/cards/VideoCard.kt",
-            "src/main/java/com/android/purebilibili/feature/home/components/cards/VideoCard.kt",
-        )
-
-        assertTrue(snapshotSource.contains("freezeProvider: () -> Boolean"))
-        assertTrue(snapshotSource.contains("shouldRecordNativeVideoCardLayer(exposure, isSharedMorphSourceCard) && !freezeProvider()"))
-        assertFalse(snapshotSource.contains("if (!freeze)"))
-        assertTrue(snapshotSource.contains("isNativeVideoCardLayerCurrentOwner("))
-        assertTrue(homeCardSource.contains("freezeNativeCardLayer.value = true"))
-        assertTrue(
-            homeCardSource.contains("freezeNativeCardLayer.value &&"),
-        )
-    }
-
-    private fun sourceFile(primary: String, fallback: String): String =
-        listOf(File(primary), File(fallback)).first { it.exists() }.readText()
 }

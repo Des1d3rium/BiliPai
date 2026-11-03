@@ -49,6 +49,23 @@ internal fun interface PortraitEngagementLoader {
     suspend fun load(subject: VideoSubjectSnapshot, knownInfo: ViewInfo?, seed: VideoEngagementSeed, metadataKnown: Boolean): Result<PortraitEngagementSnapshot>
 }
 
+/** BVID 绑定当前视频；未知 AID 由详情补齐，已知 AID 冲突仍拒绝。 */
+internal fun resolvePortraitEngagementSubject(
+    requested: VideoSubjectSnapshot,
+    info: ViewInfo,
+): VideoSubjectSnapshot? {
+    if (info.bvid != requested.bvid || info.aid <= 0L ||
+        (requested.aid > 0L && info.aid != requested.aid)
+    ) return null
+    return requested.copy(
+        aid = info.aid,
+        ownerMid = info.owner.mid, title = info.title, coverUrl = info.pic,
+        isRepost = info.isRepost,
+        durationMs = info.pages.firstOrNull { it.cid == requested.cid }?.duration?.toLong()?.times(1000L)
+            ?: requested.durationMs,
+    )
+}
+
 private val DefaultPortraitEngagementLoader = PortraitEngagementLoader { requested, knownInfo, seed, metadataKnown ->
     val infoResult: Result<ViewInfo?> = when {
         knownInfo != null -> Result.success(knownInfo)
@@ -56,15 +73,11 @@ private val DefaultPortraitEngagementLoader = PortraitEngagementLoader { request
         else -> VideoRepository.getVideoInfoOnly(bvid = requested.bvid, aid = requested.aid, requestedCid = requested.cid)
     }
     infoResult.fold(onSuccess = { info ->
-        if (info != null && (info.bvid != requested.bvid || info.aid != requested.aid)) {
+        val resolvedSubject = info?.let { resolvePortraitEngagementSubject(requested, it) }
+        if (info != null && resolvedSubject == null) {
             Result.failure(IllegalStateException("视频互动信息与当前视频不匹配"))
         } else {
-            val subject = if (info == null) requested else requested.copy(
-                ownerMid = info.owner.mid, title = info.title, coverUrl = info.pic,
-                isRepost = info.isRepost,
-                durationMs = info.pages.firstOrNull { it.cid == requested.cid }?.duration?.toLong()?.times(1000L)
-                    ?: requested.durationMs,
-            )
+            val subject = resolvedSubject ?: requested
             val metadataSeed = seed.copy(
                 likeCount = if (knownInfo != null || info == null) seed.likeCount else info.stat.like,
                 favoriteCount = if (knownInfo != null || info == null) seed.favoriteCount else info.stat.favorite,
@@ -77,7 +90,7 @@ private val DefaultPortraitEngagementLoader = PortraitEngagementLoader { request
                     isFollowing = false, followStatusKnown = true, isFavorited = false,
                     relationshipStatusKnown = true, coinCount = 0,
                 ), info))
-                else -> queryVideoEngagementRelationship(requested.aid, requested.bvid).map { flags ->
+                else -> queryVideoEngagementRelationship(subject.aid, subject.bvid).map { flags ->
                     PortraitEngagementSnapshot(subject, metadataSeed.copy(
                         isLiked = if (seed.likeStatusKnown) seed.isLiked else flags.like, likeStatusKnown = true,
                         isFollowing = if (seed.followStatusKnown) seed.isFollowing else flags.attention, followStatusKnown = true,
@@ -195,7 +208,9 @@ internal class PortraitVideoEngagementSession(
                             isFollowing = if (current.followStatusKnown) current.isFollowing else snapshot.seed.isFollowing,
                             followingMids = if (current.followStatusKnown) current.followingMids else snapshot.seed.followingMids,
                         )
-                        if (!metadataKnown || bound?.ownerMid != snapshot.subject.ownerMid) {
+                        if (!metadataKnown || bound?.ownerMid != snapshot.subject.ownerMid ||
+                            bound?.aid != snapshot.subject.aid
+                        ) {
                             model.bindSubject(snapshot.subject.copy(generation = subject.generation + 1L), confirmed)
                         } else model.sync(confirmed)
                         knownInfo = snapshot.info
@@ -442,6 +457,7 @@ internal fun PortraitVideoEngagementUi(
     session: PortraitVideoEngagementSession,
     visible: Boolean,
     onModalVisibilityChanged: (Boolean) -> Unit,
+    favoriteFolderAnchor: com.android.purebilibili.feature.video.ui.components.FavoriteFolderMenuAnchor? = null,
 ) {
     val state by session.model.uiState.collectAsStateWithLifecycle()
     val folders by session.favoriteFolders.collectAsStateWithLifecycle()
@@ -455,6 +471,7 @@ internal fun PortraitVideoEngagementUi(
         PlayerNativeMenuTheme {
             CoinDialog(
                 visible = state.coinDialogVisible,
+                contentKey = state.subject to state.accountSession,
                 currentCoinCount = state.coinCount,
                 userBalance = state.userCoinBalance,
                 maxCoins = state.coinLimit,
@@ -462,6 +479,7 @@ internal fun PortraitVideoEngagementUi(
                 onConfirm = session::confirmCoins,
             )
             if (folders.visible) FavoriteFolderSheet(
+                source = favoriteFolderAnchor?.source,
                 folders = folders.folders, isLoading = folders.loading,
                 selectedFolderIds = folders.selected, isSaving = folders.saving,
                 onFolderToggle = session::toggleFolder,

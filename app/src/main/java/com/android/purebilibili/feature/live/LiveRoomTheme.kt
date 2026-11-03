@@ -36,6 +36,6 @@ internal fun LiveRoomTheme(content: @Composable () -> Unit) {
         LocalAppUiStyle provides AppUiStyle.MATERIAL3,
         LocalAppIconStyle provides AppIconStyle.MD3_STANDARD,
     ) {
-        MaterialTheme(colorScheme = roomColors) { ProvideAppContentColors(content) }
+        MaterialTheme(colorScheme = roomColors) { ProvideAppContentColors(content = content) }
     }
 }

@@ -8,7 +8,8 @@ internal fun shouldUseMiuixOutlinedTextField(
     uiStyle: AppUiStyle,
     hasPrefix: Boolean,
     hasSuffix: Boolean,
-): Boolean = uiStyle == AppUiStyle.MIUIX && !hasPrefix && !hasSuffix
+    liquidGlassEnabled: Boolean = false,
+): Boolean = uiStyle == AppUiStyle.MIUIX && (!liquidGlassEnabled || (!hasPrefix && !hasSuffix))
 
 /**
  * Native Miuix action primitives are used when UI style is MIUIX.

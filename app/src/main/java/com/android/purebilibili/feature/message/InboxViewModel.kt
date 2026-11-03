@@ -11,15 +11,14 @@ import com.android.purebilibili.data.repository.ImMenuItem
 import com.android.purebilibili.data.repository.ImSession
 import com.android.purebilibili.data.repository.MessageImRepository
 import com.android.purebilibili.data.repository.MessageRepository
+import com.android.purebilibili.data.repository.MessageReadEvent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-
-/** 用户缓存属于当前账号，会话自带资料优先用于首帧。 */
-data class UserBasicInfo(val mid: Long, val name: String, val face: String)
+import kotlinx.coroutines.launch
 
 data class InboxUiState(
     val accountIdentity: AccountSessionIdentity = TokenManager.accountIdentity.value,
@@ -50,6 +49,7 @@ class InboxViewModel : ViewModel() {
     private var generation = 0L
     private var listJob: Job? = null
     private var moreJob: Job? = null
+    private var readStateJob: Job? = null
     private var pagination = byteArrayOf()
     private val parents = mutableListOf<Pair<Int, String>>()
 
@@ -62,9 +62,61 @@ class InboxViewModel : ViewModel() {
             loadSessions()
         }
         loadSessions()
+        viewModelScope.launch {
+            MessageRepository.readEvents.collect { event ->
+                if (event is MessageReadEvent.PrivateSession) applyReadAck(event)
+                readStateJob?.cancel()
+                readStateJob = requests.launch {
+                    val result = MessageRepository.getFeedUnread()
+                    if (requests.isCurrent()) {
+                        result.onSuccess { unread ->
+                            _uiState.update { it.copy(feedUnreadData = unread) }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun entry(session: SessionItem): ImSession? = _uiState.value.entries[InboxSessionPaginationPolicy.resolveSessionKey(session)]
+
+    private fun applyReadAck(event: MessageReadEvent.PrivateSession) {
+        _uiState.update { state ->
+            val entries = state.entries.mapValues { (_, entry) ->
+                if (entry.item.talker_id == event.talkerId && entry.item.session_type == event.sessionType) {
+                    mergeReadAck(entry, event.ackSeqno)
+                } else entry
+            }
+            state.copy(
+                entries = entries,
+                sessions = state.sessions.map { session ->
+                    entries[InboxSessionPaginationPolicy.resolveSessionKey(session)]?.item ?: session
+                },
+            )
+        }
+    }
+
+    private fun mergeReadAck(entry: ImSession, ackSeqno: Long): ImSession {
+        val item = InboxSessionPaginationPolicy.applyReadAck(
+            entry.item, entry.item.talker_id, entry.item.session_type, ackSeqno,
+        )
+        return if (item === entry.item) entry else entry.copy(
+            item = item,
+            unreadLabel = if (ackSeqno >= item.max_seqno) "" else entry.unreadLabel,
+            unreadDot = entry.unreadDot && ackSeqno < item.max_seqno,
+        )
+    }
+
+    private fun retainReadAck(entry: ImSession): ImSession {
+        val key = InboxSessionPaginationPolicy.resolveSessionKey(entry.item)
+        return mergeReadAck(entry, _uiState.value.entries[key]?.item?.ack_seqno ?: 0L)
+    }
+
+    private fun rememberSessionUsers(items: List<SessionItem>): Map<Long, UserBasicInfo> =
+        items.mapNotNull { item ->
+            val user = InboxUserInfoResolver.sessionUserInfo(item) ?: return@mapNotNull null
+            MessageUserInfoLoader.remember(user)?.let { item.talker_id to it }
+        }.toMap()
 
     fun openFolder(session: SessionItem): Boolean {
         val folder = entry(session)?.folderPage ?: return false
@@ -106,12 +158,12 @@ class InboxViewModel : ViewModel() {
                 _uiState.update { it.copy(feedUnreadData = feedResult.getOrNull() ?: it.feedUnreadData) }
                 result.fold(onSuccess = { data ->
                     pagination = data.pagination
-                    val entries = data.sessions.distinctBy { it.key }
+                    val entries = data.sessions.distinctBy { it.key }.map(::retainReadAck)
                     val items = entries.map { it.item }
                     _uiState.update { it.copy(
                         isLoading = false, isRefreshing = false, isBatchOperating = false,
                         sessions = items, entries = entries.associateBy { InboxSessionPaginationPolicy.resolveSessionKey(it.item) },
-                        userInfoMap = items.associate { item -> item.talker_id to UserBasicInfo(item.talker_id, item.account_info?.name.orEmpty(), item.account_info?.avatarUrl.orEmpty()) },
+                        userInfoMap = rememberSessionUsers(items),
                         menu = data.menu, outside = data.outside, hasMore = data.hasMore,
                         page = 1, endTs = it.endTs + 1,
                     ) }
@@ -133,14 +185,17 @@ class InboxViewModel : ViewModel() {
                 if (version != generation || !requests.isCurrent()) return@fold
                 val advanced = !cursor.contentEquals(data.pagination)
                 pagination = data.pagination
-                val incoming = data.sessions.associateBy { InboxSessionPaginationPolicy.resolveSessionKey(it.item) }
+                val incoming = data.sessions.associate { entry ->
+                    val retained = retainReadAck(entry)
+                    InboxSessionPaginationPolicy.resolveSessionKey(retained.item) to retained
+                }
                 _uiState.update { state ->
                     val entries = state.entries + incoming
                     val orderedKeys = (state.sessions.map(InboxSessionPaginationPolicy::resolveSessionKey) + incoming.keys).distinct()
                     val items = orderedKeys.mapNotNull { entries[it]?.item }
                     state.copy(
                         isLoadingMore = false, sessions = items, entries = entries,
-                        userInfoMap = items.associate { it.talker_id to UserBasicInfo(it.talker_id, it.account_info?.name.orEmpty(), it.account_info?.avatarUrl.orEmpty()) },
+                        userInfoMap = rememberSessionUsers(items),
                         hasMore = data.hasMore && advanced, page = state.page + 1, endTs = state.endTs + 1,
                     )
                 }
@@ -173,22 +228,4 @@ class InboxViewModel : ViewModel() {
     fun toggleIntercept(session: SessionItem) = operate { MessageRepository.setSessionIntercept(session.talker_id, session.is_intercept != 1) }
     fun clearError() { _uiState.update { it.copy(error = null) } }
     fun clearOperationError() { _uiState.update { it.copy(operationError = null) } }
-    fun onOpenSession(session: SessionItem) {
-        val key = InboxSessionPaginationPolicy.resolveSessionKey(session)
-        _uiState.update { state ->
-            val current = state.entries[key] ?: return@update state
-            val entry = current.copy(item = current.item.copy(unread_count = 0), unreadDot = false, unreadLabel = "")
-            state.copy(entries = state.entries + (key to entry), sessions = state.sessions.map { if (InboxSessionPaginationPolicy.resolveSessionKey(it) == key) entry.item else it })
-        }
-    }
-    fun clearFeedBadge(destination: MessageCenterDestination) {
-        _uiState.update { state -> state.copy(feedUnreadData = state.feedUnreadData?.let {
-            when (destination) {
-                MessageCenterDestination.ReplyMe -> it.copy(reply = 0)
-                MessageCenterDestination.AtMe -> it.copy(at = 0)
-                MessageCenterDestination.LikeMe -> it.copy(like = 0)
-                MessageCenterDestination.SystemNotice -> it.copy(sysMsg = 0)
-            }
-        }) }
-    }
 }

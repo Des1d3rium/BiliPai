@@ -1,5 +1,9 @@
 package com.android.purebilibili.feature.video.subtitle
 
+import com.android.purebilibili.core.ui.components.AppTextButton as TextButton
+import com.android.purebilibili.core.ui.components.AppSlider as Slider
+import com.android.purebilibili.core.ui.AppAlertDialog as AlertDialog
+
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,8 +33,6 @@ import com.android.purebilibili.feature.video.ui.section.resolveSubtitleBottomOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -61,6 +63,8 @@ fun rememberPiliSubtitleTools(
     nativeTracks: List<SubtitleTrackMeta> = emptyList(),
     isFullscreen: Boolean = false,
     acquireNativeSubtitles: Boolean = false,
+    nativeTracksKnown: Boolean = false,
+    acquisitionActive: Boolean = true,
 ): PiliSubtitleTools {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -87,11 +91,14 @@ fun rememberPiliSubtitleTools(
             track.subtitleUrl, bvid, cid, track.id, track.idStr, track.lan
         ).getOrThrow()
     }
-    LaunchedEffect(identity, acquireNativeSubtitles, nativeTracks) {
-        if (!acquireNativeSubtitles || session.acquiredInitialized || bvid.isBlank() || cid <= 0L) return@LaunchedEffect
+    val visualWorkActive = com.android.purebilibili.core.ui.rememberVisualWorkActive()
+    LaunchedEffect(identity, acquireNativeSubtitles, nativeTracks, nativeTracksKnown, acquisitionActive, visualWorkActive) {
+        if (!acquireNativeSubtitles || !acquisitionActive || !visualWorkActive ||
+            session.acquiredInitialized || bvid.isBlank() || cid <= 0L
+        ) return@LaunchedEffect
         val initializationSelectionSerial = nativeSelectionSerial
         try {
-            val tracks = if (nativeTracks.isNotEmpty()) nativeTracks else withContext(Dispatchers.IO) {
+            val tracks = if (nativeTracksKnown || nativeTracks.isNotEmpty()) nativeTracks else withContext(Dispatchers.IO) {
                 mapPlayerInfoSubtitleTracks(SubtitleContentRepository.playerInfo(bvid, cid).getOrThrow().subtitle?.subtitles.orEmpty())
             }
             if (!subtitleDocumentResultBelongsTo(identity, currentIdentity)) return@LaunchedEffect
@@ -106,10 +113,14 @@ fun rememberPiliSubtitleTools(
             if (initializationSelectionSerial == nativeSelectionSerial) {
                 session.acquiredSecondaryTrackKey = secondary?.trackKey
                 session.acquiredDisplayMode = resolveSubtitleDisplayModeByAutoPreference(
-                    preference, primary != null, secondary != null,
-                    primary?.let(::isLikelyAiSubtitleTrack) ?: false,
-                    secondary?.let(::isLikelyAiSubtitleTrack) ?: false,
+                    preference = preference,
+                    hasPrimaryTrack = primary != null,
+                    hasSecondaryTrack = secondary != null,
+                    primaryTrackLikelyAi = primary?.let(::isLikelyAiSubtitleTrack) ?: false,
+                    secondaryTrackLikelyAi = secondary?.let(::isLikelyAiSubtitleTrack) ?: false,
                     isMuted = player?.volume == 0f,
+                    primaryTrackLanguage = primary?.lan,
+                    secondaryTrackLanguage = secondary?.lan,
                 )
             }
             if (session.selectedTrackKey == null) session.selectedTrackKey = primary?.trackKey
@@ -353,12 +364,19 @@ fun PiliExternalSubtitleOverlay(
     var verticalOffset by remember(session.identity, isPortrait) { mutableFloatStateOf(storedOffset) }
     var dragging by remember(session.identity, isPortrait) { mutableStateOf(false) }
     LaunchedEffect(storedOffset) { if (!dragging) verticalOffset = storedOffset }
-    val position by produceState(player.currentPosition, player, session.identity) {
-        while (isActive) { value = player.currentPosition; delay(if (player.isPlaying) 100L else 250L) }
-    }
-    val effectivePosition = subtitlePositionForOffset(position, session.timeOffsetMs)
     val mode = if (track != null) SubtitleDisplayMode.PRIMARY_ONLY else session.acquiredDisplayMode
     val primaryCues = track?.cues ?: session.acquiredCues[session.selectedTrackKey].orEmpty()
+    val secondaryCues = session.acquiredCues[session.acquiredSecondaryTrackKey].orEmpty()
+    val subtitleTimeline = remember(primaryCues, secondaryCues, session.timeOffsetMs) {
+        subtitlePositionTimeline(primaryCues, secondaryCues, session.timeOffsetMs)
+    }
+    val position by com.android.purebilibili.core.player.rememberPlaybackPosition(
+        player = player,
+        identity = session.identity,
+        enabled = primaryCues.isNotEmpty() || secondaryCues.isNotEmpty(),
+        timeline = subtitleTimeline,
+    )
+    val effectivePosition = subtitlePositionForOffset(position, session.timeOffsetMs)
     val text = if (shouldRenderPrimarySubtitle(mode)) resolveSubtitleTextAt(primaryCues, effectivePosition) else null
     val secondaryText = if (shouldRenderSecondarySubtitle(mode))
         resolveSubtitleTextAt(session.acquiredCues[session.acquiredSecondaryTrackKey].orEmpty(), effectivePosition) else null

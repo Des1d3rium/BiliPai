@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.Density
 import top.yukonga.miuix.kmp.blur.Backdrop
+import com.android.purebilibili.core.ui.blur.rememberContinuousBackdrop
 
 /**
  * Keep the optical consumer's identity while a warmed shared source replaces its fallback.
@@ -34,6 +35,6 @@ internal class StableBackdrop(private val source: State<Backdrop>) : Backdrop {
 
 @Composable
 internal fun rememberStableBackdrop(source: Backdrop): Backdrop {
-    val currentSource = rememberUpdatedState(source)
+    val currentSource = rememberUpdatedState(rememberContinuousBackdrop(source))
     return remember { StableBackdrop(currentSource) }
 }

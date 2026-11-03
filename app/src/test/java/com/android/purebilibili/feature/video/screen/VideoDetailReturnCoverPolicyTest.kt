@@ -13,6 +13,27 @@ import java.io.File
 
 class VideoDetailReturnCoverPolicyTest {
     @Test
+    fun liveReturnAndCancelledReturnNeverExposeTheMediaBackdrop() {
+        val depths = (0..100).map { it / 100f }
+        for (committed in listOf(false, true)) {
+            val frames = (depths + depths.reversed()).map { depth ->
+                resolveVideoDetailReturnMediaFrame(
+                    transitionProgress = depth,
+                    isCommittedCardReturn = committed,
+                    isReturnGestureInProgress = !committed,
+                    hasResidentCover = true,
+                    liveReturnMorph = true,
+                )
+            }
+            for (frame in frames) {
+                val compositedAlpha = frame.coverAlpha + frame.playerAlpha * (1f - frame.coverAlpha)
+                assertEquals(1f, compositedAlpha, .0001f)
+            }
+            assertEquals(frames.take(depths.size), frames.takeLast(depths.size).reversed())
+        }
+    }
+
+    @Test
     fun entryCoverFadeNeverExposesAnEmptyMediaSlot() {
         for (step in 0..20) {
             val frame = resolveVideoDetailReturnMediaFrame(
@@ -192,6 +213,49 @@ class VideoDetailReturnCoverPolicyTest {
             ),
             0.001f,
         )
+    }
+
+    @Test
+    fun ordinaryDetailMediaRemainsVisibleThroughoutNavigation() {
+        for (phase in VideoCardTransitionBackgroundPhase.entries) {
+            for (sourceAlpha in listOf(0f, 0.5f, 1f)) {
+                assertEquals(1f, resolveVideoDetailNowPlayingMediaAlpha(
+                    ownsNowPlayingTransition = false,
+                    isCommittedCardReturn = false,
+                    phase = phase,
+                    sourceChromeAlpha = sourceAlpha,
+                ), 0.001f)
+            }
+        }
+    }
+
+    @Test
+    fun nowPlayingOpeningHandsSnapshotOverToVisiblePlayer() {
+        for ((depth, expectedMediaAlpha) in listOf(0f to 0f, 0.1f to 0.5f, 0.7f to 1f, 1f to 1f)) {
+            val sourceAlpha = resolveVideoDetailFlyingSourceChromeAlpha(
+                morphDepthProgress = depth,
+                phase = VideoCardTransitionBackgroundPhase.OPENING,
+                isReturnGestureInProgress = false,
+                sourceLayout = VideoCardSourceLayout.SIDE_BY_SIDE,
+                isNowPlayingBar = true,
+            )
+            assertEquals(expectedMediaAlpha, resolveVideoDetailNowPlayingMediaAlpha(
+                ownsNowPlayingTransition = true,
+                isCommittedCardReturn = false,
+                phase = VideoCardTransitionBackgroundPhase.OPENING,
+                sourceChromeAlpha = sourceAlpha,
+            ), 0.001f)
+        }
+    }
+
+    @Test
+    fun completedNowPlayingReturnRemovesDetailMedia() {
+        assertEquals(0f, resolveVideoDetailNowPlayingMediaAlpha(
+            ownsNowPlayingTransition = true,
+            isCommittedCardReturn = true,
+            phase = VideoCardTransitionBackgroundPhase.IDLE,
+            sourceChromeAlpha = 0f,
+        ), 0.001f)
     }
 
     @Test
@@ -1027,7 +1091,7 @@ class VideoDetailReturnCoverPolicyTest {
             0.0001f,
         )
         assertEquals(
-            0.5f,
+            1f,
             resolveVideoDetailReturnPlayerAlpha(0.1f, true, true, liveReturnMorph = true),
             0.0001f,
         )
@@ -1249,7 +1313,7 @@ class VideoDetailReturnCoverPolicyTest {
             0.0001f,
         )
         assertEquals(
-            0.5f,
+            1f,
             resolveVideoDetailReturnPlayerAlpha(
                 transitionProgress = 0.1f,
                 isCommittedCardReturn = false,
@@ -1683,6 +1747,36 @@ class VideoDetailReturnCoverPolicyTest {
                 rootTransitionOwnsContentAlpha = true,
             )
         )
+    }
+
+    @Test
+    fun `fresh detail body waits for landing while an already loaded preview stays mounted`() {
+        assertFalse(shouldShowVideoDetailContent(
+            isTransitionFinished = false,
+            isLeaving = false,
+            rootTransitionOwnsContentAlpha = true,
+            deferFreshEntryContent = true,
+        ))
+        assertTrue(shouldShowVideoDetailContent(
+            isTransitionFinished = true,
+            isLeaving = false,
+            rootTransitionOwnsContentAlpha = true,
+            deferFreshEntryContent = true,
+        ))
+        assertTrue(shouldShowVideoDetailContent(
+            isTransitionFinished = false,
+            isLeaving = false,
+            rootTransitionOwnsContentAlpha = true,
+            keepContentVisibleAfterBackPreview = true,
+            deferFreshEntryContent = true,
+        ))
+        assertFalse(shouldShowVideoDetailContent(
+            isTransitionFinished = false,
+            isLeaving = true,
+            rootTransitionOwnsContentAlpha = true,
+            keepContentVisibleAfterBackPreview = true,
+            deferFreshEntryContent = true,
+        ))
     }
 
     @Test

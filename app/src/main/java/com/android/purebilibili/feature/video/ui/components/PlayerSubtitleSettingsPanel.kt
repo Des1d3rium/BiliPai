@@ -1,5 +1,14 @@
 package com.android.purebilibili.feature.video.ui.components
 
+import com.android.purebilibili.core.ui.components.AppTextButton as TextButton
+import com.android.purebilibili.core.ui.components.AppIconButton as IconButton
+import com.android.purebilibili.core.ui.components.AppSlider as Slider
+import com.android.purebilibili.core.ui.components.AppOutlinedTextField as OutlinedTextField
+import com.android.purebilibili.core.ui.components.AppText as Text
+import com.android.purebilibili.core.ui.components.AppIcon as Icon
+import com.android.purebilibili.core.ui.components.AppHorizontalDivider as HorizontalDivider
+import com.android.purebilibili.core.ui.AppAlertDialog as AlertDialog
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll

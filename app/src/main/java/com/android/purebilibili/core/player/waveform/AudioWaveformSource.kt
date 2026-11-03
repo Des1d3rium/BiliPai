@@ -9,7 +9,18 @@ internal data class AudioWaveformSnapshot(
 /** 音频线程发布不可变快照，界面只读。所有权隔离防止旧播放器释放时清空新会话。 */
 internal object AudioWaveformSource {
     private var owner: Any? = null
+    private val consumers = mutableSetOf<Any>()
+    @Volatile private var analysisRequested = false
     @Volatile private var current = AudioWaveformSnapshot()
+
+    @Synchronized
+    fun setConsumerActive(token: Any, active: Boolean) {
+        if (active) consumers.add(token) else consumers.remove(token)
+        analysisRequested = consumers.isNotEmpty()
+        if (!analysisRequested) current = AudioWaveformSnapshot()
+    }
+
+    fun isAnalysisRequested(): Boolean = analysisRequested
 
     @Synchronized
     fun claim(token: Any) {

@@ -1,15 +1,9 @@
 package com.android.purebilibili.feature.home
 
-import com.android.purebilibili.core.ui.motion.AppMotionEasing
 import com.android.purebilibili.core.ui.AppContentColors
 
 import com.android.purebilibili.core.ui.AppSpacingTokens
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,14 +20,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import com.android.purebilibili.core.ui.skeleton.skeletonBackground
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -44,33 +37,13 @@ import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 
 /**
- * 首页骨架脉冲的唯一读口。返回 [State] 而非裸 Float:
+ * 首页骨架扫光的唯一读口。返回 [State] 而非裸 Float:
  * 调用方把 state 包进 provider 传给骨架卡,值只在 draw 阶段被 [drawBehind] 读取,
  * 骨架展示期间逐帧仅触发重绘,不再让屏幕级组合作用域逐帧失效。
  */
 @Composable
-internal fun rememberHomeFeedSkeletonPulseState(): State<Float> {
-    if (!com.android.purebilibili.core.ui.rememberVisualWorkActive() ||
-        com.android.purebilibili.core.ui.motion.rememberSystemReduceMotion()) {
-        return rememberUpdatedState(0.5f)
-    }
-    if (com.android.purebilibili.core.ui.skeleton.rememberSkeletonBreathingEnabled()) {
-        return com.android.purebilibili.core.ui.skeleton.rememberGentleSkeletonPulse()
-    }
-    val transition = rememberInfiniteTransition(label = "homeFeedSkeletonPulse")
-    return transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = HOME_FEED_SKELETON_PULSE_DURATION_MILLIS,
-                easing = AppMotionEasing.M1Standard
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "homeFeedSkeletonPulseAlpha"
-    )
-}
+internal fun rememberHomeFeedSkeletonPulseState(): State<Float> =
+    com.android.purebilibili.core.ui.skeleton.rememberSkeletonSweepState()
 
 @Composable
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -155,7 +128,7 @@ internal fun HomeFeedSkeletonCard(
             else com.android.purebilibili.core.ui.FeedTitleHierarchy.Compact,
         )
         val bottomPadding = if (compactMetadata) 6.dp else 8.dp
-        val blockColor = { blockBaseColor.copy(alpha = homeFeedSkeletonBlockAlpha(pulse(), isDarkCardTheme)) }
+        val blockColor = homeFeedSkeletonFill(pulse, blockBaseColor, isDarkCardTheme)
         Column(
             modifier = infoModifier.padding(
                 start = if (storyStyle) 0.dp else 10.dp,
@@ -278,28 +251,20 @@ internal fun HomeFeedHeroCarouselSkeleton(
     }
 }
 
-/**
- * 骨架块背景:脉冲值在 draw 阶段读取,逐帧仅触发本层重绘,不触发重组。
- * 与旧的 `background(onSurface.copy(alpha))` 合成结果一致。
- */
+/** 扫光仅参与绘制，不改变卡片尺寸、文字度量或材质背景。 */
 private fun Modifier.homeFeedSkeletonBlockBackground(
     pulse: () -> Float,
     baseColor: Color,
-    isDarkTheme: Boolean
-): Modifier = drawBehind {
-    drawRect(baseColor.copy(alpha = homeFeedSkeletonBlockAlpha(pulse(), isDarkTheme)))
-}
+    isDarkTheme: Boolean,
+): Modifier = skeletonBackground(homeFeedSkeletonFill(pulse, baseColor, isDarkTheme))
 
-private fun homeFeedSkeletonBlockAlpha(pulse: Float, isDarkTheme: Boolean): Float =
-    if (isDarkTheme) {
-        HOME_FEED_SKELETON_DARK_MIN_ALPHA +
-            (HOME_FEED_SKELETON_DARK_MAX_ALPHA - HOME_FEED_SKELETON_DARK_MIN_ALPHA) * pulse
-    } else {
-        HOME_FEED_SKELETON_LIGHT_MIN_ALPHA +
-            (HOME_FEED_SKELETON_LIGHT_MAX_ALPHA - HOME_FEED_SKELETON_LIGHT_MIN_ALPHA) * pulse
-}
+private fun homeFeedSkeletonFill(pulse: () -> Float, baseColor: Color, dark: Boolean): () -> Color =
+    com.android.purebilibili.core.ui.skeleton.skeletonFill(
+        base = baseColor.copy(alpha = if (dark) HOME_FEED_SKELETON_DARK_MIN_ALPHA else HOME_FEED_SKELETON_LIGHT_MAX_ALPHA),
+        highlight = baseColor.copy(alpha = if (dark) HOME_FEED_SKELETON_DARK_MAX_ALPHA else HOME_FEED_SKELETON_LIGHT_MIN_ALPHA),
+        position = pulse,
+    )
 
-private const val HOME_FEED_SKELETON_PULSE_DURATION_MILLIS = 2_000
 private const val HOME_FEED_SKELETON_LIGHT_MIN_ALPHA = 0.06f
 private const val HOME_FEED_SKELETON_LIGHT_MAX_ALPHA = 0.11f
 private const val HOME_FEED_SKELETON_DARK_MIN_ALPHA = 0.10f

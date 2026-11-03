@@ -9,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -18,11 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.currentStateAsState
-import com.android.purebilibili.core.ui.LocalComponentMotionEnabled
-import com.android.purebilibili.core.ui.LocalSystemReduceMotion
+import com.android.purebilibili.core.ui.rememberDecorativeAnimationGate
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -34,9 +29,9 @@ internal fun PlaybackBarsIndicator(
     contentDescription: String,
     modifier: Modifier = Modifier,
 ) {
-    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val animate = isPlaying && LocalComponentMotionEnabled.current && !LocalSystemReduceMotion.current &&
-        lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+    // 预加载页面仍在组合中；只有当前页面且音柱进入视口时才运行循环。
+    val animationGate = rememberDecorativeAnimationGate()
+    val animate = isPlaying && animationGate.active
     val phase = if (animate) {
         rememberInfiniteTransition(label = "playbackBars").animateFloat(
             initialValue = 0f,
@@ -45,7 +40,7 @@ internal fun PlaybackBarsIndicator(
             label = "playbackBarsPhase",
         )
     } else null
-    Canvas(modifier.size(width = 14.dp, height = 16.dp).semantics {
+    Canvas(modifier.size(width = 14.dp, height = 16.dp).then(animationGate.modifier).semantics {
         this.contentDescription = contentDescription
     }) {
         val progress = phase?.value ?: 0f

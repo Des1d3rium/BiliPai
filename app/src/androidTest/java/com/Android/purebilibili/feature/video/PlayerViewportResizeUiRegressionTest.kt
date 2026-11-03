@@ -52,6 +52,39 @@ class PlayerViewportResizeUiRegressionTest {
     private object LocalVideo : NavKey
 
     @Test
+    fun fullscreenRecoveryRelayoutsCachedChildrenEvenWhenOuterSizeIsAlreadyCorrect() {
+        rule.runOnUiThread {
+            for (texture in listOf(false, true)) {
+                val view = if (texture) {
+                    LayoutInflater.from(rule.activity)
+                        .inflate(R.layout.view_player_texture, null, false) as PlayerView
+                } else PlayerView(rule.activity)
+                view.useController = false
+                val frame = view.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+                frame.setAspectRatio(16f / 9f)
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(1200, View.MeasureSpec.EXACTLY),
+                )
+                view.layout(0, 0, 1920, 1200)
+                val surface = requireNotNull(view.videoSurfaceView)
+                // 模拟重新挂载后外框正确、内部布局仍残留分栏位置；测量规格未变。
+                repeat(2) {
+                    frame.layout(0, 0, 1280, 720)
+                    surface.layout(0, 0, 1280, 720)
+                    applyPlayerViewResizeMode(view, AspectRatioFrameLayout.RESIZE_MODE_FIT, forceRelayout = true)
+                    assertEquals(1920, view.width)
+                    assertEquals(1200, view.height)
+                    assertEquals(1920, surface.width)
+                    assertEquals(1080, surface.height)
+                    assertEquals(0, frame.left)
+                    assertEquals(60, frame.top)
+                }
+            }
+        }
+    }
+
+    @Test
     fun nativeSurfaceRecoveryUsesCurrentViewportEvenWhenOnlyOuterBoundsWereUpdated() {
         rule.runOnUiThread {
             for (texture in listOf(false, true)) {

@@ -1,29 +1,20 @@
 package com.android.purebilibili.feature.live.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ClearAll
 import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.android.purebilibili.core.ui.AppContentColors
@@ -49,7 +40,6 @@ fun LiveSendDanmakuSheet(
     emoticonPackages: List<com.android.purebilibili.data.repository.LiveEmoticonPackage> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
-    val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val showingEmoticons = emoticonContent != null
@@ -60,20 +50,9 @@ fun LiveSendDanmakuSheet(
         keyboard?.hide()
         onDismiss()
     }
-    val send = { if (canSend) onSend(message.text.trim(), 16777215, 1) }
-    LaunchedEffect(showingEmoticons) {
-        if (showingEmoticons) {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
-        } else {
-            focusRequester.requestFocus()
-            keyboard?.show()
-        }
-    }
-    DisposableEffect(focusManager, keyboard) {
-        onDispose {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
+    val send: (String) -> Unit = { text ->
+        if (!isSending && permission.canSend && text.isNotBlank() && text.length <= maxLength) {
+            onSend(text.trim(), 16777215, 1)
         }
     }
     LocalNavigationBackHandler(enabled = true) { dismiss() }
@@ -106,49 +85,33 @@ fun LiveSendDanmakuSheet(
                             tint = if (showingEmoticons) AppContentColors.accent() else AppContentColors.secondaryText())
                     }
                     Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        if (replyTarget != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AppText("@${replyTarget.uname}", modifier = Modifier.weight(1f), color = AppContentColors.accent(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                AppIconButton(onClick = onClearReply, enabled = !isSending, modifier = Modifier.size(30.dp)) {
-                                    AppIcon(Icons.Outlined.Close, "取消回复")
-                                }
-                            }
+                    LiveRichDanmakuEditor(
+                        value = message,
+                        onValueChange = onMessageChange,
+                        replyName = replyTarget?.uname,
+                        onClearReply = onClearReply,
+                        packages = emoticonPackages,
+                        showingEmoticons = showingEmoticons,
+                        isSending = isSending,
+                        onSend = send,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (replyTarget != null) {
+                        AppIconButton(onClick = onClearReply, enabled = !isSending, modifier = Modifier.size(30.dp)) {
+                            AppIcon(Icons.Outlined.Close, "取消回复，保留正文")
                         }
-                        BasicTextField(
-                            value = message,
-                            onValueChange = { if (!isSending) onMessageChange(it) },
-                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                            singleLine = true,
-                            readOnly = showingEmoticons || isSending,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = AppContentColors.primaryText()),
-                            cursorBrush = SolidColor(AppContentColors.accent()),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { send() }),
-                            decorationBox = { input ->
-                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                                    if (message.text.isEmpty()) AppText("输入弹幕内容", color = AppContentColors.secondaryText(), fontSize = 14.sp)
-                                    input()
-                                }
-                            },
-                        )
                     }
                     if (message.text.isNotEmpty()) {
                         AppIconButton(onClick = { onMessageChange(TextFieldValue("")) }, enabled = !isSending) {
-                            AppIcon(Icons.Outlined.Close, "清空")
+                            AppIcon(Icons.Outlined.ClearAll, "清空正文，保留回复对象")
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    AppIconButton(onClick = { send() }, enabled = canSend) {
+                    AppIconButton(onClick = { send(message.text) }, enabled = canSend) {
                         AppIcon(Icons.AutoMirrored.Outlined.Send, if (isSending) "发送中" else "发送",
                             tint = if (canSend) AppContentColors.accent() else AppContentColors.secondaryText())
                     }
                 }
-                LiveDanmakuDraftPreview(
-                    text = message.text,
-                    packages = emoticonPackages,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-                )
                 if (!permission.canSend || message.text.length > maxLength) {
                     AppText(
                         if (!permission.canSend) permission.statusText else "弹幕最多 $maxLength 字",

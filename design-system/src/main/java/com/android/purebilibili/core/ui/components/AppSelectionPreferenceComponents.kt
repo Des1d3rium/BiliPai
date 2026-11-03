@@ -209,7 +209,10 @@ fun <T> AppSingleChoicePreference(
                     ) {
                         AppGlassChoiceValueText(
                             text = selectedLabel.orEmpty(),
-                            style = if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+                            // Match the corresponding native preference value; glass only changes the control surface.
+                            style = if (LocalAppUiStyle.current == AppUiStyle.MIUIX ||
+                                com.android.purebilibili.core.ui.rememberResolvedAppListItemStyle() == com.android.purebilibili.core.ui.AppListItemStyle.NATIVE
+                            ) {
                                 MaterialTheme.typography.bodySmall
                             } else MaterialTheme.typography.bodyMedium,
                             color = AppContentColors.secondaryText(),

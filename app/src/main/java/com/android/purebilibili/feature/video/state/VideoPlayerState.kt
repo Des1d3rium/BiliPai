@@ -3,6 +3,9 @@
 
 package com.android.purebilibili.feature.video.state
 
+import com.android.purebilibili.core.player.withAppVideoDecoderDiagnostics
+import com.android.purebilibili.core.player.withAppVideoDecoderPreference
+
 import com.android.purebilibili.feature.video.player.MiniPlayerManager
 import com.android.purebilibili.feature.video.VideoActivity
 import com.android.purebilibili.feature.video.viewmodel.VideoPlaybackViewModel
@@ -10,11 +13,8 @@ import com.android.purebilibili.feature.video.viewmodel.VideoPlaybackUiState
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -56,6 +56,7 @@ import com.android.purebilibili.feature.video.playback.policy.resolvePlaybackWak
 import com.android.purebilibili.feature.video.playback.audio.isPremiumAudioPlaybackFailure
 import com.android.purebilibili.feature.video.playback.session.resolvePlaybackPauseDecision
 import com.android.purebilibili.feature.video.playback.session.resolvePlaybackResumeDecision
+import com.android.purebilibili.feature.video.playback.session.PlaybackPauseOwner
 import com.android.purebilibili.feature.video.playback.session.PendingPlaybackUserAction
 import com.android.purebilibili.feature.video.playback.session.PlaybackUserActionTracker
 import com.android.purebilibili.feature.video.player.resolveHandleAudioFocusByPolicy
@@ -64,6 +65,7 @@ import com.android.purebilibili.feature.video.viewmodel.resolvePlaybackCompletio
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,18 +87,18 @@ internal data class PlayerBufferPolicy(
     val maxBufferMs: Int,
     val bufferForPlaybackMs: Int,
     val bufferForPlaybackAfterRebufferMs: Int,
-    /** Keep the initial part of a video close to the viewer's actual progress. */
+    /** Forward-buffer target in wall-clock milliseconds, converted to media time at playback speed. */
     val earlyPlaybackMaxBufferMs: Int
 )
 
-internal fun resolvePlayerBufferPolicy(isOnWifi: Boolean): PlayerBufferPolicy {
-    return if (isOnWifi) {
+internal fun resolvePlayerBufferPolicy(isOnWifi: Boolean, resilient: Boolean = false): PlayerBufferPolicy {
+    val normal = if (isOnWifi) {
         PlayerBufferPolicy(
             minBufferMs = 10000,
             maxBufferMs = 40000,
             bufferForPlaybackMs = 700,
             bufferForPlaybackAfterRebufferMs = 1400,
-            earlyPlaybackMaxBufferMs = 2000
+            earlyPlaybackMaxBufferMs = 6000
         )
     } else {
         PlayerBufferPolicy(
@@ -104,12 +106,18 @@ internal fun resolvePlayerBufferPolicy(isOnWifi: Boolean): PlayerBufferPolicy {
             maxBufferMs = 45000,
             bufferForPlaybackMs = 1000,
             bufferForPlaybackAfterRebufferMs = 2200,
-            earlyPlaybackMaxBufferMs = 2000
+            earlyPlaybackMaxBufferMs = 4000
         )
     }
+    return if (!resilient) normal else normal.copy(
+        minBufferMs = maxOf(normal.minBufferMs, 20_000),
+        maxBufferMs = maxOf(normal.maxBufferMs, 50_000),
+        bufferForPlaybackAfterRebufferMs = maxOf(normal.bufferForPlaybackAfterRebufferMs, 2_500),
+        earlyPlaybackMaxBufferMs = maxOf(normal.earlyPlaybackMaxBufferMs, 15_000),
+    )
 }
 
-/** 前段限流必须覆盖按倍速折算后的起播及恢复门槛，并留出测量余量。 */
+/** 前段目标按实际播放时长折算，并始终覆盖起播/恢复门槛及测量余量。 */
 internal fun resolveEarlyPlaybackBufferLimitUs(
     earlyPlaybackMaxBufferMs: Int,
     bufferForPlaybackMs: Int,
@@ -118,7 +126,8 @@ internal fun resolveEarlyPlaybackBufferLimitUs(
 ): Long {
     val speed = playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
     val requiredUs = (maxOf(bufferForPlaybackMs, bufferForPlaybackAfterRebufferMs) * 1_000.0 * speed).toLong()
-    return maxOf(earlyPlaybackMaxBufferMs * 1_000L, requiredUs + 250_000L)
+    val targetUs = (earlyPlaybackMaxBufferMs * 1_000.0 * speed).toLong()
+    return maxOf(targetUs, requiredUs + 250_000L)
 }
 
 /**
@@ -220,6 +229,28 @@ private class FirstQuarterAwareLoadControl(
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean =
         delegate.shouldStartPlayback(parameters)
+}
+
+/** 新播放器按当前网络和缓冲偏好创建；复用中的播放器保持现有配置。 */
+internal fun createVideoLoadControl(context: Context): LoadControl {
+    val policy = resolvePlayerBufferPolicy(
+        isOnWifi = NetworkUtils.isWifi(context),
+        resilient = SettingsManager.getResilientVideoBufferSync(context),
+    )
+    return FirstQuarterAwareLoadControl(
+        delegate = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                policy.minBufferMs,
+                policy.maxBufferMs,
+                policy.bufferForPlaybackMs,
+                policy.bufferForPlaybackAfterRebufferMs,
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build(),
+        earlyPlaybackMaxBufferMs = policy.earlyPlaybackMaxBufferMs,
+        bufferForPlaybackMs = policy.bufferForPlaybackMs,
+        bufferForPlaybackAfterRebufferMs = policy.bufferForPlaybackAfterRebufferMs,
+    )
 }
 
 internal fun shouldReuseMiniPlayerAtEntry(
@@ -523,7 +554,16 @@ class VideoPlayerState(
     val apiDimension: StateFlow<Pair<Int, Int>?> = _apiDimension.asStateFlow()
 
     private val _debugInfo = MutableStateFlow(PlaybackDebugInfo())
-    val debugInfo: StateFlow<PlaybackDebugInfo> = _debugInfo.asStateFlow()
+    val debugInfo: StateFlow<PlaybackDebugInfo> = kotlinx.coroutines.flow.combine(
+        _debugInfo, com.android.purebilibili.core.player.VideoDecoderDiagnostics.observe(player)
+    ) { info, decoder ->
+        info.copy(
+            videoDecoder = decoder.decoderName,
+            videoDecoderType = decoder.kind.label,
+            videoDecoderPreference = decoder.preference,
+            videoDecoderFallbackReason = decoder.fallbackReason,
+        )
+    }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(0), PlaybackDebugInfo())
     /** 当前解码视频格式，供需要严格旁路 HDR 的输出效果使用。 */
     private val _videoInputFormat = MutableStateFlow<Format?>(null)
     val videoInputFormat: StateFlow<Format?> = _videoInputFormat.asStateFlow()
@@ -958,14 +998,19 @@ class VideoPlayerState(
         // 不重置 _isPortraitFullscreen，保持竖屏全屏状态
     }
     
+    private var playerListenersAttached = false
+
     fun attachPlayerListeners() {
+        if (playerListenersAttached) return
         player.addListener(playerListener)
         player.addAnalyticsListener(analyticsListener)
+        playerListenersAttached = true
     }
 
     fun release() {
         player.removeListener(playerListener)
         player.removeAnalyticsListener(analyticsListener)
+        playerListenersAttached = false
         if (!miniPlayerManager.isPlayerRetainedByPage(player)) {
             PlaybackUserActionTracker.clear(player)
         }
@@ -996,11 +1041,15 @@ fun rememberVideoPlayerState(
     fallbackResumePositionMs: Long = 0L,
     startPaused: Boolean = false,
     entryTransitionFinished: Boolean = true,
+    relatedPublicationAllowed: Boolean = true,
     playbackSessionActive: Boolean = true,
 ): VideoPlayerState {
 
     //  尝试复用 MiniPlayerManager 中已加载的 player
     val miniPlayerManager = MiniPlayerManager.getInstance(context)
+    val playbackReturnState = viewModel.playbackReturnState
+    val returnMediaBvid by rememberUpdatedState(bvid)
+    val returnMediaCid by rememberUpdatedState(cid)
     // 仅在页面进入时判断一次，避免 setVideoInfo 更新状态后触发“同页重建 player”
     val reuseFromMiniPlayerAtEntry = remember(bvid, cid) {
         shouldReuseMiniPlayerAtEntry(
@@ -1061,13 +1110,13 @@ fun rememberVideoPlayerState(
                 .build()
 
             //  [性能优化] 使用 PlayerSettingsCache 直接从内存读取，避免 I/O
-            val hwDecodeEnabled = com.android.purebilibili.core.store.PlayerSettingsCache.isHwDecodeEnabled(context)
             val seekFastEnabled = com.android.purebilibili.core.store.PlayerSettingsCache.isSeekFastEnabled(context)
             val miniPlayerMode = SettingsManager.getMiniPlayerModeSync(context)
             val stopPlaybackOnExit = SettingsManager.getStopPlaybackOnExitSync(context)
             val audioFocusEnabled = SettingsManager.getAudioFocusEnabledSync(context)
             val bufferPolicy = resolvePlayerBufferPolicy(
-                isOnWifi = NetworkUtils.isWifi(context)
+                isOnWifi = NetworkUtils.isWifi(context),
+                resilient = SettingsManager.getResilientVideoBufferSync(context),
             ).let { base ->
                 // Fork: BTR's anti-jitter buffer only ever deepens the host's policy.
                 com.android.purebilibili.btr.BtrTransport.bufferFloor()?.let { floor ->
@@ -1087,37 +1136,17 @@ fun rememberVideoPlayerState(
                     "firstQuarterMax=${bufferPolicy.earlyPlaybackMaxBufferMs}"
             )
 
-            //  根据设置选择 RenderersFactory
-            val renderersFactory = if (hwDecodeEnabled) {
-                // 平台解码器优先；平台不支持 E-AC-3 时才使用应用内置 FFmpeg。
-                HiResCompatibleRenderersFactory(context)
-                    .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            } else {
-                // 关闭硬件视频偏好时仍保留 E-AC-3 软件音频兜底。
-                HiResCompatibleRenderersFactory(context)
-                    .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-                    .setEnableDecoderFallback(true)
-            }
+            // 视频解码偏好与音频兼容扩展独立配置，所有视频播放入口共用同一策略。
+            val renderersFactory = HiResCompatibleRenderersFactory(context)
+                .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+                .withAppVideoDecoderPreference(context)
 
             ExoPlayer.Builder(context)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-                // 前 1/4 仅保留很短的前向缓冲，确认继续观看后再按常规策略快速预缓冲。
+                // 前 1/4 使用当前缓冲偏好，之后按常规阈值预缓冲。
                 .setLoadControl(
-                    FirstQuarterAwareLoadControl(
-                        delegate = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-                            .setBufferDurationsMs(
-                                bufferPolicy.minBufferMs,
-                                bufferPolicy.maxBufferMs,
-                                bufferPolicy.bufferForPlaybackMs,
-                                bufferPolicy.bufferForPlaybackAfterRebufferMs
-                            )
-                            .setPrioritizeTimeOverSizeThresholds(true)
-                            .build(),
-                        earlyPlaybackMaxBufferMs = bufferPolicy.earlyPlaybackMaxBufferMs,
-                        bufferForPlaybackMs = bufferPolicy.bufferForPlaybackMs,
-                        bufferForPlaybackAfterRebufferMs = bufferPolicy.bufferForPlaybackAfterRebufferMs,
-                    )
+                    createVideoLoadControl(context)
                 )
                 //  [性能优化] 快速 Seek：跳转到最近的关键帧而非精确位置
                 .setSeekParameters(
@@ -1138,7 +1167,7 @@ fun rememberVideoPlayerState(
                         stopPlaybackOnExit = stopPlaybackOnExit
                     )
                 )
-                .build()
+                .build().withAppVideoDecoderDiagnostics(context)
                 .apply {
                     //  [修复] 确保音量正常，解决第二次播放静音问题
                     //  如果 startPaused 为 true，则静音
@@ -1153,7 +1182,7 @@ fun rememberVideoPlayerState(
                     // prepare() 和 playWhenReady 将在 attachPlayer/loadVideo 设置媒体源后调用
                     playWhenReady = !startPaused &&
                         playbackSessionActive &&
-                        SettingsManager.getClickToPlaySync(context)
+                        playbackReturnState.resolveAutoPlay(bvid, cid, SettingsManager.getClickToPlaySync(context))
                 }
         }
         AbandonableResource(rememberedPlayer) {
@@ -1165,22 +1194,11 @@ fun rememberVideoPlayerState(
         .getPlaybackCompletionBehavior(context)
         .collectAsStateWithLifecycle(initialValue = PlaybackCompletionBehavior.CONTINUE_CURRENT_LOGIC
         )
-    LaunchedEffect(player, playbackCompletionBehavior) {
-        player.repeatMode = resolvePlaybackCompletionRepeatMode(playbackCompletionBehavior)
-    }
-
-    val sessionActivityPendingIntent = remember(context, bvid) {
-        //  [修复] 点击通知跳转到 MainActivity 而不是新建 VideoActivity
-        // 这样可以复用应用内的导航栈，保持"单 Activity"架构
-        val intent = Intent(context, com.android.purebilibili.MainActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            data = Uri.parse("https://www.bilibili.com/video/$bvid")
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        PendingIntent.getActivity(
-            context, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+    val isInAudioMode by viewModel.isInAudioMode.collectAsStateWithLifecycle()
+    val sleepAfterCurrent by viewModel.sleepAfterCurrent.collectAsStateWithLifecycle()
+    LaunchedEffect(player, playbackCompletionBehavior, isInAudioMode, sleepAfterCurrent) {
+        // 听视频使用自己的队列模式处理播完，不能让全局单曲循环提前截获结束事件。
+        player.repeatMode = resolvePlaybackCompletionRepeatMode(playbackCompletionBehavior, isInAudioMode || sleepAfterCurrent)
     }
 
     val scope = rememberCoroutineScope()
@@ -1221,6 +1239,10 @@ fun rememberVideoPlayerState(
                 // Another page or the mini/audio session still owns this instance.
                 Logger.d("VideoPlayerState", "Keep player retained by another page or playback session")
             } else {
+                playbackReturnState.suspend(
+                    returnMediaBvid, returnMediaCid, player.playWhenReady || player.isPlaying,
+                    PlaybackPauseOwner.NAVIGATION,
+                )
                 viewModel.cancelPendingVideoLoad()
                 // 仅当引用匹配时才清理，避免误清理新页面正在使用的 player
                 miniPlayerManager.clearExternalPlayerIfMatches(player)
@@ -1299,6 +1321,10 @@ fun rememberVideoPlayerState(
                     hasTransientResumeIntent = pauseDecision.shouldPersistTransientResumeIntent
                     
                     if (pauseDecision.shouldPausePlayback) {
+                        playbackReturnState.suspend(
+                            returnMediaBvid, returnMediaCid, player.playWhenReady || player.isPlaying,
+                            PlaybackPauseOwner.LIFECYCLE,
+                        )
                         // 非小窗/PiP/后台模式下暂停
                         player.pause()
                         holder.recordDiagnosticEvent("lifecyclePause -> pausePlayback")
@@ -1318,6 +1344,7 @@ fun rememberVideoPlayerState(
                         holder.recordDiagnosticEvent("lifecycleResume -> skipInactiveSession")
                         return@LifecycleEventObserver
                     }
+                    playbackReturnState.resume(PlaybackPauseOwner.LIFECYCLE)
                     val shouldEnsureAudibleOnForeground =
                         !miniPlayerManager.isMiniMode && !miniPlayerManager.isSystemPipActive
                     val isLeavingByNavigation = miniPlayerManager.isLeavingByNavigation
@@ -1536,7 +1563,6 @@ fun rememberVideoPlayerState(
     // 合集列表 / 详情压详情：本页不再是栈顶可见会话时立刻挂起本地 player。
     // 仅「skip attach/load」不够——上一级 ExoPlayer 会继续出声，新详情像卡封面。
     var suspendedByInactiveSession by remember(player) { mutableStateOf(false) }
-    var wasPlayingBeforeSessionSuspend by remember(player) { mutableStateOf(false) }
     val audioNowPlayingActive by com.android.purebilibili.feature.audio.player.AudioNowPlayingSession
         .active.collectAsStateWithLifecycle()
     val ownedByPlaybackHandoff = shouldTreatPlayerAsOwnedByPlaybackHandoff(
@@ -1559,7 +1585,9 @@ fun rememberVideoPlayerState(
             if (likelyActive) {
                 // 重复的非活跃通知不能覆盖第一次挂起时保存的播放意图。
                 if (!suspendedByInactiveSession) {
-                    wasPlayingBeforeSessionSuspend = player.isPlaying || player.playWhenReady
+                    playbackReturnState.suspend(
+                        bvid, cid, player.playWhenReady || player.isPlaying, PlaybackPauseOwner.NAVIGATION
+                    )
                 }
                 player.volume = 0f
                 player.playWhenReady = false
@@ -1580,10 +1608,13 @@ fun rememberVideoPlayerState(
             PlayerVolumeController.applyPreferredVolume(player)
             holder.recordDiagnosticEvent("playbackHandoffOwnsSession -> restoreVolume")
         }
+        if (playbackSessionActive && entryTransitionFinished) {
+            playbackReturnState.resume(PlaybackPauseOwner.NAVIGATION)
+        }
         if (suspendedByInactiveSession && playbackSessionActive && entryTransitionFinished) {
             com.android.purebilibili.core.player.PlayerVolumeController
                 .applyPreferredVolume(player)
-            if (wasPlayingBeforeSessionSuspend) {
+            if (playbackReturnState.resolveAutoPlay(bvid, cid, false)) {
                 player.playWhenReady = true
                 player.play()
                 holder.recordDiagnosticEvent("sessionActive -> resumeAfterSuspend")
@@ -1593,12 +1624,17 @@ fun rememberVideoPlayerState(
                 )
             }
             suspendedByInactiveSession = false
-            wasPlayingBeforeSessionSuspend = false
         }
     }
 
     // 网络请求与播放器绑定分开，进场门控只约束媒体准备。
     // 门控开放前先 attachPlayer，保证 prepare 使用当前播放器。
+    SideEffect {
+        viewModel.setRelatedPublicationAllowed(relatedPublicationAllowed)
+    }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.setRelatedPublicationAllowed(true) }
+    }
     DisposableEffect(viewModel, player, entryTransitionFinished, playbackSessionActive) {
         if (playbackSessionActive && (entryTransitionFinished || reuseFromMiniPlayerAtEntry)) {
             viewModel.attachPlayer(player)
@@ -1617,6 +1653,9 @@ fun rememberVideoPlayerState(
         reuseFromMiniPlayerAtEntry,
         fallbackResumePositionMs,
         playbackSessionActive,
+        // A retained detail can recreate its player before the entry gate opens. Reconcile again
+        // after attachPlayer runs; otherwise the cached restore targets the released instance.
+        entryTransitionFinished,
     ) {
         if (!playbackSessionActive) {
             Logger.d("VideoPlayerState", "Back preview keeps UI only; skip playback session: request=$bvid/$cid")
@@ -1689,7 +1728,9 @@ fun rememberVideoPlayerState(
             cid = cid,
             fallbackResumePositionMs = if (resumeSameRemoteItem) remoteResume?.positionMs ?: fallbackResumePositionMs else fallbackResumePositionMs,
             autoPlay = if (resumeSameRemoteItem) remoteResume?.playing
-                else reusedPlaybackIntentAtEntry ?: SettingsManager.getClickToPlaySync(context),
+                else playbackReturnState.resolveAutoPlay(
+                    bvid, cid, reusedPlaybackIntentAtEntry ?: SettingsManager.getClickToPlaySync(context)
+                ),
         )
     }
 

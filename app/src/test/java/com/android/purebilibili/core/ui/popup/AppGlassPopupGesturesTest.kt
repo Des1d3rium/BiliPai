@@ -117,12 +117,12 @@ class AppGlassPopupGesturesTest {
     }
 
     @Test
-    fun popupPressGrowthIsCappedBySixteenDpAndDragAddsHalfThePull() {
+    fun popupPressGrowthIsCappedAndVerticalDragAddsThePull() {
         val base = AppGlassPopupFrame(Rect(0f, 0f, 240f, 360f), 24f, 1f, 1f, 0f)
         val actual = popupElasticFrame(base, 1f, Offset(30f, -20f), 1f)
         val swell = 1f + 16f / 360f
         assertEquals((240f + 15f) * swell, actual.rect.width, 0.001f)
-        assertEquals((360f + 10f) * swell, actual.rect.height, 0.001f)
+        assertEquals((360f + 20f) * swell, actual.rect.height, 0.001f)
         assertEquals(base.rect.center + Offset(30f, -20f), actual.rect.center)
     }
 

@@ -38,59 +38,54 @@ internal fun DynamicAuthorSearchDialog(
     onAuthorSelected: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    val matches = remember(users, query) { searchDynamicAuthors(users, query) }
-    val listState = remember(query) { LazyListState() }
     AppAlertDialog(
         onDismissRequest = onDismiss,
         modifier = modifier,
         title = { AppText("搜索 UP 主") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                com.android.purebilibili.core.ui.components.AppLiquidAwareSearchField(
-                    query = query,
-                    onQueryChange = { query = it },
-                    placeholder = "输入关注的 UP 主名字",
-                    compactHeight = 40.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (isLoading) AppText("正在加载关注列表…")
-                if (matches.isEmpty() && !isLoading) {
-                    AppText(if (query.isBlank()) "暂无可搜索的 UP 主" else "没有找到匹配的 UP 主")
-                }
-                AppLazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp),
-                ) {
-                    items(matches, key = { it.uid }) { user ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .appActionClickable { onAuthorSelected(user.uid) }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PageAwareAsyncImage(
-                                model = user.face,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape),
-                            )
-                            AppText(
-                                text = user.name,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
+            DynamicAuthorSearchContent(users, isLoading, onAuthorSelected)
         },
         confirmButton = { AppTextButton(onClick = onDismiss) { AppText("关闭") } },
     )
+}
+
+@Composable
+internal fun DynamicAuthorSearchContent(
+    users: List<SidebarUser>,
+    isLoading: Boolean,
+    onAuthorSelected: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val matches = remember(users, query) { searchDynamicAuthors(users, query) }
+    val listState = remember(query) { LazyListState() }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        com.android.purebilibili.core.ui.components.AppLiquidAwareSearchField(
+            query = query,
+            onQueryChange = { query = it },
+            placeholder = "输入关注的 UP 主名字",
+            compactHeight = 40.dp,
+            inheritPopupGlass = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (isLoading) AppText("正在加载关注列表…")
+        if (matches.isEmpty() && !isLoading) {
+            AppText(if (query.isBlank()) "暂无可搜索的 UP 主" else "没有找到匹配的 UP 主")
+        }
+        AppLazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+        ) {
+            items(matches, key = { it.uid }) { user ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().appActionClickable { onAuthorSelected(user.uid) }.padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PageAwareAsyncImage(model = user.face, contentDescription = null, modifier = Modifier.size(40.dp).clip(CircleShape))
+                    AppText(text = user.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
 }

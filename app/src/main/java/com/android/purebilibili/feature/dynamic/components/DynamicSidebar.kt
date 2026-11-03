@@ -8,9 +8,7 @@ import com.android.purebilibili.core.ui.AppContentColors
 import com.android.purebilibili.core.ui.AppChromeSizeTokens
 import com.android.purebilibili.core.ui.AppSpacingTokens
 
-import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.AppSurfaceTokens
-import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.core.ui.motion.AppMotionTokens
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -43,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import com.android.purebilibili.core.ui.components.LocalPageImageLoadingAllowed
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -450,6 +449,9 @@ fun DynamicSidebar(
                 fadeEnabled = themeConfig.progressiveTopFadeEnabled && !themeConfig.headerBlurEnabled,
                 surfaceColor = AppSurfaceTokens.surface(),
                 opaqueBackgroundFallback = false,
+                iconSurfaceColor = if (glassWallpaperSidebar || progressiveRequested ||
+                    (themeConfig.progressiveTopFadeEnabled && !themeConfig.headerBlurEnabled)
+                ) Color.Transparent else returnHeaderColor,
                 extendBelowBounds = false,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -558,6 +560,7 @@ fun SidebarItem(
     isLive: Boolean,
     onClick: () -> Unit
 ) {
+    val nativeNavigation = com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -570,7 +573,7 @@ fun SidebarItem(
                 .size(AppSpacingTokens.DoubleExtraLarge + AppSpacingTokens.Small)
                 .clip(CircleShape)
                 .background(
-                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                    if (isSelected) nativeNavigation?.selectedContainer ?: MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ),
             contentAlignment = Alignment.Center
@@ -579,7 +582,7 @@ fun SidebarItem(
                 text = icon,
                 fontSize = MaterialTheme.typography.labelMedium.fontSize,
                 fontWeight = FontWeight.Bold,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else AppContentColors.secondaryText()
+                color = if (isSelected) nativeNavigation?.selectedContent ?: MaterialTheme.colorScheme.onPrimaryContainer else AppContentColors.secondaryText()
             )
         }
 
@@ -590,7 +593,7 @@ fun SidebarItem(
                 fontSize = MaterialTheme.typography.labelSmall.fontSize,
                 // The label sits outside the selected icon container, so it uses the
                 // accent role rather than the container's paired content role.
-                color = if (isSelected) AppContentColors.accent() else AppContentColors.secondaryText(),
+                color = if (isSelected) nativeNavigation?.selectedContent ?: AppContentColors.accent() else AppContentColors.secondaryText(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -647,6 +650,10 @@ fun SidebarUserItem(
     var showMenu by remember { mutableStateOf(false) }
     val glassMenuAvailable = com.android.purebilibili.core.ui.components.appGlassMenuAvailable()
     val displayName = if (user.isHidden) "${user.name}(隐)" else user.name
+    val isAllShortcut = isDynamicUpPanelAllShortcut(user.uid)
+    val navigationColors = com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()
+    val accentColor = navigationColors?.selectedContent
+        ?: AppContentColors.selectionAccent(LocalAppThemeConfig.current.liquidGlassEnabled)
     val haptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.NAVIGATION)
 
     com.android.purebilibili.core.ui.components.AppGlassMenuAnchor(onOpen = { showMenu = true }, enabled = allowManageMenu) {
@@ -654,12 +661,9 @@ fun SidebarUserItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = AppSpacingTokens.ExtraSmall, horizontal = AppSpacingTokens.ExtraSmall) // 增加水平间距以适应选中背景
-                .clip(AppShapes.container(ContainerLevel.Card)) // 选中态圆角背景
-                .then(
-                    if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                    else Modifier
-                )
+                .padding(vertical = AppSpacingTokens.ExtraSmall, horizontal = AppSpacingTokens.ExtraSmall)
+                // 玻璃与原生侧栏共用局部选中提示；整项裁切仅约束按压反馈。
+                .clip(RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = appActionWithFeedback {
                         performDynamicSidebarUserAvatarClick(
@@ -679,18 +683,22 @@ fun SidebarUserItem(
                         .size(AppSpacingTokens.DoubleExtraLarge + AppSpacingTokens.Medium)
                         .then(
                             when {
-                                isSelected -> Modifier.border(AppSpacingTokens.Micro, AppContentColors.accent(), CircleShape)
+                                isAllShortcut && isSelected -> Modifier.background(
+                                    navigationColors?.selectedContainer ?: accentColor.copy(alpha = 0.12f),
+                                    CircleShape
+                                )
+                                isSelected -> Modifier.border(AppSpacingTokens.Micro / 2, accentColor, CircleShape)
                                 else -> Modifier.border(AppSpacingTokens.Micro / 2, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), CircleShape)
                             }
                         )
                         .padding(AppSpacingTokens.Micro),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isDynamicUpPanelAllShortcut(user.uid)) {
+                    if (isAllShortcut) {
                         AppIcon(
                             imageVector = rememberAppDynamicIcon(),
                             contentDescription = user.name,
-                            tint = if (isSelected) AppContentColors.accent() else AppContentColors.secondaryText(),
+                            tint = if (isSelected) accentColor else AppContentColors.secondaryText(),
                             modifier = Modifier.size(AppSpacingTokens.ExtraLarge)
                         )
                     } else if (selfUid > 0L && user.uid == selfUid) {
@@ -727,7 +735,7 @@ fun SidebarUserItem(
                     text = displayName,
                     fontSize = MaterialTheme.typography.labelSmall.fontSize,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else AppContentColors.primaryText(), // 自适应文字
+                    color = if (isSelected) accentColor else AppContentColors.primaryText(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = AppSpacingTokens.Micro)

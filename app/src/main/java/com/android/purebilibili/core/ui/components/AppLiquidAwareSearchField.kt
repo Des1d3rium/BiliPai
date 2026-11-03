@@ -1,6 +1,9 @@
 package com.android.purebilibili.core.ui.components
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -43,11 +46,36 @@ fun AppLiquidAwareSearchField(
     leadingIconHorizontalOffset: Dp = 0.dp,
     presentation: AppSearchFieldPresentation = AppSearchFieldPresentation.STANDARD,
     compactHeight: Dp = Dp.Unspecified,
+    inheritPopupGlass: Boolean = false,
+    captureShellForContent: Boolean = true,
 ) {
     val liquidHeight = if (compactHeight.isSpecified && compactHeight > 0.dp) {
         compactHeight
     } else {
         AppChromeSizeTokens.LiquidSearchFieldHeightDp.dp
+    }
+    // 弹窗自身已提供模糊材质；子输入框只叠加轻量边界，不采样空白背景。
+    // 该分支仅由弹窗入口显式启用，玻璃关闭时仍走原生输入框。
+    if (inheritPopupGlass && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled &&
+        (com.android.purebilibili.core.ui.LocalAppPopupWindowMaterialEnabled.current ||
+            com.android.purebilibili.core.ui.blur.LocalAppGlassContainer.current != null)
+    ) {
+        val outline = com.android.purebilibili.core.ui.AppContentColors.primaryText()
+        Box(
+            modifier = modifier
+                .clip(CircleShape)
+                .background(outline.copy(alpha = 0.06f))
+                .border(1.dp, outline.copy(alpha = 0.14f), CircleShape),
+        ) {
+            CompactLiquidSearchInput(
+                query = query, onQueryChange = onQueryChange, placeholder = placeholder,
+                height = liquidHeight, showClearAction = presentation != AppSearchFieldPresentation.TOP_BAR,
+                onSearch = onSearch, onClear = onClear, focusRequester = focusRequester,
+                autoFocusEnabled = autoFocusEnabled, interactionSource = interactionSource,
+                leadingIconHorizontalOffset = leadingIconHorizontalOffset,
+            )
+        }
+        return
     }
     BottomBarMatchedReusableLiquidDock(
         shape = CircleShape,
@@ -62,6 +90,7 @@ fun AppLiquidAwareSearchField(
             liquidHeight.value
         ),
         isScrollInProgressProvider = isScrollInProgressProvider,
+        captureShellForContent = captureShellForContent,
     ) { liquidChromeActive ->
         if (liquidChromeActive) {
             CompactLiquidSearchInput(

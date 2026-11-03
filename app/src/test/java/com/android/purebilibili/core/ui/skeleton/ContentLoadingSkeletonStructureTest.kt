@@ -24,8 +24,10 @@ class ContentLoadingSkeletonStructureTest {
         assertTrue(source.contains("fun ContentCategoryGridSkeleton("))
         assertTrue(source.contains("fun TrendingListSkeleton("))
         assertTrue(source.contains("rememberContentSkeletonPulseState("))
-        // Home-style soft pulse; no left-right shimmer sweep flicker.
-        assertTrue(source.contains("RepeatMode.Reverse"))
+        // Sweep progress stays in the shared State and is consumed by draw helpers.
+        assertTrue(source.contains("rememberSkeletonSweepState()"))
+        assertTrue(source.contains("colorProvider.skeletonBrush(size)"))
+        assertFalse(source.contains("fun rememberContentSkeletonPulse(): Float"))
         assertFalse(source.contains("shimmerEffect()"))
     }
 
@@ -53,14 +55,14 @@ class ContentLoadingSkeletonStructureTest {
         assertTrue(space.contains("SpaceLoadingSkeleton("))
         assertFalse(space.contains("SpaceUiState.Loading -> {\n                        com.android.purebilibili.core.ui.skeleton.ContentMediaListSkeleton("))
         // 空间首屏骨架不再自建独立网格：它作为 item 提供者铺进 SpaceContent 的同一个
-        // LazyVerticalGrid（同一个 gridState），Loading → Success 是 item 原地替换而不是
-        // 整棵网格重建。骨架里因此不应再出现 LazyVerticalGrid，色块也必须是固定色
+        // LazyVerticalStaggeredGrid（同一个 gridState），Loading → Success 是 item 原地替换而不是
+        // 整棵网格重建。骨架里因此不应再出现 LazyVerticalStaggeredGrid，色块也必须是固定色
         // （rememberStaticSkeletonBlockColor）而非呼吸脉冲，避免灰块闪烁。
         assertTrue(space.contains("isInitialLoading = isLoadingSpace"))
-        assertFalse(spaceSkeleton.contains("LazyVerticalGrid("))
+        assertFalse(spaceSkeleton.contains("LazyVerticalStaggeredGrid("))
         assertFalse(spaceSkeleton.contains("rememberContentSkeletonPulse("))
-        assertTrue(spaceSkeleton.contains("LazyGridScope.SpaceLoadingSkeleton("))
-        assertTrue(spaceSkeleton.contains("GridItemSpan(maxLineSpan)"))
+        assertTrue(spaceSkeleton.contains("LazyStaggeredGridScope.SpaceLoadingSkeleton("))
+        assertTrue(spaceSkeleton.contains("StaggeredGridItemSpan.FullLine"))
         // 列数 / 封面比例 / 头部形态都按真实内容同规则算好后传入，保证骨架与卡片同形。
         assertTrue(space.contains("columns = gridColumns"))
         assertTrue(space.contains("coverAspectRatio = spaceFeedCoverAspectRatio"))

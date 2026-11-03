@@ -7,9 +7,6 @@ import com.android.purebilibili.data.model.response.UgcSeason
 import com.android.purebilibili.data.model.response.UgcSection
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class VideoNavigationCidPolicyTest {
 
@@ -111,29 +108,6 @@ class VideoNavigationCidPolicyTest {
         )
 
         assertEquals(0L, resolved)
-    }
-
-    @Test
-    fun `fullscreen intent travels with the navigation options`() {
-        val options = buildVideoNavigationOptions(
-            targetCid = 42L,
-            coverUrl = " https://example.com/a.jpg ",
-            startInFullscreen = true
-        )
-
-        assertEquals(42L, options?.getLong(VIDEO_NAV_TARGET_CID_KEY))
-        assertEquals("https://example.com/a.jpg", options?.getString(VIDEO_NAV_COVER_URL_KEY))
-        assertTrue(resolveVideoNavigationStartInFullscreen(options))
-    }
-
-    @Test
-    fun `fullscreen intent alone still builds options and empty input stays null`() {
-        assertNull(buildVideoNavigationOptions())
-        assertNull(buildVideoNavigationOptions(startInFullscreen = false))
-        assertFalse(resolveVideoNavigationStartInFullscreen(null))
-
-        val options = buildVideoNavigationOptions(startInFullscreen = true)
-        assertTrue(resolveVideoNavigationStartInFullscreen(options))
     }
 
     @Test

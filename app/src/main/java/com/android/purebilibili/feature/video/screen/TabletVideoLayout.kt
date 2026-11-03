@@ -1,6 +1,9 @@
 // 文件路径: feature/video/screen/TabletVideoLayout.kt
 package com.android.purebilibili.feature.video.screen
 
+import com.android.purebilibili.feature.video.ui.components.commentSectionNotice
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.util.rememberHapticFeedback
 import com.android.purebilibili.core.util.HapticType
 
@@ -80,7 +83,6 @@ import com.android.purebilibili.feature.video.ui.section.VideoNoteListSheet
 import com.android.purebilibili.feature.video.ui.section.VideoSupplementStatsActions
 import com.android.purebilibili.feature.video.ui.section.VideoNoteDeleteConfirmDialog
 import com.android.purebilibili.feature.video.ui.section.VideoNoteEditorSheet
-import com.android.purebilibili.feature.video.ui.section.resolveDisplayBgmList
 import com.android.purebilibili.feature.video.ui.section.UpInfoSection
 import com.android.purebilibili.feature.video.ui.section.VideoPlayerSection
 import com.android.purebilibili.feature.video.ui.section.VideoPlayerSectionActions
@@ -439,6 +441,8 @@ internal fun TabletVideoLayout(
                                 state = VideoPlayerSectionState(
                                     playerState = playerState,
                                     uiState = uiState,
+                                    engagementState = engagementState,
+                                    commentStateHandle = commentStateHandle,
                                     isLiked = engagementState.isLiked,
                                     isDisliked = engagementState.isDisliked,
                                     likeStatusKnown = engagementState.likeStatusKnown,
@@ -514,6 +518,7 @@ internal fun TabletVideoLayout(
                                     onSecondCodecChange = onSecondCodecChange,
                                     onAudioQualityChange = onAudioQualityChange,
                                     onPlaybackSpeedChange = playbackActions.applyPlaybackSpeed,
+                                    onAudioLangChange = playbackActions.changeAudioLanguage,
                                     onSaveCover = playbackActions.saveCover,
                                     onDownloadAudio = playbackActions.downloadAudio,
                                     onPlayModeClick = onPlayModeClick,
@@ -757,8 +762,6 @@ internal fun TabletVideoInfoPane(
         videoTags = success.videoTags,
         ownerFollowerCount = success.ownerFollowerCount,
         ownerVideoCount = success.ownerVideoCount,
-        bgmInfo = success.bgmInfo,
-        bgmInfoList = success.bgmInfoList,
         onBgmClick = onBgmClick,
         relatedVideos = if (showRelatedVideos) success.related else emptyList(),
         relatedLoadState = success.relatedLoadState,
@@ -1049,10 +1052,10 @@ internal fun TabletSecondaryContent(
             ) {
                 TabletSecondaryLiquidTabRow(
                     labels = tabs.map { if (it == TabletSecondaryTab.QUEUE) externalQueueTitle else it.label },
-                    selectedIndex = pagerState.currentPage,
+                    selectedIndex = pagerState.tabSelectedPage,
                     onSelected = ::selectSecondaryTab,
                     indicatorPositionProvider = {
-                        pagerState.currentPage + pagerState.currentPageOffsetFraction
+                        pagerState.tabIndicatorPosition
                     },
                     isScrollInProgressProvider = { pagerState.isScrollInProgress },
                     modifier = Modifier.weight(1f),
@@ -1106,6 +1109,10 @@ internal fun TabletSecondaryContent(
                 TabletSecondaryTab.COMMENTS -> {
                     val listState = rememberLazyListState()
                     val repliesError = commentState.repliesError
+                    // 首包尚未完成或正在刷新时保留骨架；真实空页不依赖控制文案或数量判断。
+                    val pendingFirstLoad = commentState.replies.isEmpty() &&
+                        repliesError == null &&
+                        (commentState.isRepliesRefreshing || (commentState.nextPage <= 1 && !commentState.isRepliesEnd))
                     val shouldLoadMore by remember(
                         listState,
                         commentState.isRepliesLoading,
@@ -1141,7 +1148,7 @@ internal fun TabletSecondaryContent(
                         }
                     }
 
-                    if (subReplyState.visible && subReplyState.rootReply != null) {
+                    if (subReplyState.visible) {
                         VideoInlineSubReplyDetailContent(
                             state = subReplyState,
                             commentState = commentState,
@@ -1191,7 +1198,6 @@ internal fun TabletSecondaryContent(
                                 },
                                 onSearchClick = { showCommentSearchSheet = true },
                                 compactTypography = true,
-                                scrollState = listState,
                             )
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             AdaptivePullToRefreshBox(
@@ -1211,7 +1217,8 @@ internal fun TabletSecondaryContent(
                                     bottom = 104.dp,
                                 )
                             ) {
-                            commentState.voteCard?.let { card ->
+                            commentSectionNotice(commentState.pageControl)
+            commentState.voteCard?.let { card ->
                                 item(key = "tablet_vote_${card.voteId}") {
                                     VideoCommentVoteCard(
                                         card = card,
@@ -1221,26 +1228,13 @@ internal fun TabletSecondaryContent(
                             }
                             if (repliesError != null) {
                                 item(key = "tablet_comment_refresh_error") {
-                                    Row(
+                                    com.android.purebilibili.feature.video.ui.components.VideoCommentLoadError(
+                                        message = repliesError,
+                                        onRetry = { if (commentState.replies.isNotEmpty() && !commentState.isRepliesEnd) commentActions.loadComments() else commentActions.refreshComments() },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        AppText(
-                                            text = repliesError,
-                                            color = AppContentColors.error(),
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        AppTextButton(onClick = {
-                                            if (commentState.replies.isNotEmpty() && !commentState.isRepliesEnd) {
-                                                commentActions.loadComments()
-                                            } else commentActions.refreshComments()
-                                        }) {
-                                            AppText("重试")
-                                        }
-                                    }
+                                            .then(if (commentState.replies.isEmpty() && commentState.voteCard == null) Modifier.fillParentMaxHeight(0.7f) else Modifier),
+                                    )
                                 }
                             }
                             items(
@@ -1300,9 +1294,9 @@ internal fun TabletSecondaryContent(
                                     )
                                 }
                             }
+                            // 有评论数但列表空、无错误：加载中或请求还没发起，都显示骨架。
                             if (
-                                commentState.isRepliesLoading &&
-                                !commentState.isRepliesRefreshing &&
+                                (commentState.isRepliesLoading || pendingFirstLoad) &&
                                 commentState.replies.isEmpty()
                             ) {
                                 // 骨架拆成多个独立 lazy item（而不是 1 个 item 里塞 5 行）：
@@ -1311,10 +1305,7 @@ internal fun TabletSecondaryContent(
                                     slotCount = commentSkeletonSlotCount,
                                     keyPrefix = "tablet_comment_skeleton_",
                                 )
-                            } else if (
-                                commentState.isRepliesLoading &&
-                                !commentState.isRepliesRefreshing
-                            ) {
+                            } else if (commentState.isRepliesLoading) {
                                 item {
                                     Box(
                                         modifier = Modifier
@@ -1333,6 +1324,7 @@ internal fun TabletSecondaryContent(
                             commentState.replies.isEmpty() &&
                             !commentState.isRepliesLoading &&
                             !commentState.isRepliesRefreshing &&
+                            !pendingFirstLoad &&
                             repliesError == null
                         ) {
                             Column(
@@ -1342,7 +1334,7 @@ internal fun TabletSecondaryContent(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 AppText(
-                                    text = "暂无评论",
+                                    text = commentState.pageControl?.emptyMessage()?.takeIf { it.isNotBlank() } ?: "暂无评论",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = commentAppearance.secondaryTextColor
                                 )
@@ -1427,12 +1419,7 @@ internal fun TabletSecondaryContent(
                 }
 
                 TabletSecondaryTab.RELATED -> {
-                    var hiddenRelatedBvids by remember(success.info.bvid) {
-                        mutableStateOf(emptySet<String>())
-                    }
-                    val visibleRelatedVideos = remember(success.related, hiddenRelatedBvids) {
-                        filterRelatedVideosByHiddenBvids(success.related, hiddenRelatedBvids)
-                    }
+                    val visibleRelatedVideos = success.related
                     val relatedVideoCardLayout = rememberRelatedVideoCardLayout()
                     val relatedListState = rememberLazyListState()
                     RelatedVideoList(
@@ -1445,9 +1432,10 @@ internal fun TabletSecondaryContent(
                             if (success.relatedLoadState == VideoPlaybackUiState.RelatedLoadState.LOADING) {
                                 item(key = "tablet_related_loading") {
                                     Column {
-                                        repeat(3) {
+                                        repeat(com.android.purebilibili.feature.video.ui.components.RELATED_VIDEO_SKELETON_ROW_COUNT) {
                                             com.android.purebilibili.feature.video.ui.components.RelatedVideoGridRowSkeleton(
                                                 cardLayout = relatedVideoCardLayout,
+                                                cardPresentation = cardPresentation,
                                             )
                                         }
                                     }
@@ -1475,7 +1463,10 @@ internal fun TabletSecondaryContent(
                                 }
                             ) { _, row ->
                                 CompositionLocalProvider(
-                                    LocalVideoCardSharedElementSourceRoute provides "video/${success.info.bvid}"
+                                    LocalVideoCardSharedElementSourceRoute provides
+                                        com.android.purebilibili.feature.video.ui.components.resolveRelatedVideoCardHostRoute(
+                                            LocalVideoCardSharedElementSourceRoute.current, success.info.bvid,
+                                        )
                                 ) {
                                     RelatedVideoGridRow(
                                         videos = row,
@@ -1490,9 +1481,7 @@ internal fun TabletSecondaryContent(
                                             ) ?: android.os.Bundle.EMPTY
                                             onRelatedVideoClick(video.bvid, navOptions)
                                         },
-                                        onVideoHidden = { video ->
-                                            hiddenRelatedBvids = hiddenRelatedBvids + video.bvid
-                                        }
+                                        onUpClick = onUpClick,
                                     )
                                 }
                             }
@@ -1638,8 +1627,6 @@ private fun ScrollableVideoInfoSection(
     videoTags: List<com.android.purebilibili.data.model.response.VideoTag>,
     ownerFollowerCount: Int?,
     ownerVideoCount: Int?,
-    bgmInfo: BgmInfo? = null,
-    bgmInfoList: List<BgmInfo> = emptyList(),
     onBgmClick: (BgmInfo) -> Unit = {},
     onFollowClick: () -> Unit,
     onFavoriteClick: () -> Unit,
@@ -1737,12 +1724,7 @@ private fun ScrollableVideoInfoSection(
                             onNoteClick = { showNoteListSheet = true },
                         )
                     },
-                    bgmList = resolveDisplayBgmList(
-                        bgmInfo = bgmInfo,
-                        bgmInfoList = bgmInfoList
-                    ),
                     onBgmClick = onBgmClick,
-                    onRelatedVideoClick = onRelatedVideoClick,
                     onDescriptionUrlClick = onOpenBilibiliLink,
                     onTagClick = onSearchKeywordClick
                 )
@@ -2048,10 +2030,15 @@ private fun TabletVideoInfoStaggeredItem(
 
 @Composable
 private fun TabletRelatedCarouselSkeleton(modifier: Modifier = Modifier) {
+    val animationGate = com.android.purebilibili.core.ui.rememberDecorativeAnimationGate()
     val color = com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonBlockColor(
-        com.android.purebilibili.core.ui.skeleton.rememberContentSkeletonPulse(),
+        com.android.purebilibili.core.ui.skeleton.rememberSkeletonSweepState(
+            animated = animationGate.active,
+            initialPosition = -1.5f,
+            durationMillis = 1500,
+        ),
     )
-    Column(modifier = modifier) {
+    Column(modifier = modifier.then(animationGate.modifier)) {
         Spacer(Modifier.height(24.dp))
         AppText(
             text = "更多推荐",
@@ -2077,14 +2064,14 @@ private fun TabletRelatedCarouselSkeleton(modifier: Modifier = Modifier) {
                     com.android.purebilibili.core.ui.skeleton.ContentSkeletonText(
                         text = "推荐视频标题占位\n第二行标题占位",
                         style = MaterialTheme.typography.bodySmall,
-                        colorProvider = { color },
+                        colorProvider = color,
                         maxLines = 2,
                     )
                     Spacer(Modifier.height(2.dp))
                     com.android.purebilibili.core.ui.skeleton.ContentSkeletonText(
                         text = "UP 主名称",
                         style = MaterialTheme.typography.labelSmall,
-                        colorProvider = { color },
+                        colorProvider = color,
                     )
                 }
             }

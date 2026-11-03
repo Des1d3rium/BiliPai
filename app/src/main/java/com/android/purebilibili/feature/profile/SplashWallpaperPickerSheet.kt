@@ -13,6 +13,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import com.android.purebilibili.core.ui.LocalComponentMotionEnabled
+import com.android.purebilibili.core.ui.LocalSystemReduceMotion
+import com.android.purebilibili.core.ui.components.appGentleActionClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -298,51 +304,19 @@ fun SplashWallpaperPickerSheet(
                             val imageUrl = resolveOfficialWallpaperThumbnailUrl(item)
                             val isSelected = selectedUrl == detailUrl
 
-                            Column(
-                                modifier = Modifier
-                                    .clickable { selectedUrl = detailUrl }
-                                    .animateContentSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                            WallpaperSelectionTile(
+                                isSelected = isSelected,
+                                onClick = { selectedUrl = detailUrl },
+                                title = item.title.ifEmpty { "未命名" },
                             ) {
-                                Box {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageUrl)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = item.title,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .aspectRatio(9f / 16f)
-                                            .clip(AppShapes.container(ContainerLevel.Chip))
-                                            .border(
-                                                width = if (isSelected) 2.dp else 0.dp,
-                                                color = if (isSelected) AppContentColors.accent() else Color.Transparent,
-                                                shape = AppShapes.container(ContainerLevel.Chip)
-                                            )
-                                    )
-
-                                    if (isSelected) {
-                                        AppIcon(
-                                            imageVector = rememberAppCheckCircleIcon(),
-                                            contentDescription = null,
-                                            tint = AppContentColors.accent(),
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(20.dp)
-                                                .background(Color.White, CircleShape)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                AppText(
-                                    text = item.title.ifEmpty { "未命名" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    color = if (isSelected) AppContentColors.accent() else AppContentColors.primaryText()
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(imageUrl)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = item.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                             }
                         }
@@ -525,67 +499,84 @@ fun SplashWallpaperPickerSheet(
 @Composable
 private fun SplashCustomWallpaperTile(
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val photoIcon = rememberAppPhotoIcon()
+    val motionEnabled = LocalComponentMotionEnabled.current && !LocalSystemReduceMotion.current
+    val contentColor by animateColorAsState(
+        targetValue = if (isSelected) AppContentColors.accent() else AppContentColors.secondaryText(),
+        animationSpec = tween(if (motionEnabled) 150 else 0),
+        label = "customWallpaperContent",
+    )
+    WallpaperSelectionTile(
+        isSelected = isSelected,
+        onClick = onClick,
+        title = "从相册选择",
+        modifier = modifier,
+        unselectedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AppIcon(photoIcon, contentDescription = null, tint = contentColor, modifier = Modifier.size(28.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            AppText("相册", style = MaterialTheme.typography.labelMedium, color = contentColor)
+        }
+    }
+}
+
+/** 相册与官方壁纸共用选中反馈，不改变缩略图尺寸和网格测量。 */
+@Composable
+private fun WallpaperSelectionTile(
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    title: String,
+    modifier: Modifier = Modifier,
+    unselectedBorderColor: Color = Color.Transparent,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val shape = AppShapes.container(ContainerLevel.Chip)
+    val motionEnabled = LocalComponentMotionEnabled.current && !LocalSystemReduceMotion.current
+    val duration = if (motionEnabled) 150 else 0
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) AppContentColors.accent() else unselectedBorderColor,
+        animationSpec = tween(duration),
+        label = "wallpaperSelectionBorder",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = if (isSelected) AppContentColors.accent() else AppContentColors.primaryText(),
+        animationSpec = tween(duration),
+        label = "wallpaperSelectionTitle",
+    )
     Column(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .animateContentSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier
+            .semantics { selected = isSelected }
+            .appGentleActionClickable(shape = shape, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
                 .aspectRatio(9f / 16f)
-                .clip(AppShapes.container(ContainerLevel.Chip))
+                .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .border(
-                    width = if (isSelected) 2.dp else 1.dp,
-                    color = if (isSelected) {
-                        AppContentColors.accent()
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant
-                    },
-                    shape = AppShapes.container(ContainerLevel.Chip)
-                ),
-            contentAlignment = Alignment.Center
+                .border(if (isSelected) 2.dp else 1.dp, borderColor, shape),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                AppIcon(
-                    photoIcon,
-                    contentDescription = null,
-                    tint = if (isSelected) AppContentColors.accent() else AppContentColors.secondaryText(),
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                AppText(
-                    text = "相册",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isSelected) AppContentColors.accent() else AppContentColors.secondaryText()
-                )
-            }
-
-            if (isSelected) {
+            content()
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSelected,
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                enter = fadeIn(tween(duration)) + scaleIn(tween(duration), initialScale = if (motionEnabled) 0.85f else 1f),
+                exit = fadeOut(tween(duration)),
+            ) {
                 AppIcon(
                     imageVector = rememberAppCheckCircleIcon(),
                     contentDescription = null,
                     tint = AppContentColors.accent(),
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(20.dp)
-                        .background(Color.White, CircleShape)
+                    modifier = Modifier.size(20.dp).background(Color.White, CircleShape),
                 )
             }
         }
-
         Spacer(modifier = Modifier.height(6.dp))
-
-        AppText(
-            text = "从相册选择",
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            color = if (isSelected) AppContentColors.accent() else AppContentColors.primaryText()
-        )
+        AppText(title, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = titleColor)
     }
 }

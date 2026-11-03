@@ -4,9 +4,6 @@ import androidx.compose.foundation.combinedClickable
 import com.android.purebilibili.core.ui.components.appActionWithFeedback
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,20 +61,48 @@ internal fun Modifier.playerActionBounds(onBounds: (IntRect) -> Unit): Modifier 
 internal fun PiliPlayerBar(
     modifier: Modifier = Modifier,
     groupGlassControls: Boolean = false,
+    distributeActions: Boolean = false,
     left: @Composable () -> Unit,
     right: @Composable () -> Unit,
 ) {
     val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     val spacing = if (glass) 4.dp else 0.dp
     Layout(content = {
-        PlayerControlGlassGroup(enabled = groupGlassControls) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { left() }
-        }
-        PlayerControlGlassGroup(enabled = groupGlassControls) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { right() }
+        if (distributeActions) {
+            left()
+            right()
+        } else {
+            PlayerControlGlassGroup(enabled = groupGlassControls) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { left() }
+            }
+            PlayerControlGlassGroup(enabled = groupGlassControls) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) { right() }
+            }
         }
     }, modifier = modifier) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
+        if (distributeActions) {
+            // 内嵌底栏按每个实际按钮分配空隙；玻璃与原生保持相同的排列规则。
+            // 拥挤时延续整体缩放，避免按钮重叠或移出视口。
+            val actions = measurables.map { it.measure(loose) }
+            val totalWidth = actions.sumOf { it.width }
+            val width = constraints.maxWidth
+            val scale = if (totalWidth > width) width.toFloat() / totalWidth else 1f
+            val height = constraints.constrainHeight(actions.maxOf { it.height })
+            val gap = if (actions.size > 1) (width - totalWidth * scale) / (actions.size - 1) else 0f
+            return@Layout layout(width, height) {
+                var x = 0f
+                actions.forEach { action ->
+                    val y = ((height - action.height * scale) / 2f).roundToInt()
+                    action.placeWithLayer(x.roundToInt(), y) {
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
+                    x += action.width * scale + gap
+                }
+            }
+        }
         val leftGroup = measurables[0].measure(loose)
         val rightGroup = measurables[1].measure(loose)
         val totalWidth = leftGroup.width + rightGroup.width
@@ -101,24 +126,6 @@ internal fun PiliPlayerBar(
     }
 }
 
-@Composable
-internal fun PlayerPlayPauseButton(
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-    sizeDp: Int = 42,
-    iconSizeDp: Int = 20,
-    height: Dp = PILI_PLAYER_BOTTOM_ROW_HEIGHT_DP.dp,
-) {
-    PlayerControlIconAction(
-        icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-        description = if (isPlaying) "暂停" else "播放",
-        width = sizeDp.dp,
-        height = height,
-        iconSize = iconSizeDp.dp,
-        modifier = Modifier.testTag("player_play_pause"),
-        onClick = onClick,
-    )
-}
 
 @Composable
 internal fun PlayerControlIconAction(
@@ -132,12 +139,14 @@ internal fun PlayerControlIconAction(
     dimmed: Boolean = false,
     iconSize: Dp = 22.dp,
     onLongClick: (() -> Unit)? = null,
+    selectedTint: Color = Color.White,
 ) {
-    // Glass decorates this existing button only; it never changes its measured or touch bounds.
+    val glass = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+    // 玻璃单图标使用正圆；关闭玻璃时保留调用方原生槽位。
     PlayerControlGlassDock(
         enabled = true,
-        modifier = modifier.width(width).height(height),
-        shape = if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) RoundedCornerShape(50) else RoundedCornerShape(8.dp),
+        modifier = modifier.then(if (glass) Modifier.size(PlayerGlassIconButtonSize) else Modifier.width(width).height(height)),
+        shape = if (glass) androidx.compose.foundation.shape.CircleShape else RoundedCornerShape(8.dp),
     ) {
         AppExactTouchTargets {
             Box(
@@ -150,7 +159,8 @@ internal fun PlayerControlIconAction(
                 AppIcon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = if (dimmed) 0.5f else 1f),
+                    tint = (if (selected) selectedTint else Color.White)
+                        .copy(alpha = if (dimmed) 0.5f else 1f),
                     modifier = Modifier.size(iconSize),
                 )
             }

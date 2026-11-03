@@ -68,7 +68,7 @@ class SeedColorSchemeTest {
     }
 
     @Test
-    fun nativeMiuixPaletteAlsoStaysStableWhenGlassIsToggled() {
+    fun nativeMiuixKeepsGeneratedAccentRolesWhenGlassIsToggled() {
         val base = createSeedColorScheme(seed, false, SeedPaletteStyle.Jolly)
         fun endpoint(glass: Boolean) = resolveAppThemeEndpointPalette(
             base = base,
@@ -79,8 +79,15 @@ class SeedColorSchemeTest {
             liquidGlassEnabled = glass,
             preserveGeneratedPalette = true,
         )
-        assertEquals(endpoint(false).material, endpoint(true).material)
-        assertEquals(endpoint(false).miuix, endpoint(true).miuix)
+        for (glass in listOf(false, true)) {
+            assertEquals(base.primary, endpoint(glass).miuix.primary)
+            assertEquals(base.onPrimary, endpoint(glass).miuix.onPrimary)
+            assertEquals(base.primaryContainer, endpoint(glass).miuix.primaryContainer)
+            assertEquals(base.onPrimaryContainer, endpoint(glass).miuix.onPrimaryContainer)
+            assertEquals(base.primary, endpoint(glass).material.primary)
+        }
+        assertEquals(base.surface, endpoint(false).miuix.surface)
+        assertEquals(base.surfaceContainer, endpoint(false).miuix.surfaceContainer)
     }
 
     @Test

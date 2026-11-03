@@ -3,7 +3,7 @@ package com.android.purebilibili.feature.video.ui.components
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.OutlinedButton
+import com.android.purebilibili.core.ui.components.AppOutlinedButton as OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier

@@ -94,4 +94,17 @@ class ContentSharePolicyTest {
         assertEquals(listOf(4097, 4098, 4101, 4100, 4099, 4099), listOf(1, 2, 3, 4, 5, 7).map(::bangumiDynamicType))
         assertNull(bangumiDynamicType(10))
     }
+
+    @Test
+    fun bangumiShareKeepsEpisodeIdentityAndOptionalPlaybackPosition() {
+        val payload = buildBangumiContentSharePayload(
+            epId = 99L, title = "剧集", cover = "cover", seasonType = 1,
+            positionMs = 125_600L, aid = 42L,
+        )
+        assertEquals("https://www.bilibili.com/bangumi/play/ep99", payload.url)
+        assertEquals("https://www.bilibili.com/bangumi/play/ep99?t=125.6", buildPositionShareUrl(payload.url, payload.positionMs))
+        assertEquals(99L, payload.resourceId)
+        assertEquals(42L, payload.replyOid)
+        assertEquals(4097, payload.dynamicType)
+    }
 }

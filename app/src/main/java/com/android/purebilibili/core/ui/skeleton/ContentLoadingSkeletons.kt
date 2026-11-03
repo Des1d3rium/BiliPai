@@ -1,10 +1,5 @@
 package com.android.purebilibili.core.ui.skeleton
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,20 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import com.android.purebilibili.core.ui.motion.AppMotionEasing
 import com.android.purebilibili.core.ui.components.AppLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import com.android.purebilibili.core.ui.components.AppLazyVerticalGrid as LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as lazyGridItems
 import androidx.compose.foundation.lazy.items as lazyListItems
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.State
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,67 +38,20 @@ import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 
-/**
- * 内容列表首屏骨架（视频网格 / 媒体行 / 用户行）。
- * 动画对齐首页推荐：柔和 alpha 脉冲，不用左右扫光 shimmer，避免闪烁。
- */
-
+/** 内容列表首屏骨架共用扫光状态，位置仅在绘制阶段读取。 */
 @Composable
-fun rememberContentSkeletonPulseState(): State<Float> {
-    if (!com.android.purebilibili.core.ui.rememberVisualWorkActive() ||
-        com.android.purebilibili.core.ui.motion.rememberSystemReduceMotion()) {
-        return rememberUpdatedState(0.5f)
-    }
-    if (com.android.purebilibili.core.ui.skeleton.rememberSkeletonBreathingEnabled()) {
-        return com.android.purebilibili.core.ui.skeleton.rememberGentleSkeletonPulse()
-    }
-    val transition = rememberInfiniteTransition(label = "contentSkeletonPulse")
-    val pulse = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = CONTENT_SKELETON_PULSE_DURATION_MILLIS,
-                easing = AppMotionEasing.M1Standard,
-            ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "contentSkeletonPulseAlpha",
-    )
-    return pulse
-}
+fun rememberContentSkeletonPulseState(): State<Float> = rememberSkeletonSweepState()
 
-/** Compatibility for callers whose value really participates in composition. */
-@Composable
-fun rememberContentSkeletonPulse(): Float = rememberContentSkeletonPulseState().value
-
-/** The State is read by ContentSkeletonBlock's draw callback, never by its parent list. */
 @Composable
 fun rememberContentSkeletonBlockColor(pulse: State<Float>): () -> Color {
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val onSurface = MaterialTheme.colorScheme.onSurface
     return remember(pulse, isDark, onSurface) {
-        {
-            val min = if (isDark) CONTENT_SKELETON_DARK_MIN_ALPHA else CONTENT_SKELETON_LIGHT_MIN_ALPHA
-            val max = if (isDark) CONTENT_SKELETON_DARK_MAX_ALPHA else CONTENT_SKELETON_LIGHT_MAX_ALPHA
-            onSurface.copy(alpha = min + (max - min) * pulse.value)
-        }
-    }
-}
-
-@Composable
-fun rememberContentSkeletonBlockColor(pulse: Float): Color {
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    return remember(pulse, isDark, onSurface) {
-        val alpha = if (isDark) {
-            CONTENT_SKELETON_DARK_MIN_ALPHA +
-                (CONTENT_SKELETON_DARK_MAX_ALPHA - CONTENT_SKELETON_DARK_MIN_ALPHA) * pulse
-        } else {
-            CONTENT_SKELETON_LIGHT_MIN_ALPHA +
-                (CONTENT_SKELETON_LIGHT_MAX_ALPHA - CONTENT_SKELETON_LIGHT_MIN_ALPHA) * pulse
-        }
-        onSurface.copy(alpha = alpha)
+        skeletonFill(
+            base = onSurface.copy(alpha = if (isDark) CONTENT_SKELETON_DARK_MIN_ALPHA else CONTENT_SKELETON_LIGHT_MAX_ALPHA),
+            highlight = onSurface.copy(alpha = if (isDark) CONTENT_SKELETON_DARK_MAX_ALPHA else CONTENT_SKELETON_LIGHT_MIN_ALPHA),
+            position = { pulse.value },
+        )
     }
 }
 
@@ -131,7 +74,7 @@ fun ContentSkeletonBlock(
     modifier: Modifier = Modifier,
     shape: Shape = AppShapes.container(ContainerLevel.Tag),
 ) {
-    Box(modifier = modifier.clip(shape).drawBehind { drawRect(color()) })
+    Box(modifier = modifier.clip(shape).skeletonBackground(color))
 }
 
 /** Keep the real font metrics and wrapping; paint one placeholder per measured text line. */
@@ -159,13 +102,13 @@ internal fun ContentSkeletonText(
             .drawWithContent {
                 // Measurements are written during layout and read only during drawing.
                 val layout = textLayout.value ?: return@drawWithContent
-                val color = colorProvider()
+                val brush = colorProvider.skeletonBrush(size)
                 for (line in 0 until layout.lineCount) {
                     val top = layout.getLineTop(line)
                     val bottom = layout.getLineBottom(line)
                     val inset = (bottom - top) * 0.18f
                     drawRoundRect(
-                        color = color,
+                        brush = brush,
                         topLeft = androidx.compose.ui.geometry.Offset(layout.getLineLeft(line), top + inset),
                         size = androidx.compose.ui.geometry.Size(
                             (layout.getLineRight(line) - layout.getLineLeft(line)).coerceAtLeast(0f),
@@ -382,10 +325,10 @@ fun UserListRowSkeleton(
 }
 
 /**
- * 通用静态骨架色块（不参与呼吸动画）。
+ * 通用静态骨架色块（不参与扫光动画）。
  *
- * 与 [rememberContentSkeletonPulse] 的脉冲色不同：凡是「骨架与真实内容共用同一个 LazyList、
- * 靠 item 身份原地替换」的页面，都应该用固定色。呼吸中的灰块与随后的内容淡入叠加，观感上
+ * 与 [rememberContentSkeletonPulseState] 的扫光不同：凡是「骨架与真实内容共用同一个 LazyList、
+ * 靠 item 身份原地替换」的页面，都应该用固定色。运动中的灰块与随后的内容淡入叠加，观感上
  * 就是「闪」；固定色只负责占位，切换时只剩「内容淡入」这一件事。
  */
 @Composable
@@ -726,7 +669,6 @@ fun TrendingListSkeleton(
     }
 }
 
-private const val CONTENT_SKELETON_PULSE_DURATION_MILLIS = 2_000
 private const val CONTENT_SKELETON_LIGHT_MIN_ALPHA = 0.06f
 private const val CONTENT_SKELETON_LIGHT_MAX_ALPHA = 0.11f
 private const val CONTENT_SKELETON_DARK_MIN_ALPHA = 0.10f

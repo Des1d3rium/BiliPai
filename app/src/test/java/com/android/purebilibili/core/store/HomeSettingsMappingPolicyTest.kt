@@ -359,6 +359,19 @@ class HomeSettingsMappingPolicyTest {
     }
 
     @Test
+    fun topOnlyCollapseMode_restoresSavedSelectionAndCollapsesBothRows() {
+        val prefs = mutablePreferencesOf(
+            intPreferencesKey("home_header_collapse_mode") to HomeHeaderCollapseMode.SHOW_AT_TOP_ONLY.value
+        )
+        val result = mapHomeSettingsFromPreferences(prefs)
+
+        assertEquals(HomeHeaderCollapseMode.SHOW_AT_TOP_ONLY, result.homeHeaderCollapseMode)
+        assertTrue(result.isHeaderCollapseEnabled)
+        assertTrue(result.homeHeaderCollapseMode.collapseSearch)
+        assertTrue(result.homeHeaderCollapseMode.collapseTabs)
+    }
+
+    @Test
     fun invalidHomeBarHideTypeFallsBackToSync() {
         val prefs = mutablePreferencesOf(
             intPreferencesKey("home_bar_hide_type") to 99
@@ -499,15 +512,6 @@ class HomeSettingsMappingPolicyTest {
 
         assertEquals(HomeDurationStyle.OVERLAY_TEXT_ONLY, explicit.homeDurationStyle)
         assertEquals(HomeFeedCardStyle.BILIPAI, explicit.homeFeedCardStyle)
-    }
-
-    @Test
-    fun normalizeHomeRefreshCount_clampsToSupportedRange() {
-        assertEquals(10, normalizeHomeRefreshCount(1))
-        assertEquals(30, normalizeHomeRefreshCount(30))
-        assertEquals(20, DEFAULT_HOME_REFRESH_COUNT)
-        assertEquals(30, MAX_HOME_REFRESH_COUNT)
-        assertEquals(30, normalizeHomeRefreshCount(999))
     }
 
     @Test

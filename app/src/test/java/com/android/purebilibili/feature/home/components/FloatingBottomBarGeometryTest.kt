@@ -9,6 +9,38 @@ import kotlin.test.assertTrue
 
 class FloatingBottomBarGeometryTest {
     @Test
+    fun navigationIndicatorGeometryUsesTheSameAxesAndInsetContour() {
+        val shellThickness = 64f
+        val slotExtent = 48f
+        val thickness = resolveFloatingDockIndicatorHeightDp(
+            requestedHeightDp = 56f,
+            tabWidthDp = slotExtent,
+            geometryMode = FloatingBottomBarGeometryMode.TopNavigation,
+            shellHeightDp = shellThickness,
+        )
+        assertEquals(56f, thickness)
+        assertEquals(4f, (shellThickness - thickness) / 2f)
+        assertEquals(24f, resolveFloatingDockIndicatorCornerRadiusDp(shellThickness, thickness, slotExtent))
+        assertEquals(28f, resolveFloatingDockIndicatorCornerRadiusDp(shellThickness, thickness, 80f))
+        val geometry = resolveFloatingDockIndicatorGeometry(
+            shellThickness, thickness, FloatingBottomBarGeometryMode.TopNavigation,
+        )
+        assertEquals(78f / 56f, geometry.pressedScale, 0.0001f)
+    }
+
+    @Test
+    fun chromaticBandFollowsExpansionAndReturnsThroughTheSameSizes() {
+        val scales = listOf(1f, 1.15f, 1.25f, 78f / 56f)
+        val bands = scales.map { resolveFloatingDockChromaticGapBand(56f, 64f, it) }
+        assertEquals(0f, bands.first())
+        assertTrue(bands.zipWithNext().all { (before, after) -> after >= before })
+        assertTrue(bands.last() > 0f)
+        assertEquals(bands.reversed(), scales.reversed().map {
+            resolveFloatingDockChromaticGapBand(56f, 64f, it)
+        })
+    }
+
+    @Test
     fun nativeForegroundStaysVisibleWhileGlassCaptureOwnsCoveredContent() {
         for (coverage in listOf(-0.2f, 0f, 0.5f, 1f, 1.2f)) {
             assertEquals(1f, resolveFloatingDockBaseContentAlpha(isLiquidGlass = false, coverage = coverage))

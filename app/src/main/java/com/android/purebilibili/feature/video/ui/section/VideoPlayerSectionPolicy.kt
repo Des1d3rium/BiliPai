@@ -555,73 +555,53 @@ internal fun resolveVideoPlayerDanmakuSettingsScope(
 }
 
 /**
- * Portrait-only surface mode for detail player danmaku.
- * Landscape fullscreen always stays on the video viewport so horizontal playback is unchanged.
+ * 官方全屏手势快进曲线：满屏宽度对应的跳转秒数，按时长分四段。
+ *
+ * 来源：官方客户端 PlayerSeekWidget3 的系数计算。短片一屏划完，长片按对数增长，
+ * 避免两小时的视频一屏只跳几秒。四段在 60s / 1380s / 2700s 处接续，是连续的。
+ *
+ *     时长 < 60s          → 满屏 = 全片
+ *     60s ~ 23min         → 100 - ((t-1380)/209)^2
+ *     23min ~ 45min       → 100 + ((t-1380)/295)^2
+ *     >= 45min            → 177 * atan((t-2700)/1000) + 120
+ *
+ * 实际系数：1min→60s，10min→86s，30min→102s，60min→250s，120min→359s。
  */
-internal fun shouldUseScreenTopDanmakuSurface(
-    portraitDisplayAreaMode: com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode,
-    isLandscapeFullscreen: Boolean
-): Boolean {
-    if (isLandscapeFullscreen) return false
-    return portraitDisplayAreaMode ==
-        com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode.SCREEN_TOP
-}
-
-internal fun resolveDanmakuLayerTopOffsetPx(
-    isFullscreen: Boolean,
-    statusBarHeightPx: Int,
-    useScreenTopSurface: Boolean = false
-): Int {
-    // Screen-top mode can sit under status bar when chrome is hidden; keep a small inset.
-    if (useScreenTopSurface && isFullscreen) {
-        return statusBarHeightPx.coerceAtLeast(0)
+internal fun resolveOfficialSwipeSeekSecondsPerScreen(durationMs: Long): Float {
+    if (durationMs <= 0L) return 0f
+    val seconds = durationMs / 1000.0
+    return when {
+        seconds < 60.0 -> seconds.toFloat()
+        seconds < 1380.0 -> {
+            val offset = (seconds - 1380.0) / 209.0
+            (100.0 - offset * offset).toFloat()
+        }
+        seconds < 2700.0 -> {
+            val offset = (seconds - 1380.0) / 295.0
+            (100.0 + offset * offset).toFloat()
+        }
+        else -> (177.0 * kotlin.math.atan((seconds - 2700.0) / 1000.0) + 120.0).toFloat()
     }
-    return 0
 }
 
 internal fun resolveHorizontalSeekDeltaMs(
-    isFullscreen: Boolean,
-    fullscreenSwipeSeekEnabled: Boolean,
     totalDragDistanceX: Float,
     containerWidthPx: Float,
-    fullscreenSwipeSeekSeconds: Int?,
-    inlineSwipeSeekSeconds: Int,
     gestureSensitivity: Float,
     durationMs: Long,
-    useRelativeDuration: Boolean,
-    relativeSeekPercent: Int
 ): Long? {
     if (containerWidthPx <= 0f || !containerWidthPx.isFinite()) return null
-    // Surface drags share this policy across all player/material variants; sliders stay absolute.
-    // Relative mode uses a full viewport width, independently of the fixed half-width range.
-    if (useRelativeDuration) {
-        if (durationMs <= 0L) return null
-        val maxDeltaMs = (durationMs * (relativeSeekPercent.coerceIn(1, 100) / 100.0)).toLong()
-        val rawDeltaMs = (
-            totalDragDistanceX.toDouble() / containerWidthPx * maxDeltaMs * gestureSensitivity
-        ).toLong()
-        return rawDeltaMs.coerceIn(-maxDeltaMs, maxDeltaMs)
-    }
-    if (isFullscreen && fullscreenSwipeSeekEnabled) {
-        val seekSeconds = fullscreenSwipeSeekSeconds ?: return null
-        if (seekSeconds == 0) return (totalDragDistanceX * 200f * gestureSensitivity).toLong()
-        return resolveConfiguredSeekDeltaMs(
-            totalDragDistanceX = totalDragDistanceX,
-            containerWidthPx = containerWidthPx,
-            seekSeconds = seekSeconds.coerceAtLeast(1),
-            gestureSensitivity = gestureSensitivity
-        )
-    }
-    if (!isFullscreen) {
-        if (inlineSwipeSeekSeconds == 0) return (totalDragDistanceX * 200f * gestureSensitivity).toLong()
-        return resolveConfiguredSeekDeltaMs(
-            totalDragDistanceX = totalDragDistanceX,
-            containerWidthPx = containerWidthPx,
-            seekSeconds = inlineSwipeSeekSeconds.coerceIn(1, 120),
-            gestureSensitivity = gestureSensitivity
-        )
-    }
-    return (totalDragDistanceX * 200f * gestureSensitivity).toLong()
+    if (durationMs <= 0L) return null
+    // 对齐官方：满屏宽度 = resolveOfficialSwipeSeekSecondsPerScreen(duration) 秒。
+    // 手势灵敏度作为最终乘数保留（官方没有这个设置，但不影响曲线形状）。
+    val secondsPerScreen = resolveOfficialSwipeSeekSecondsPerScreen(durationMs)
+    if (secondsPerScreen <= 0f) return null
+    val maxDeltaMs = (durationMs.toDouble()).coerceAtLeast(1.0)
+    val rawDeltaMs = (
+        totalDragDistanceX.toDouble() / containerWidthPx *
+            secondsPerScreen * 1000.0 * gestureSensitivity
+    ).toLong()
+    return rawDeltaMs.coerceIn(-maxDeltaMs.toLong(), maxDeltaMs.toLong())
 }
 
 internal const val VIDEO_PLAYER_HORIZONTAL_SEEK_DOMINANCE_RATIO = 1.2f
@@ -756,6 +736,18 @@ internal fun shouldEnterPortraitFullscreenFromSwipe(
     isFullscreen: Boolean,
     isVerticalVideo: Boolean,
 ): Boolean = !isFullscreen && isVerticalVideo
+
+/** 竖向意图明确后在拖动中提交进入，同一次手势只触发一次。 */
+internal fun shouldTriggerPortraitFullscreenDuringDrag(
+    isFullscreen: Boolean,
+    isVerticalVideo: Boolean,
+    reverseGesture: Boolean,
+    totalDragDistanceX: Float,
+    totalDragDistanceY: Float,
+    thresholdPx: Float,
+): Boolean = shouldEnterPortraitFullscreenFromSwipe(isFullscreen, isVerticalVideo) &&
+    kotlin.math.abs(totalDragDistanceY) > kotlin.math.abs(totalDragDistanceX) * 3f &&
+    shouldTriggerFullscreenBySwipe(isFullscreen, reverseGesture, totalDragDistanceY, thresholdPx)
 
 internal fun shouldAllowPlaybackStateAutoFullscreen(
     hasValidWindow: Boolean,
@@ -1182,18 +1174,6 @@ internal fun shouldForceCoverDuringReturnAnimation(
 }
 
 /**
- * 卡片进入详情时保留来源封面，竖向视频也必须等首帧再交接。
- * 无卡片来源的竖屏入口保留原有起播方式；返回转场仍允许封面承接。
- */
-internal fun shouldLoadVideoPlayerCoverImage(
-    isVerticalVideo: Boolean,
-    forceCoverDuringReturnAnimation: Boolean,
-    hasSharedCardTransition: Boolean = false,
-): Boolean {
-    return hasSharedCardTransition || forceCoverDuringReturnAnimation || !isVerticalVideo
-}
-
-/**
  * 即播路径的封面是透明 TextureView 下的底图，不能持续压在视频帧上；
  * CoverFirst 与返回则继续由封面承担最上层交互/共享 morph。
  */
@@ -1252,7 +1232,8 @@ internal fun shouldFinishVideoPlayerSurfaceReveal(
     hasStartedSmoothReveal: Boolean,
     isPlayerSurfaceReady: Boolean,
     surfaceAlpha: Float,
-): Boolean = hasStartedSmoothReveal && isPlayerSurfaceReady && surfaceAlpha == 1f
+): Boolean = hasStartedSmoothReveal && isPlayerSurfaceReady &&
+    surfaceAlpha == 1f
 
 /** 揭开叠化起点（progress=0）封面的降饱和程度；1.0 为完全不动。 */
 private const val VIDEO_PLAYER_COVER_REVEAL_MIN_SATURATION = 0.90f
@@ -1386,10 +1367,10 @@ internal fun resolveVideoPlayerEntryPresentationSpec(
         fillCoverViewport = fillCoverViewport,
         showManualStartPlayButton = shouldKeepCoverForManualStart,
         enableManualStartCoverOverlay = shouldKeepCoverForManualStart,
-        // Inline landscape-video covers fill the shared 16:9 placeholder. Fullscreen
-        // and vertical-video covers retain their existing fit behavior.
-        coverContentScaleMode = if ((!isVerticalVideo && !forceCoverDuringReturnAnimation && targetFillsViewport) ||
-            (fillCoverViewport && isVerticalVideo)
+        // 竖屏加载封面按比例裁剪填满当前播放区域，避免横向缩略图居中造成横屏闪现。
+        // 横屏全屏继续完整显示封面；返回封面沿用来源卡片的裁剪规则。
+        coverContentScaleMode = if (
+            !isVerticalVideo && !forceCoverDuringReturnAnimation && targetFillsViewport
         ) {
             VideoPlayerCoverContentScaleMode.Fit
         } else {
@@ -1674,11 +1655,20 @@ internal fun shouldBindInlinePlayerViewToPlayer(
     isPortraitFullscreen: Boolean,
     hostLifecycleStarted: Boolean,
     isInPipMode: Boolean,
-    liveBackPreview: Boolean = false
+    liveBackPreview: Boolean = false,
+    retainBoundSurfaceForReturn: Boolean = false,
 ): Boolean {
     return !isPortraitFullscreen &&
-        (hostLifecycleStarted || isInPipMode || liveBackPreview)
+        (hostLifecycleStarted || isInPipMode || liveBackPreview || retainBoundSurfaceForReturn)
 }
+
+/** 仅延续前台退场 entry 已有的输出，不为隐藏页创建或抢占播放器绑定。 */
+internal fun shouldRetainInlineSurfaceForCardReturn(
+    cardMorphEnabled: Boolean,
+    entryRemoving: Boolean,
+    windowStarted: Boolean,
+    hasBoundPlayer: Boolean,
+): Boolean = cardMorphEnabled && entryRemoving && windowStarted && hasBoundPlayer
 
 /**
  * 退出竖屏全屏后，是否需要为保留的内联 PlayerView 显式重绑 surface。

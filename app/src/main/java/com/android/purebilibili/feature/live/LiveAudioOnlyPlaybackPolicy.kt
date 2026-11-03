@@ -21,8 +21,9 @@ internal fun shouldUseTextureSurfaceForLivePlayer(
     hasAnimatedVisibilityScope: Boolean,
     requiresHdrSurfaceOutput: Boolean = false,
     preferCompatibleTextureSurface: Boolean = com.android.purebilibili.core.util.prefersTextureVideoSurface(),
+    hasContainerTransition: Boolean = false,
 ): Boolean {
-    return !requiresHdrSurfaceOutput && (preferCompatibleTextureSurface ||
+    return !requiresHdrSurfaceOutput && (preferCompatibleTextureSurface || hasContainerTransition ||
         (hasSharedTransitionScope && hasAnimatedVisibilityScope))
 }
 

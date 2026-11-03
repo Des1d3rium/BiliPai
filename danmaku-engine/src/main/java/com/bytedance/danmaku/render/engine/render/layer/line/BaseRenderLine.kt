@@ -103,7 +103,7 @@ abstract class BaseRenderLine(private val mController: DanmakuController,
             MotionEvent.ACTION_DOWN -> {
                 mCurrentTouchItem = null
                 mDrawingItems.asReversed().forEach { item ->
-                    if (item.containsX(event.x)) {
+                    if (item.containsX(event.x) && event.y >= item.y && event.y <= item.y + item.height) {
                         mCurrentTouchItem = item
                         return true
                     }
@@ -159,6 +159,7 @@ abstract class BaseRenderLine(private val mController: DanmakuController,
     private fun pauseItem(data: DanmakuData) {
         mDrawingItems.forEach { item ->
             if (item.data == data) {
+                item.lastRenderTimeMs = mController.renderTimeMs
                 item.isPaused = true
             }
         }
@@ -167,6 +168,7 @@ abstract class BaseRenderLine(private val mController: DanmakuController,
     private fun resumeItem(data: DanmakuData) {
         mDrawingItems.forEach { item ->
             if (item.data == data) {
+                item.lastRenderTimeMs = mController.renderTimeMs
                 item.isPaused = false
             }
         }

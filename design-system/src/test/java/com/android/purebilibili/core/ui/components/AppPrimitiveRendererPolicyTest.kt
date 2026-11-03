@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class AppPrimitiveRendererPolicyTest {
 
     @Test
-    fun outlinedTextFieldUsesMiuixUnlessPrefixOrSuffixIsPresent() {
+    fun outlinedTextFieldKeepsMiuixWithPrefixOrSuffix() {
         assertTrue(
             shouldUseMiuixOutlinedTextField(
                 uiStyle = AppUiStyle.MIUIX,
@@ -18,13 +18,16 @@ class AppPrimitiveRendererPolicyTest {
                 hasSuffix = false,
             )
         )
-        assertFalse(
+        assertTrue(
             shouldUseMiuixOutlinedTextField(
                 uiStyle = AppUiStyle.MIUIX,
                 hasPrefix = true,
                 hasSuffix = false,
             )
         )
+        assertTrue(shouldUseMiuixOutlinedTextField(AppUiStyle.MIUIX, hasPrefix = true, hasSuffix = true))
+        assertFalse(shouldUseMiuixOutlinedTextField(AppUiStyle.MIUIX, hasPrefix = true, hasSuffix = false, liquidGlassEnabled = true))
+        assertTrue(shouldUseMiuixOutlinedTextField(AppUiStyle.MIUIX, hasPrefix = false, hasSuffix = false, liquidGlassEnabled = true))
         assertFalse(
             shouldUseMiuixOutlinedTextField(
                 uiStyle = AppUiStyle.MATERIAL3,

@@ -142,7 +142,7 @@ fun DynamicCommentOverlayHost(
             onRefresh = viewModel::refreshComments,
             onSortModeChange = { viewModel.setDynamicCommentSortMode(it) },
             onOpenComposer = viewModel::openCommentComposer,
-            onViewReplies = { reply -> viewModel.openSubReply(reply) },
+            onViewReplies = viewModel::openSubReply,
             onReply = { reply -> viewModel.startCommentReply(reply) },
             onLike = { reply -> viewModel.likeComment(reply.rpid) },
             onHate = { reply ->
@@ -226,7 +226,7 @@ fun DynamicCommentSheet(
     onRefresh: () -> Unit,
     onSortModeChange: (CommentSortMode) -> Unit = {},
     onOpenComposer: () -> Unit,
-    onViewReplies: (ReplyItem) -> Unit = {},
+    onViewReplies: (ReplyItem, Long) -> Unit = { _, _ -> },
     onReply: (ReplyItem) -> Unit = {},
     onLike: (ReplyItem) -> Unit = {},
     onHate: (ReplyItem) -> Unit = {},
@@ -541,8 +541,8 @@ fun DynamicCommentSheet(
                                             avatarListState = listState.takeIf { avatarPushEnabled },
                                             item = reply,
                                             upMid = dynamicAuthorMid,
-                                            onClick = { onViewReplies(reply) },
-                                            onSubClick = { root, _ -> onViewReplies(root) },
+                                            onClick = { onViewReplies(reply, 0L) },
+                                            onSubClick = onViewReplies,
                                             onReplyClick = { onReply(reply) },
                                             onLikeClick = { onLike(reply) },
                                             isLiked = isDynamicCommentLiked(reply),
@@ -581,8 +581,7 @@ fun DynamicCommentSheet(
                 }
                 }
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = hostContent == DynamicCommentSheetHostContent.THREAD_DETAIL &&
-                        subReplyState.rootReply != null,
+                    visible = hostContent == DynamicCommentSheetHostContent.THREAD_DETAIL,
                     enter = threadSheetMotion.contentEnter,
                     exit = if (threadBackCompleted) androidx.compose.animation.ExitTransition.None else threadSheetMotion.contentExit,
                 ) {
@@ -638,6 +637,13 @@ fun DynamicCommentSheet(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
+                    } else {
+                        com.android.purebilibili.feature.video.ui.components.SubReplyInitialContent(
+                            isLoading = subReplyState.isLoading,
+                            error = subReplyState.error,
+                            onRetry = onLoadMoreSubReplies,
+                            onDismiss = onCloseSubReply,
+                        )
                     }
                 }
                 }
@@ -732,11 +738,13 @@ fun DynamicInlineCommentHeader(
 ) {
     val sortModes = remember { listOf(CommentSortMode.HOT, CommentSortMode.NEWEST) }
     val sortModeLabels = remember(sortModes) { sortModes.map { it.label } }
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = AppSpacingTokens.Large, vertical = AppSpacingTokens.Medium),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.Small),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         Column {
             AppText(
@@ -755,25 +763,17 @@ fun DynamicInlineCommentHeader(
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            DynamicCommentSortControl(
-                items = sortModeLabels,
-                selectedIndex = sortModes.indexOf(sortMode).coerceAtLeast(0),
-                onSelected = { index ->
-                    sortModes.getOrNull(index)?.let(onSortModeChange)
-                },
-                modifier = Modifier.align(Alignment.CenterEnd),
-                // Null deliberately selects the shared control's mounted local source. Do not
-                // manufacture an unrecorded Backdrop here or sample the LazyColumn containing
-                // this header, which would be invalid/recursive on Xiaomi's native renderer.
-                miuixBackdrop = miuixBackdrop,
-            )
-        }
+        DynamicCommentSortControl(
+            items = sortModeLabels,
+            selectedIndex = sortModes.indexOf(sortMode).coerceAtLeast(0),
+            onSelected = { index ->
+                sortModes.getOrNull(index)?.let(onSortModeChange)
+            },
+            // Null deliberately selects the shared control's mounted local source. Do not
+            // manufacture an unrecorded Backdrop here or sample the LazyColumn containing
+            // this header, which would be invalid/recursive on Xiaomi's native renderer.
+            miuixBackdrop = miuixBackdrop,
+        )
     }
     AppHorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
@@ -831,7 +831,7 @@ fun LazyListScope.dynamicInlineCommentItems(
     comments: List<ReplyItem>,
     isLoading: Boolean,
     isLoadingMore: Boolean,
-    onViewReplies: (ReplyItem) -> Unit,
+    onViewReplies: (ReplyItem, Long) -> Unit,
     onReply: (ReplyItem) -> Unit = {},
     onLike: (ReplyItem) -> Unit = {},
     onHate: (ReplyItem) -> Unit = {},
@@ -878,8 +878,8 @@ fun LazyListScope.dynamicInlineCommentItems(
                 avatarListState = avatarListState,
                 item = reply,
                 upMid = dynamicAuthorMid,
-                onClick = { onViewReplies(reply) },
-                onSubClick = { root, _ -> onViewReplies(root) },
+                onClick = { onViewReplies(reply, 0L) },
+                onSubClick = onViewReplies,
                 onReplyClick = { onReply(reply) },
                 onLikeClick = { onLike(reply) },
                 isLiked = isDynamicCommentLiked(reply),

@@ -56,7 +56,9 @@ object ExternalPlaylistRepository {
         val title: String,
         val cover: String = "",
         val author: String = "",
-        val durationSec: Long = 0L
+        val durationSec: Long = 0L,
+        /** 搜索结果中的 aid，收藏到 B 站收藏夹时使用；旧断点可能为 0。 */
+        val aid: Long = 0L,
     )
 
     data class MatchOutcome(
@@ -451,7 +453,8 @@ object ExternalPlaylistRepository {
                     title = it.title,
                     cover = it.pic,
                     author = it.owner.name,
-                    durationSec = it.duration.toLong()
+                    durationSec = it.duration.toLong(),
+                    aid = it.id,
                 )
             }
         }.getOrNull()

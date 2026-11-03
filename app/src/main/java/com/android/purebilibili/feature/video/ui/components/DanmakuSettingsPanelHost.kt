@@ -27,6 +27,8 @@ internal fun DanmakuSettingsPanelHost(
     layoutPolicy: DanmakuSettingsPanelLayoutPolicy,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    source: com.android.purebilibili.core.ui.components.AppGlassMenuSource? =
+        com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource.current,
     content: @Composable (requestDismiss: () -> Unit) -> Unit,
 ) {
     // 玻璃只替换容器与开合动画，设置内容、回调和原生布局策略共用。
@@ -34,7 +36,8 @@ internal fun DanmakuSettingsPanelHost(
             expanded = true,
             onDismissRequest = onDismiss,
             title = "弹幕设置",
-            placement = if (com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource.current?.isAvailable == true) {
+            source = source,
+            placement = if (source?.isAvailable == true) {
                 com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.ANCHOR_END
             } else if (isFullscreen) com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.END
             else com.android.purebilibili.core.ui.components.AppGlassMenuPlacement.CENTER,

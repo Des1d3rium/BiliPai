@@ -615,12 +615,13 @@ private fun VideoNotePanelTab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val nativeNavigation = com.android.purebilibili.core.ui.AppInteractionColors.nativeNavigation()
     Box(
         modifier = modifier
             .heightIn(min = 36.dp)
             .clip(VideoDetailShapes.field())
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
+                if (selected) nativeNavigation?.selectedContainer ?: MaterialTheme.colorScheme.primaryContainer
                 else Color.Transparent
             )
             .clickable(onClick = onClick),
@@ -629,7 +630,7 @@ private fun VideoNotePanelTab(
         AppText(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            color = if (selected) nativeNavigation?.selectedContent ?: MaterialTheme.colorScheme.onPrimaryContainer
             else AppContentColors.secondaryText(),
         )
     }

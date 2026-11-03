@@ -425,7 +425,7 @@ fun <T> AppNativeTabRow(
     selectedValue: T,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    centerContent: Boolean = false,
+    centerContent: Boolean = com.android.purebilibili.core.ui.isMiuixNonGlassEnabled(),
     scrollable: Boolean = false,
     forceEqualWidth: Boolean = false,
     minTabWidth: Dp = 72.dp,
@@ -445,6 +445,7 @@ fun <T> AppNativeTabRow(
     // an extra full-width dock behind the items. Callers that intentionally own
     // a track (for example a liquid-glass rail) can still opt in explicitly.
     drawMiuixNonGlassTrack: Boolean = false,
+    centerSelectedTab: Boolean = false,
     onSelectionChange: (T) -> Unit,
 ) {
     if (options.isEmpty()) return
@@ -540,6 +541,7 @@ fun <T> AppNativeTabRow(
             labelFontSize = labelFontSize,
             containerHorizontalPadding = containerHorizontalPadding,
             modifier = modifier,
+            centerSelectedTab = centerSelectedTab,
             onSelectionChange = onSelectionChange,
         )
         AppSegmentedRenderer.MIUIX -> AppMiuixTabRow(
@@ -574,6 +576,8 @@ fun <T> AppNativeTabRow(
             contentSizedNonGlassItems = useContentSizedMiuixItems,
             contentSizedNonGlassMaxItemWidth = contentSizedMiuixNonGlassMaxItemWidth,
             drawNonGlassTrack = drawMiuixNonGlassTrack,
+            stretchToFill = forceEqualWidth,
+            centerSelectedTab = centerSelectedTab,
             onSelectionChange = onSelectionChange,
         )
     }

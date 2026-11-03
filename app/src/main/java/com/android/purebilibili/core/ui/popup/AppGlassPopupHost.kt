@@ -31,6 +31,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import com.android.purebilibili.core.store.home.GlassMotionStyle
+import com.android.purebilibili.core.store.home.LiquidGlassSettingsStore
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -58,7 +62,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlurEffect
+import com.android.purebilibili.core.ui.transition.BlurRenderEffectCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Outline
@@ -103,6 +107,8 @@ import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import com.android.purebilibili.core.theme.AppUiStyle
+import com.android.purebilibili.core.theme.LocalAppUiStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -142,8 +148,13 @@ private val PopupScreenMargin = 16.dp
 /** 锚定菜单向上覆盖源控件的距离。 */
 private val PopupAnchorOverlap = 8.dp
 
-/** 锚定弹窗的最大宽度。 */
-private val PopupMaxWidth = 280.dp
+/** 玻璃弹窗的基础背景模糊，供同类浮层共用。 */
+internal val AppGlassPopupBackdropBlur = 12.dp
+
+/**
+ * 锚定弹窗的默认最大宽度：与原生菜单一致按窗口宽度自适应，
+ * 内容多宽就多宽，仅在超出窗口时钳制；调用方显式传入 maxWidth 时优先。
+ */
 private val PopupMinWidth = 160.dp
 
 /** 居中弹窗的最大宽度（与 AppSingleChoiceDialog 的 420dp 策略一致）。 */
@@ -186,7 +197,15 @@ internal class PopupMorphState {
         private set
     var interruptedClose = false
         private set
-    val openDuration: Float get() = if (openStartFrame == null) AppGlassPopupMotion.OpenSeconds else 0.25f
+    var motionStyle = GlassMotionStyle.STANDARD
+        private set
+    val openDuration: Float get() = if (motionStyle == GlassMotionStyle.ELASTIC) {
+        if (openStartFrame == null) ElasticPopupMotion.OpenSeconds else ElasticPopupMotion.RetargetSeconds
+    } else if (openStartFrame == null) AppGlassPopupMotion.OpenSeconds else 0.25f
+    val closeDuration: Float get() = if (motionStyle == GlassMotionStyle.ELASTIC && hasSourceControl) {
+        ElasticPopupMotion.CloseSeconds
+    } else AppGlassPopupMotion.closeDuration(hasSourceControl)
+    val interactionReadySeconds: Float get() = if (motionStyle == GlassMotionStyle.ELASTIC) 0.35f else openDuration
     var closeStartSeconds = AppGlassPopupMotion.OpenSeconds
         private set
     var session by mutableIntStateOf(0)
@@ -207,7 +226,8 @@ internal class PopupMorphState {
         return true
     }
 
-    fun beginOpen(sourceControl: Boolean) {
+    fun beginOpen(sourceControl: Boolean, style: GlassMotionStyle = GlassMotionStyle.STANDARD) {
+        motionStyle = style
         presentation++
         hasSourceControl = sourceControl
         elastic = PopupElasticMotion()
@@ -311,6 +331,10 @@ private fun AppGlassPopupContentHost(
             onHoverChanged = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
         )
     }
+    val context = LocalContext.current
+    val motionStyleFlow = remember(context) { LiquidGlassSettingsStore.observePopupMotionStyle(context) }
+    val motionStyle by motionStyleFlow.collectAsStateWithLifecycle(initialValue = GlassMotionStyle.STANDARD)
+    SideEffect { controller.preferredMotionStyle = motionStyle }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
     val parentExiting = com.android.purebilibili.core.ui.LocalAppDialogExitRunning.current
     val latestParentExiting by rememberUpdatedState(parentExiting)
@@ -336,6 +360,7 @@ private fun AppGlassPopupContentHost(
                     com.android.purebilibili.core.ui.components.LocalAppGlassMenuBackdrop provides null,
                     com.android.purebilibili.core.ui.components.LocalAppGlassMenuSource provides null,
                     com.android.purebilibili.core.ui.components.LocalAppGlassMenuScope provides null,
+                    com.android.purebilibili.core.ui.blur.LocalAppGlassContainer provides null,
                 ) {
                     AppGlassPopupHost(glassAvailable = true, tuning = tuning, content = content)
                 }
@@ -503,6 +528,8 @@ internal class AppGlassChoicePopupController(
         }
     }
 
+    var preferredMotionStyle = GlassMotionStyle.STANDARD
+
     fun show(request: AppSingleChoicePopupRequest, onSelect: (Any?) -> Unit) {
         val active = this.request
         if (active != null) {
@@ -526,7 +553,7 @@ internal class AppGlassChoicePopupController(
         // 居中交互面板可显式携带入口快照，位置仍居中，只让开合形变衔接真实入口。
         val sourceControl = (!request.centered || request.menu?.interactiveContent == true) &&
             request.sourceLayer != null && request.controlBoundsInWindow != null
-        morph.beginOpen(sourceControl)
+        morph.beginOpen(sourceControl, preferredMotionStyle)
         this.request = request
         if (sourceControl) request.onSourceVisibilityChange(false)
         request.carriedPress?.attach(object : AppSingleChoicePopupPress.Listener {
@@ -573,7 +600,7 @@ internal class AppGlassChoicePopupController(
 
     private fun driveElastic() {
         if (request == null || !morph.opening) return
-        val ready = morph.seconds >= morph.openDuration
+        val ready = morph.seconds >= morph.interactionReadySeconds
         val pressed = pressActive && elasticPressAllowed
         val pull = if (dragFeedbackEnabled && pressActive && (ready || elasticPressAllowed)) {
             if (boundaryPull) {
@@ -600,7 +627,7 @@ internal class AppGlassChoicePopupController(
             position.x.coerceIn(morph.card.left, morph.card.right),
             position.y.coerceIn(morph.card.top, morph.card.bottom),
         ) else position
-        elasticPressAllowed = allowGrowth && (carriedDrag || morph.seconds >= morph.openDuration)
+        elasticPressAllowed = allowGrowth && (carriedDrag || morph.seconds >= morph.interactionReadySeconds)
         pointer = position
         updateHover(feedback = feedback)
         driveElastic()
@@ -747,7 +774,7 @@ private fun AppGlassChoicePopupOverlay(
         if (session != morph.session || controller.request !== request) return@LaunchedEffect
         val durationScale = if (latestMotionReduced) 0f else currentCoroutineContext()[MotionDurationScale]?.scaleFactor ?: 1f
         val duration = if (morph.opening) morph.openDuration else
-            AppGlassPopupMotion.closeDuration(morph.hasSourceControl)
+            morph.closeDuration
         if (durationScale > 0f) {
             val start = withFrameNanos { it }
             while (true) {
@@ -787,7 +814,7 @@ private fun AppGlassChoicePopupOverlay(
             screenMarginPx = with(density) { PopupScreenMargin.roundToPx() },
             anchorOverlapPx = with(density) { PopupAnchorOverlap.roundToPx() },
             anchorMinWidthPx = with(density) { (request.menu?.minWidth ?: PopupMinWidth).roundToPx() },
-            anchorMaxWidthPx = with(density) { (request.menu?.maxWidth ?: PopupMaxWidth).roundToPx() },
+            anchorMaxWidthPx = request.menu?.maxWidth?.let { with(density) { it.roundToPx() } },
             centeredMaxWidthPx = with(density) { (request.menu?.maxWidth ?: CenteredPopupMaxWidth).roundToPx() },
         )
         var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -834,6 +861,7 @@ private fun AppGlassChoicePopupOverlay(
                 centered = request.centered,
                 placement = request.menu?.placement ?: AppGlassMenuPlacement.ANCHOR_END,
                 requestedMaxHeight = request.menu?.maxHeight?.let { with(density) { it.roundToPx() } },
+                useAvailableHeight = request.menu?.useAvailableHeight == true,
                 margins = margins,
             ) {
                 AppGlassChoicePopupCard(
@@ -848,13 +876,13 @@ private fun AppGlassChoicePopupOverlay(
     }
 }
 
-/** 卡片布局的定位输入（像素）。 */
+/** 卡片布局的定位输入（像素）；[anchorMaxWidthPx] 为调用方显式限制，null 表示按窗口宽度自适应。 */
 @Immutable
 private data class PopupPlacementMargins(
     val screenMarginPx: Int,
     val anchorOverlapPx: Int,
     val anchorMinWidthPx: Int,
-    val anchorMaxWidthPx: Int,
+    val anchorMaxWidthPx: Int?,
     val centeredMaxWidthPx: Int,
 )
 
@@ -867,6 +895,7 @@ private fun AppGlassChoicePopupPlacement(
     centered: Boolean,
     placement: AppGlassMenuPlacement,
     requestedMaxHeight: Int?,
+    useAvailableHeight: Boolean = false,
     margins: PopupPlacementMargins,
     content: @Composable () -> Unit,
 ) {
@@ -875,9 +904,13 @@ private fun AppGlassChoicePopupPlacement(
         val maxWidth = if (centered || anchor == null) {
             margins.centeredMaxWidthPx.coerceAtMost(constraints.maxWidth - margin * 2)
         } else {
-            margins.anchorMaxWidthPx.coerceAtMost(constraints.maxWidth - margin * 2)
+            // 与原生菜单一致：未显式限制时按内容自适应，仅受窗口宽度钳制。
+            (margins.anchorMaxWidthPx ?: constraints.maxWidth - margin * 2)
+                .coerceAtMost(constraints.maxWidth - margin * 2)
         }
-        val maxHeight = if (centered || anchor == null) {
+        val maxHeight = if (useAvailableHeight) {
+            constraints.maxHeight - margin * 2
+        } else if (centered || anchor == null) {
             (constraints.maxHeight * CenteredPopupMaxHeightFraction).toInt()
         } else {
             // 长菜单保留上下形变空间，正文在受限视口内滚动。
@@ -917,6 +950,8 @@ private fun PopupMorphState.frameAt(time: Float, radius: Float, density: Float):
     val start = openStartFrame?.takeUnless { it.rect.isEmpty }
     val close = closeStartFrame?.takeUnless { it.rect.isEmpty }
     val base = when {
+        motionStyle == GlassMotionStyle.ELASTIC && !card.isEmpty ->
+            ElasticPopupMotion.frame(this, time, radius, density)
         opening && start != null -> AppGlassPopupMotion.retarget(time, openDuration, start,
             previousFrame ?: start, sampleSeconds, AppGlassPopupFrame(card, radius, 1f, 1f, 0f))
         opening -> AppGlassPopupMotion.opening(time, card, anchor, radius, hasSourceControl, density)
@@ -985,6 +1020,36 @@ private data class PopupFrameShape(
     }
 }
 
+/** 只记录真实布局坐标；滚动位移还原成内容坐标，避免滚动时反复改变视口高度。 */
+private class WholeMenuItemViewport {
+    private var viewport: LayoutCoordinates? = null
+    private val rows = linkedMapOf<Any, LayoutCoordinates>()
+    var itemBottoms by mutableStateOf<List<Int>>(emptyList())
+        private set
+
+    fun register(key: Any, coordinates: LayoutCoordinates, scrollOffset: Int) {
+        rows[key] = coordinates
+        refresh(scrollOffset)
+    }
+
+    fun unregister(key: Any, scrollOffset: Int) {
+        rows.remove(key)
+        refresh(scrollOffset)
+    }
+
+    fun updateViewport(coordinates: LayoutCoordinates, scrollOffset: Int) {
+        viewport = coordinates
+        refresh(scrollOffset)
+    }
+
+    private fun refresh(scrollOffset: Int) {
+        val parent = viewport?.takeIf { it.isAttached } ?: return
+        itemBottoms = rows.values.filter { it.isAttached }.map { child ->
+            (parent.localPositionOf(child, Offset.Zero).y + child.size.height + scrollOffset).roundToInt()
+        }.distinct().sorted()
+    }
+}
+
 @Composable
 private fun AppGlassChoicePopupCard(
     request: AppSingleChoicePopupRequest,
@@ -994,24 +1059,37 @@ private fun AppGlassChoicePopupCard(
     controller: AppGlassChoicePopupController,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = request.menu?.darkTheme ?: isAppInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val density = LocalDensity.current
     val cornerRadiusPx = with(density) { PopupCornerRadius.toPx() }
     val densityScale = density.density
     val outlineCache = remember { PopupSurfaceOutlineCache() }
+    // 源控件与正文独立缓存；半径变化仍逐帧更新，不量化动画或更改采样边界。
+    val sourceBlurCache = remember(request) { BlurRenderEffectCache() }
+    val contentBlurCache = remember(request) { BlurRenderEffectCache() }
     val ownScrollState = remember(request) { androidx.compose.foundation.ScrollState(0) }
     val scrollState = request.menu?.scrollState ?: ownScrollState
+    val wholeItemViewport = remember(request) { WholeMenuItemViewport() }
+    val fitWholeItems = request.menu?.fitWholeItems == true && request.menu?.interactiveContent != true
+    val itemBottomPadding = with(density) { PopupItemInset.roundToPx() }
     // 只记录玻璃底层，排除正文与子控件，供内嵌标签栏采样，避免透出清晰的原始视频。
     val interactivePanel = request.menu?.interactiveContent == true
     val panelSurfaceSource = if (interactivePanel) rememberChromeBackdropSource() else null
     val contentBackdrop = panelSurfaceSource?.takeIf { it.isReady }?.backdrop ?: backdrop
-    val contentMenuScope = remember(controller, contentBackdrop) {
+    val contentMenuScope = remember(controller, contentBackdrop, wholeItemViewport, fitWholeItems, scrollState) {
         AppGlassMenuScope(
             pressedItem = controller.menuScope.pressedItem,
-            register = controller.menuScope.register,
-            unregister = controller.menuScope.unregister,
+            register = { key, coordinates, enabled, dismiss, action ->
+                controller.menuScope.register(key, coordinates, enabled, dismiss, action)
+                if (fitWholeItems) wholeItemViewport.register(key, coordinates, scrollState.value)
+            },
+            unregister = { key ->
+                controller.menuScope.unregister(key)
+                if (fitWholeItems) wholeItemViewport.unregister(key, scrollState.value)
+            },
             dispatch = controller.menuScope.dispatch,
             backdrop = contentBackdrop,
+            fitWholeItems = fitWholeItems,
         )
     }
     var selectedItemBounds by remember(request) { mutableStateOf<Rect?>(null) }
@@ -1026,6 +1104,13 @@ private fun AppGlassChoicePopupCard(
     val touchSlop = androidx.compose.ui.platform.LocalViewConfiguration.current.touchSlop
     val dragEnabled = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.globalDragFeedbackEnabled
     SideEffect { controller.configure(densityScale, cornerRadiusPx, touchSlop, dragEnabled) }
+    val sourceSnapshotAvailable = remember(request, morph) {
+        {
+            morph.hasSourceControl && request.sourceLayer?.isReleased == false &&
+                (request.menu?.sourceAvailable?.invoke() ?: true) &&
+                (request.menu?.sourceBounds?.invoke() ?: request.controlBoundsInWindow)?.isEmpty == false
+        }
+    }
     val materialLayer: GraphicsLayerScope.() -> Unit = remember(morph, cornerRadiusPx, densityScale) {
         { alpha = if (morph.card.isEmpty) 0f else morph.frame(cornerRadiusPx, densityScale).surfaceAlpha }
     }
@@ -1040,7 +1125,7 @@ private fun AppGlassChoicePopupCard(
     // 滑动触发预算降级时仍保留 backdrop 磨砂，不将玻璃切换为不透明底板。
     // 降级只减少采样半径并停用折射；配色与透明度在同一展示中保持一致。
     val blurRadiusPx = with(density) {
-        (if (lowBlurBudget) 6.dp else if (interactivePanel && !themeFrosted) 24.dp else 12.dp).toPx()
+        (if (lowBlurBudget) 6.dp else if (interactivePanel && !themeFrosted) 24.dp else AppGlassPopupBackdropBlur).toPx()
     }
     val refractionHeightPx = with(density) { (tuning.refractionHeight * MenuLensScale).dp.toPx() }
     val refractionAmountPx = with(density) { (tuning.refractionAmount * MenuLensScale).dp.toPx() }
@@ -1057,6 +1142,13 @@ private fun AppGlassChoicePopupCard(
         shouldDrawLens, isDark, interactivePanel, themeFrosted, morph, cornerRadiusPx, densityScale) {
         val block: BackdropEffectScope.() -> Unit = {
             val frame = morph.frame(cornerRadiusPx, densityScale)
+            val lensAmount = refractionAmountPx * (0.25f + 0.75f * (frame.lensProgress ?: frame.materialProgress))
+            // 联合轮廓的折射边距先于模糊确定，复用原先二次求值后的最终采样范围。
+            if (shouldDrawLens && !morph.card.isEmpty && !frame.rect.isEmpty &&
+                refractionHeightPx > 0f && lensAmount > 0f
+            ) {
+                padding = maxOf(padding, lensAmount)
+            }
             val frost = blurRadiusPx * (0.21f + 0.79f * frame.materialProgress)
             blur(frost, frost)
             colorControls(brightness = 0f,
@@ -1065,22 +1157,26 @@ private fun AppGlassChoicePopupCard(
                 frame = frame,
                 origin = glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft,
                 height = refractionHeightPx,
-                amount = refractionAmountPx * (0.25f + 0.75f * frame.materialProgress),
+                amount = lensAmount,
             )
         }
         block
     }
-    val onDrawSurface = remember(surfaceColor) {
-        val block: DrawScope.() -> Unit = { drawRect(surfaceColor) }
+    val onDrawSurface = remember(surfaceColor, morph, cornerRadiusPx, densityScale, sourceSnapshotAvailable) {
+        val block: DrawScope.() -> Unit = {
+            val ownership = popupMaterialOwnership(morph.frame(cornerRadiusPx, densityScale), sourceSnapshotAvailable())
+            drawRect(surfaceColor.copy(alpha = surfaceColor.alpha * ownership))
+        }
         block
     }
-    val onDrawRim = remember(morph, cornerRadiusPx, isDark, densityScale) {
+    val onDrawRim = remember(morph, cornerRadiusPx, isDark, densityScale, sourceSnapshotAvailable) {
         val block: DrawScope.() -> Unit = {
             val frame = morph.frame(cornerRadiusPx, densityScale)
             val origin = glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft
             val outline = outlineCache.outline(frame, origin, densityScale)
+            val ownership = popupMaterialOwnership(frame, sourceSnapshotAvailable())
             drawOutline(outline, (if (isDark) Color.White else Color.Black)
-                .copy(alpha = if (isDark) 0.12f else 0.14f), style = Stroke(0.7.dp.toPx()))
+                .copy(alpha = (if (isDark) 0.12f else 0.14f) * ownership), style = Stroke(0.7.dp.toPx()))
 
         }
         block
@@ -1088,6 +1184,16 @@ private fun AppGlassChoicePopupCard(
 
     Box(
         modifier = modifier
+            .layout { measurable, constraints ->
+                // 仅在布局阶段读取行边界；视口与滚动范围一起收紧，不靠绘制裁掉半行。
+                val height = if (fitWholeItems) resolveWholeMenuViewportHeight(
+                    constraints.maxHeight, wholeItemViewport.itemBottoms, itemBottomPadding,
+                ) else constraints.maxHeight
+                val placeable = measurable.measure(constraints.copy(
+                    minHeight = constraints.minHeight.coerceAtMost(height), maxHeight = height,
+                ))
+                layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+            }
             .onGloballyPositioned { coordinates ->
                 // 本层不挂动画矩阵，不能将缩放后的包围盒重新写回动画终点。
                 val origin = coordinates.positionInWindow()
@@ -1148,8 +1254,7 @@ private fun AppGlassChoicePopupCard(
                                 }
                                 if (!elasticActive) elasticActive = controller.beginPress(origin)
                                 if (elasticActive) {
-                                    val pull = overscroll - kotlin.math.sign(overscroll) * touchSlop
-                                    controller.movePress(origin + Offset(0f, pull), allowSelection = false, fromScrollBoundary = true)
+                                    controller.movePress(origin + Offset(0f, overscroll), allowSelection = false, fromScrollBoundary = true)
                                 }
                             }
                         } finally {
@@ -1160,6 +1265,10 @@ private fun AppGlassChoicePopupCard(
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // 滚动条独立接管右侧窄区域，避免拖动时触发菜单项或整块玻璃形变。
+                    if (scrollState.maxValue in 1 until Int.MAX_VALUE &&
+                        down.position.x >= size.width - 24.dp.toPx()
+                    ) return@awaitEachGesture
                     down.consume()
                     if (!controller.beginPress(
                             morph.card.topLeft + down.position,
@@ -1206,7 +1315,7 @@ private fun AppGlassChoicePopupCard(
                                 // 列表内位移不累积为拉伸量，否则到边界时形变早已饱和。
                                 edgePull = if (remaining == 0f) 0f else edgePull + remaining
                                 val beyondEdge = scrollGesture && kotlin.math.abs(edgePull) > touchSlop
-                                val pull = if (beyondEdge) edgePull - kotlin.math.sign(edgePull) * touchSlop else 0f
+                                val pull = if (beyondEdge) edgePull else 0f
                                 // 列表滚动不覆盖真实越界坐标：手指拖出面板后持续拉伸，
                                 // 即便该帧仍有滚动消费，也不能把形变重新归零。
                                 val outside = popupPullBeyondBounds(position, morph.card) != Offset.Zero
@@ -1227,21 +1336,14 @@ private fun AppGlassChoicePopupCard(
             },
     ) {
         // 光学范围固定覆盖卡片与源控件；只改变轮廓，采样不随卡片缩放。
-        Box(Modifier.matchParentSize().popupSurfaceEnvelope(morph, densityScale)
-            .graphicsLayer {
-                // 最终光学层显式按同帧轮廓裁切，拖动时磨砂、遮色和描边保留同一圆角。
-                clip = true
-                shape = PopupSurfaceShape(outlineCache.outline(
-                    morph.frame(cornerRadiusPx, densityScale),
-                    glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft,
-                    densityScale,
-                ))
-            }
-            .then(panelSurfaceSource?.modifier ?: Modifier)) {
+        // 阴影位于光学裁切之外，正文背景的捕获只包含下方材质层。
+        Box(Modifier.matchParentSize().popupSurfaceEnvelope(morph, densityScale)) {
             Box(
                 Modifier.matchParentSize().graphicsLayer {
                     val frame = morph.frame(cornerRadiusPx, densityScale)
-                    alpha = if (morph.card.isEmpty) 0f else frame.surfaceAlpha
+                    alpha = if (morph.card.isEmpty) 0f else frame.surfaceAlpha *
+                        popupMaterialOwnership(frame, sourceSnapshotAvailable())
+                    clip = false
                     shape = PopupSurfaceShape(outlineCache.outline(frame,
                         glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft, densityScale))
                     shadowElevation = 12.dp.toPx()
@@ -1250,38 +1352,51 @@ private fun AppGlassChoicePopupCard(
                 },
             )
             Box(
-                Modifier.matchParentSize().drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { PopupSurfaceShape(outlineCache.outline(morph.frame(cornerRadiusPx, densityScale),
-                        glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft, densityScale)) },
-                    effects = effects,
-                    highlight = null,
-                    onDrawFront = onDrawRim,
-                    layerBlock = materialLayer,
-                    onDrawSurface = onDrawSurface,
-                ),
+                Modifier.matchParentSize()
+                    .graphicsLayer {
+                        // 仅材质受联合轮廓裁切，避免磨砂、遮色和描边溢出到阴影区域。
+                        clip = true
+                        shape = PopupSurfaceShape(outlineCache.outline(
+                            morph.frame(cornerRadiusPx, densityScale),
+                            glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft,
+                            densityScale,
+                        ))
+                    }
+                    .then(panelSurfaceSource?.modifier ?: Modifier)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { PopupSurfaceShape(outlineCache.outline(morph.frame(cornerRadiusPx, densityScale),
+                            glassPopupSurfaceBounds(morph.card, morph.anchor, densityScale).topLeft, densityScale)) },
+                        effects = effects,
+                        highlight = null,
+                        onDrawFront = onDrawRim,
+                        layerBlock = materialLayer,
+                        onDrawSurface = onDrawSurface,
+                    ),
             )
         }
         val sourceLayer = request.sourceLayer?.takeUnless { it.isReleased }
         val sourceBounds = request.menu?.sourceBounds?.invoke() ?: request.controlBoundsInWindow
-        if (sourceLayer != null && sourceBounds != null && !request.centered) {
+        if (sourceLayer != null && sourceBounds != null && (!request.centered || interactivePanel)) {
             Canvas(
                 modifier = Modifier.matchParentSize().graphicsLayer {
                     val frame = morph.frame(cornerRadiusPx, densityScale)
                     val target = frame.sourceRect
                     transformOrigin = TransformOrigin(0f, 0f)
-                    if (target == null || sourceBounds.isEmpty || morph.card.isEmpty) {
+                    // 居中交互面板也要归还真实入口；源丢失后不继续重放旧快照。
+                    if (!sourceSnapshotAvailable() || target == null || sourceBounds.isEmpty || morph.card.isEmpty) {
                         alpha = 0f
+                        renderEffect = null
                     } else {
                         scaleX = target.width / sourceBounds.width
                         scaleY = target.height / sourceBounds.height
                         translationX = target.left - morph.card.left
                         translationY = target.top - morph.card.top
                         alpha = frame.sourceAlpha
-                        renderEffect = if (!lowBlurBudget && frame.sourceBlur > 0.1f) BlurEffect(frame.sourceBlur, frame.sourceBlur) else null
+                        renderEffect = if (!lowBlurBudget && frame.sourceBlur > 0.1f) sourceBlurCache.resolve(frame.sourceBlur) else null
                     }
                 },
-            ) { drawLayer(sourceLayer) }
+            ) { if (!sourceLayer.isReleased && sourceSnapshotAvailable()) drawLayer(sourceLayer) }
         }
         // 文字始终等比缩放，玻璃高度和圆角由独立轮廓驱动。
         Box(
@@ -1292,85 +1407,106 @@ private fun AppGlassChoicePopupCard(
                     val frame = morph.frame(cornerRadiusPx, densityScale)
                     shape = PopupFrameShape(frame, morph.card, true)
                     renderEffect = if (!lowBlurBudget && frame.contentBlur > 0.1f) {
-                        BlurEffect(frame.contentBlur, frame.contentBlur)
+                        contentBlurCache.resolve(frame.contentBlur)
                     } else null
-                }
-                .then(if (request.menu?.interactiveContent == true) Modifier else
-                    Modifier.verticalScroll(scrollState, enabled = scrollState.maxValue > 0)),
+                },
         ) {
-            // 次要文字按玻璃底色叠最差背景校正对比，主文字与状态色沿用原调色板。
-            com.android.purebilibili.core.ui.ProvideAppGlassPopupContentColors(
-                glassSurfaceColor = surfaceColor,
-            ) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .then(if (request.menu?.interactiveContent == true) Modifier.fillMaxWidth() else Modifier.width(IntrinsicSize.Max))
-                    .selectableGroup()
-                    .padding(PopupItemInset),
+                    .onGloballyPositioned {
+                        if (fitWholeItems) wholeItemViewport.updateViewport(it, scrollState.value)
+                    }
+                    .then(if (interactivePanel) Modifier else Modifier.verticalScroll(scrollState)),
             ) {
-                request.menu?.let { menu ->
-                    Box(menu.modifier) { menu.content(contentMenuScope) }
-                }
-                request.options.forEachIndexed { index, option ->
-                    val selected = option.value == request.selectedValue
-                    val pressedColor = AppContentColors.primaryText().copy(alpha = 0.12f)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned {
-                                controller.registerRow(index, it)
-                                if (selected) selectedItemBounds = Rect(it.positionInParent(),
-                                    Size(it.size.width.toFloat(), it.size.height.toFloat()))
+                // 次要文字按玻璃底色叠最差背景校正对比，主文字与状态色沿用原调色板。
+                com.android.purebilibili.core.ui.ProvideAppGlassPopupContentColors(
+                    glassSurfaceColor = surfaceColor,
+                ) {
+                Column(
+                    modifier = Modifier
+                        .then(if (request.menu?.interactiveContent == true) Modifier.fillMaxWidth() else Modifier.width(IntrinsicSize.Max))
+                        .selectableGroup()
+                        .padding(PopupItemInset)
+                        .then(if (!interactivePanel && request.menu?.showScrollbar == true) Modifier.padding(end = 12.dp) else Modifier),
+                ) {
+                    request.menu?.let { menu ->
+                        Box(menu.modifier) { menu.content(contentMenuScope) }
+                    }
+                    request.options.forEachIndexed { index, option ->
+                        val selected = option.value == request.selectedValue
+                        val pressedColor = AppContentColors.primaryText().copy(alpha = 0.12f)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned {
+                                    controller.registerRow(index, it)
+                                    if (selected) selectedItemBounds = Rect(it.positionInParent(),
+                                        Size(it.size.width.toFloat(), it.size.height.toFloat()))
+                                }
+                                .clip(RoundedCornerShape(PopupItemCornerRadius))
+                                .drawBehind {
+                                    // 按住滑到哪一项就高亮哪一项，勾选与保存仍在松手后改变。
+                                    if (controller.pressedIndex == index) drawRect(pressedColor)
+                                }
+                                .selectable(selected = selected, role = Role.RadioButton,
+                                    onClick = { controller.select(option.value) })
+                                .padding(
+                                    start = OptionStartPadding,
+                                    end = OptionEndPadding,
+                                    top = OptionVerticalPadding,
+                                    bottom = OptionVerticalPadding,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            request.optionLeading?.let { leading ->
+                                leading(option.value)
+                                Spacer(modifier = Modifier.width(14.dp))
                             }
-                            .clip(RoundedCornerShape(PopupItemCornerRadius))
-                            .drawBehind {
-                                // 按住滑到哪一项就高亮哪一项，勾选与保存仍在松手后改变。
-                                if (controller.pressedIndex == index) drawRect(pressedColor)
-                            }
-                            .selectable(selected = selected, role = Role.RadioButton,
-                                onClick = { controller.select(option.value) })
-                            .padding(
-                                start = OptionStartPadding,
-                                end = OptionEndPadding,
-                                top = OptionVerticalPadding,
-                                bottom = OptionVerticalPadding,
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        request.optionLeading?.let { leading ->
-                            leading(option.value)
-                            Spacer(modifier = Modifier.width(14.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            AppText(
-                                text = option.label,
-                                tapToCopyEnabled = false,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp),
-                                fontWeight = FontWeight.Medium,
-                                color = AppContentColors.primaryText(),
-                            )
-                            option.description?.let { description ->
-                                Spacer(modifier = Modifier.height(2.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 AppText(
-                                    text = description,
+                                    text = option.label,
                                     tapToCopyEnabled = false,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = AppContentColors.secondaryText(),
+                                    // 保持各主题原生菜单的字号和字重，玻璃只改变弹窗材质。
+                                    style = if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+                                        MaterialTheme.typography.bodyMedium
+                                    } else MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+                                        FontWeight.Medium
+                                    } else null,
+                                    color = AppContentColors.primaryText(),
+                                )
+                                option.description?.let { description ->
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    AppText(
+                                        text = description,
+                                        tapToCopyEnabled = false,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AppContentColors.secondaryText(),
+                                    )
+                                }
+                            }
+                            if (selected) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = AppContentColors.primaryText(),
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                         }
-                        if (selected) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = AppContentColors.primaryText(),
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
                     }
                 }
+                }
             }
+            if (!interactivePanel && request.menu?.showScrollbar == true) {
+                Box(Modifier.matchParentSize()) {
+                    com.android.purebilibili.core.ui.components.AppMenuScrollbar(
+                        scrollState = scrollState,
+                        glass = true,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                }
             }
         }
     }

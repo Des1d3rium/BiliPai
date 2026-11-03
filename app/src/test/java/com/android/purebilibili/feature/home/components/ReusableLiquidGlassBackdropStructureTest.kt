@@ -39,7 +39,7 @@ class ReusableLiquidGlassBackdropStructureTest {
             .substringBefore("HorizontalPager(")
 
         assertTrue(segmentedControlSource.contains("indicatorPositionProvider = {"))
-        assertTrue(segmentedControlSource.contains("pagerState.currentPage + pagerState.currentPageOffsetFraction"))
+        assertTrue(segmentedControlSource.contains("pagerState.tabIndicatorPosition"))
         assertTrue(segmentedControlSource.contains("preferInlineContentStyle = false"))
         assertTrue(source.contains("HorizontalPager("))
         assertTrue(source.indexOf("HorizontalPager(") > source.indexOf("BottomBarLiquidSegmentedControl("))
@@ -80,23 +80,6 @@ class ReusableLiquidGlassBackdropStructureTest {
             source.indexOf(".layerBackdrop(todayWatchBackdrop)") <
                 source.indexOf("miuixBackdrop = todayWatchBackdrop")
         )
-    }
-
-    @Test
-    fun `bangumi review sort samples list content from a sibling layer`() {
-        val source = loadSource(
-            "app/src/main/java/com/android/purebilibili/feature/bangumi/BangumiReviewScreen.kt"
-        )
-
-        assertTrue(source.contains("val reviewChromeBackdrop = rememberLayerBackdrop()"))
-        assertTrue(source.contains("miuixBackdrop = reviewChromeBackdrop"))
-        assertTrue(source.contains(".layerBackdrop(reviewChromeBackdrop)"))
-        assertTrue(
-            source.indexOf(".layerBackdrop(reviewChromeBackdrop)") <
-                source.indexOf("miuixBackdrop = reviewChromeBackdrop")
-        )
-        assertTrue(source.contains("BottomBarLiquidSegmentedControl("))
-        assertTrue(!source.contains("AppFilterChip("))
     }
 
     @Test

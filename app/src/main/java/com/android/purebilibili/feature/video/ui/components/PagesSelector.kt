@@ -85,6 +85,7 @@ fun PagesSelector(
     coverUrl: String = "",
     isPlaying: Boolean = false,
     modifier: Modifier = Modifier,
+    onOpenExpanded: (() -> Unit)? = null,
 ) {
     if (pages.isEmpty()) return
     val selectionHaptic = rememberHapticFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS)
@@ -125,7 +126,7 @@ fun PagesSelector(
                 color = AppContentColors.accent(),
                 modifier = Modifier
                     .clip(AppShapes.container(ContainerLevel.Pill))
-                    .clickable { showEpisodeMenu = true }
+                    .clickable { if (onOpenExpanded != null) onOpenExpanded() else showEpisodeMenu = true }
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )
         }
@@ -232,9 +233,9 @@ private fun PagesHorizontalPreviewRow(
     }
 
     // 液态玻璃选中态与详情标签共用主题色；原生分支仍使用自身主题主色。
-    val selectedAccent = AppContentColors.selectionAccent(
+    val selectedAccent = playerOptionContentColor(true, AppContentColors.selectionAccent(
         com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
-    )
+    ))
     LazyRow(
         state = listState,
         modifier = modifier
@@ -250,8 +251,8 @@ private fun PagesHorizontalPreviewRow(
                 modifier = Modifier
                     .width(PagesPreviewItemWidth)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(PagesPreviewItemCorner))
-                    .background(AppSurfaceTokens.cardContainer())
+                    .clip(playerOptionShape(RoundedCornerShape(PagesPreviewItemCorner)))
+                    .background(playerOptionContainerColor(isCurrent, AppSurfaceTokens.cardContainer()))
                     .clickable { onSelect(index) }
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -267,7 +268,7 @@ private fun PagesHorizontalPreviewRow(
                 AppText(
                     text = title,
                     fontSize = 13.sp,
-                    color = if (isCurrent) selectedAccent else AppContentColors.primaryText(),
+                    color = playerOptionContentColor(isCurrent, if (isCurrent) selectedAccent else AppContentColors.primaryText()),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),

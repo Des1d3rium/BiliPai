@@ -22,7 +22,7 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.min
 
 /** 分页导出限制单张位图内存，不截断正文；预览、保存和分享始终使用同一批文件。 */
-internal suspend fun renderShareImages(context: Context, document: ShareImageDocument, footer: Boolean): List<File> = withContext(Dispatchers.IO) {
+internal suspend fun renderShareImages(context: Context, document: ShareImageDocument, footer: Boolean, isDarkTheme: Boolean = false): List<File> = withContext(Dispatchers.IO) {
     val directory = File(context.cacheDir, "shared_images").apply { mkdirs() }
     directory.listFiles()?.filter { it.name.startsWith("content_") && System.currentTimeMillis() - it.lastModified() > 86400000L }?.forEach { it.delete() }
     val files = mutableListOf<File>()
@@ -31,8 +31,13 @@ internal suspend fun renderShareImages(context: Context, document: ShareImageDoc
     val pageHeight = 6000
     val margin = 52
     val innerWidth = width - margin * 2
+    val backgroundColor = if (isDarkTheme) Color.rgb(20, 23, 22) else Color.WHITE
+    val textColor = if (isDarkTheme) Color.rgb(235, 239, 235) else Color.rgb(31, 35, 40)
+    val secondaryColor = if (isDarkTheme) Color.rgb(180, 187, 180) else Color.GRAY
+    val footerColor = if (isDarkTheme) Color.rgb(198, 205, 198) else Color.DKGRAY
+    val authorColor = if (isDarkTheme) Color.rgb(255, 126, 166) else Color.rgb(220, 70, 120)
     var bitmap = Bitmap.createBitmap(width, pageHeight, Bitmap.Config.ARGB_8888)
-    var canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
+    var canvas = Canvas(bitmap).apply { drawColor(backgroundColor) }
     var y = margin
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     fun finishPage() {
@@ -45,7 +50,7 @@ internal suspend fun renderShareImages(context: Context, document: ShareImageDoc
         finishPage()
         bitmap.recycle()
         bitmap = Bitmap.createBitmap(width, pageHeight, Bitmap.Config.ARGB_8888)
-        canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
+        canvas = Canvas(bitmap).apply { drawColor(backgroundColor) }
         y = margin
     }
     suspend fun image(url: String): Bitmap? {
@@ -70,7 +75,7 @@ internal suspend fun renderShareImages(context: Context, document: ShareImageDoc
             }
         }
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(31, 35, 40); textSize = if (block.heading) 48f else 40f
+            color = textColor; textSize = if (block.heading) 48f else 40f
             typeface = if (block.heading) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
         val layout = StaticLayout.Builder.obtain(text, 0, text.length, textPaint, innerWidth)
@@ -115,9 +120,9 @@ internal suspend fun renderShareImages(context: Context, document: ShareImageDoc
                     if (y + 140 > pageHeight - margin) nextPage()
                     val avatar = image(block.avatar)
                     if (avatar != null) canvas.drawBitmap(avatar, null, RectF(margin.toFloat(), y.toFloat(), margin + 84f, y + 84f), paint)
-                    val name = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(220, 70, 120); textSize = 38f; typeface = Typeface.DEFAULT_BOLD }
+                    val name = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = authorColor; textSize = 38f; typeface = Typeface.DEFAULT_BOLD }
                     canvas.drawText(TextUtils.ellipsize(block.name, name, (innerWidth - 110).toFloat(), TextUtils.TruncateAt.END).toString(), margin + 108f, y + 38f, name)
-                    name.textSize = 27f; name.color = Color.GRAY
+                    name.textSize = 27f; name.color = secondaryColor
                     canvas.drawText(TextUtils.ellipsize(block.metadata, name, (innerWidth - 110).toFloat(), TextUtils.TruncateAt.END).toString(), margin + 108f, y + 80f, name)
                     y += 120
                 }
@@ -131,7 +136,7 @@ internal suspend fun renderShareImages(context: Context, document: ShareImageDoc
                 for (x in 0 until 180) for (row in 0 until 180) qr.setPixel(x, row, if (matrix[x, row]) Color.BLACK else Color.WHITE)
                 canvas.drawBitmap(qr, (width - margin - 180).toFloat(), y.toFloat(), paint)
             } finally { qr.recycle() }
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.DKGRAY; textSize = 32f }
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = footerColor; textSize = 32f }
             canvas.drawText("识别二维码，查看${document.title}", margin.toFloat(), y + 60f, textPaint)
             textPaint.textSize = 27f
             canvas.drawText("BiliPai · ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}", margin.toFloat(), y + 110f, textPaint)

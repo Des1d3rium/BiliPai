@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCompositionContext
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,7 @@ internal fun ProfileAvatarEffect(
     listState: LazyListState,
     flingBehavior: FlingBehavior,
     onAvatarClick: () -> Unit,
+    avatarSourceRect: androidx.compose.runtime.MutableState<androidx.compose.ui.geometry.Rect?>,
     modifier: Modifier = Modifier,
     photoScrollConnection: NestedScrollConnection? = null,
 ) {
@@ -90,6 +92,7 @@ internal fun ProfileAvatarEffect(
             ProfileAvatarFusionView(context, !lowBudget).apply {
                 host[0] = this
                 val avatar = ComposeView(context).apply {
+                    val avatarView = this
                     setParentCompositionContext(parentComposition)
                     pivotX = 0f
                     pivotY = 0f
@@ -101,18 +104,30 @@ internal fun ProfileAvatarEffect(
                             val avatarRequest = remember(context, currentUser.face) {
                                 ImageRequest.Builder(context)
                                     .data(currentUser.face)
+                                    .memoryCacheKey(com.android.purebilibili.feature.dynamic.components.resolveImagePreviewPlaceholderCacheKey(currentUser.face) ?: currentUser.face)
                                     .buildForProfileFusion()
                             }
                             AsyncImage(
                                 model = avatarRequest,
-                                contentDescription = "${currentUser.name}的头像，编辑个人资料",
+                                contentDescription = "${currentUser.name}的头像，查看大图",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
+                                    .alpha(if (com.android.purebilibili.feature.dynamic.components.isImagePreviewSourceHidden(avatarSourceRect.value)) 0f else 1f)
                                     .clip(CircleShape)
                                     .border(2.dp, latestBorder.value, CircleShape)
                                     .then(latestPhotoScrollConnection.value?.let { Modifier.nestedScroll(it) } ?: Modifier)
                                     .scrollable(listState, Orientation.Vertical, reverseDirection = true, flingBehavior = latestFling.value)
-                                    .clickable { latestClick.value() },
+                                    .clickable {
+                                        val location = IntArray(2)
+                                        avatarView.getLocationInWindow(location)
+                                        val width = avatarView.width * avatarView.scaleX
+                                        val height = avatarView.height * avatarView.scaleY
+                                        avatarSourceRect.value = androidx.compose.ui.geometry.Rect(
+                                            location[0].toFloat(), location[1].toFloat(),
+                                            location[0] + width, location[1] + height,
+                                        )
+                                        latestClick.value()
+                                    },
                             )
                         }
                     }

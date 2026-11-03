@@ -55,7 +55,6 @@ import top.yukonga.miuix.kmp.blur.highlight.BloomStroke
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.highlight.LightPosition
 import top.yukonga.miuix.kmp.blur.highlight.LightSource
-import top.yukonga.miuix.kmp.blur.sensor.rememberDeviceTilt
 import dev.chrisbanes.haze.HazeState
 import com.android.purebilibili.core.ui.blur.unifiedBlur
 import com.android.purebilibili.core.ui.blur.BlurSurfaceType
@@ -108,8 +107,9 @@ internal fun rememberBiliPaiGravityHighlight(
     base: Highlight = iosIndicatorSpecular,
     extraDegrees: Float = 0f,
     width: Dp = base.width,
+    active: Boolean,
 ): State<Highlight> {
-    val tiltState = rememberDeviceTilt()
+    val tiltState = rememberSharedGlassGravity(active)
     val quantizedDirection = remember(tiltState) {
         derivedStateOf {
             quantizeGravityHighlightDirection(
@@ -174,6 +174,12 @@ internal fun Modifier.biliPaiFloatingDockShell(
 ): Modifier {
     val isDark = darkTheme ?: com.android.purebilibili.core.ui.isAppInDarkTheme()
     val density = LocalDensity.current
+    // 玻璃专属：嵌套外壳采样最近的材质层，原生磨砂路径继续使用调用方的背景。
+    val parentGlass = com.android.purebilibili.core.ui.blur.LocalAppGlassContainer.current
+        .takeIf { enabled && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled }
+    val samplingBackdrop = (if (parentGlass != null) parentGlass.backdrop else backdrop)?.let {
+        com.android.purebilibili.core.ui.blur.rememberContinuousBackdrop(it)
+    }
     val shapeBlock = remember(shape) { { shape } }
     val baseModifier = this
         .graphicsLayer { translationX = panelOffsetPx }
@@ -186,22 +192,28 @@ internal fun Modifier.biliPaiFloatingDockShell(
             ),
         )
 
-    if (enabled && backdrop != null) {
-        val baseHighlight = rememberBiliPaiGravityHighlight(extraDegrees = -45f)
+    if (enabled && samplingBackdrop != null) {
+        val gravityGate = com.android.purebilibili.core.ui.rememberDecorativeAnimationGate()
         val surfaceColor = containerColor.copy(alpha = liquidGlassTuning.surfaceAlpha)
         val readabilityScrimColor = if (readabilitySurfaceColor != Color.Unspecified) {
             readabilitySurfaceColor
         } else if (isDark) Color.Black else Color.White
         val resolvedLensIntensity = lensIntensity.coerceIn(0f, 1f) *
             liquidGlassTuning.contentDistortionScale.coerceIn(0f, 1.8f)
-        val shouldDrawLens = drawLens && resolvedLensIntensity > 0.001f
+        val shouldDrawLens = parentGlass == null && drawLens && resolvedLensIntensity > 0.001f
+        val baseHighlight = rememberBiliPaiGravityHighlight(
+            extraDegrees = -45f,
+            active = shouldDrawLens && gravityGate.active,
+        )
         val refractionHeightDp = liquidGlassTuning.refractionHeight * resolvedLensIntensity
         val refractionAmountDp = liquidGlassTuning.refractionAmount * resolvedLensIntensity
         val effectPaddingDp = resolveFloatingDockEffectPaddingDp(
             refractionAmountDp = refractionAmountDp,
             pressBloomDp = MIUIX_UPSTREAM_DOCK_PRESS_BLOOM_DP,
         )
-        val blurRadiusPx = with(density) { liquidGlassTuning.backdropBlurRadius.dp.toPx() }
+        val blurRadiusPx = with(density) {
+            if (parentGlass == null) liquidGlassTuning.backdropBlurRadius.dp.toPx() else 0f
+        }
         val refractionHeightPx = with(density) { refractionHeightDp.dp.toPx() }
         val refractionAmountPx = with(density) { refractionAmountDp.dp.toPx() }
         val effectPaddingPx = with(density) { effectPaddingDp.dp.toPx() }
@@ -213,7 +225,7 @@ internal fun Modifier.biliPaiFloatingDockShell(
         val scrimAlpha = liquidGlassTuning.contentReadabilityScrimAlpha
         val effects = rememberFloatingDockBackdropEffects(
             blurRadiusPx = blurRadiusPx,
-            saturation = liquidGlassTuning.saturation,
+            saturation = if (parentGlass == null) liquidGlassTuning.saturation else 1f,
             shouldDrawLens = shouldDrawLens,
             refractionHeightPx = refractionHeightPx,
             refractionAmountPx = refractionAmountPx,
@@ -226,10 +238,11 @@ internal fun Modifier.biliPaiFloatingDockShell(
             }
             block
         }
-        val layerBlock = remember(pressProgress) {
+        val inheritDeformation = parentGlass?.ownsDeformation == true
+        val layerBlock = remember(pressProgress, inheritDeformation) {
             val block: GraphicsLayerScope.() -> Unit = {
                 val width = size.width.coerceAtLeast(1f)
-                val s = lerp(1f, 1f + 16.dp.toPx() / width, pressProgress)
+                val s = if (inheritDeformation) 1f else lerp(1f, 1f + 16.dp.toPx() / width, pressProgress)
                 scaleX = s
                 scaleY = s
             }
@@ -250,8 +263,9 @@ internal fun Modifier.biliPaiFloatingDockShell(
             block
         }
         return baseModifier
+            .then(gravityGate.modifier)
             .drawBackdrop(
-                backdrop = backdrop,
+                backdrop = samplingBackdrop,
                 shape = shapeBlock,
                 effects = effects,
                 // Inline capsules (search/input) disable the shell lens and its rim highlight
@@ -276,7 +290,7 @@ internal fun Modifier.biliPaiFloatingDockShell(
                     forceLowBudget = forceLowBlurBudget,
                 )
                 .background(blurSurfaceColor, shape)
-        } else if (backdrop != null) {
+        } else if (samplingBackdrop != null) {
             val blurRadiusPx = with(density) { 25.dp.toPx() }
             val blurSurfaceColor = containerColor.copy(alpha = 0.65f)
             val onDrawBlurSurface = remember(blurSurfaceColor) {
@@ -286,7 +300,7 @@ internal fun Modifier.biliPaiFloatingDockShell(
                 block
             }
             return baseModifier.drawBackdrop(
-                backdrop = backdrop,
+                backdrop = samplingBackdrop,
                 shape = shapeBlock,
                 effects = {
                     blur(blurRadiusPx, blurRadiusPx)
@@ -377,6 +391,12 @@ private fun rememberFloatingDockBackdropEffects(
         if (effectPaddingPx > 0f) {
             padding = maxOf(padding, effectPaddingPx)
         }
+        // 折射可能扩大采样范围；在模糊之前确定最终边距，避免效果链二次求值。
+        if (shouldDrawLens && top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported() &&
+            refractionHeightPx > 0f && refractionAmountPx > 0f
+        ) {
+            padding = maxOf(padding, refractionAmountPx)
+        }
         vibrancy(saturation)
         blur(blurRadiusPx, blurRadiusPx)
         if (shouldDrawLens) {
@@ -400,6 +420,7 @@ internal fun BackdropEffectScope.homeIndicatorLens(
     shellHeightDp: Float = restHeightDp * 64f / 56f,
     indicatorScaleY: Float = 1f,
     shellScaleY: Float = 1f,
+    chromaticBandHorizontal: Boolean = false,
 ) {
     val gapBandDp = resolveFloatingDockChromaticGapBand(
         indicatorHeight = restHeightDp,
@@ -414,6 +435,7 @@ internal fun BackdropEffectScope.homeIndicatorLens(
         depthEffect = true,
         chromaticAberration = resolveLiquidGlassIndicatorChromaticAberration(tuning),
         chromaticEdgeBand = gapBandDp.dp.toPx(),
+        chromaticBandHorizontal = chromaticBandHorizontal,
     )
 }
 
@@ -428,6 +450,55 @@ internal fun DrawScope.drawHomeIndicatorSurface(
         alpha = 1f - pressed,
     )
     drawRect(Color.Black.copy(alpha = 0.03f * pressed))
+}
+
+/** 横纵 dock 共用同一透镜、色散、表面与阴影。形变和光学遮罩在绘制时读取相同的实时尺寸。 */
+@Composable
+internal fun Modifier.floatingDockIndicatorOptics(
+    backdrop: Backdrop,
+    shape: Shape,
+    width: Dp,
+    height: Dp,
+    shellExtent: Dp,
+    tuning: LiquidGlassTuning,
+    darkTheme: Boolean,
+    progressProvider: () -> Float,
+    scaleXProvider: () -> Float,
+    scaleYProvider: () -> Float,
+    highlightProvider: () -> Highlight?,
+    vertical: Boolean = false,
+    shellScaleProvider: () -> Float = { 1f },
+    idleColor: Color? = null,
+): Modifier {
+    val thickness = if (vertical) width.value else height.value
+    return drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = {
+            homeIndicatorLens(
+                restHeightDp = thickness,
+                progress = progressProvider(),
+                tuning = tuning,
+                shellHeightDp = shellExtent.value,
+                indicatorScaleY = if (vertical) scaleXProvider() else scaleYProvider(),
+                shellScaleY = shellScaleProvider(),
+                chromaticBandHorizontal = vertical,
+            )
+        },
+        highlight = { highlightProvider() },
+        layerBlock = {
+            this.scaleX = scaleXProvider()
+            this.scaleY = scaleYProvider()
+        },
+        onDrawSurface = { drawHomeIndicatorSurface(progressProvider(), darkTheme, idleColor) },
+    ).innerShadow(shape = shape) {
+        InnerShadow(
+            offset = androidx.compose.ui.unit.DpOffset.Zero,
+            radius = 8.dp * homeIndicatorOpticalScale(thickness) * progressProvider(),
+            color = Color.Black.copy(alpha = 0.15f),
+            alpha = progressProvider(),
+        )
+    }
 }
 
 /**
@@ -477,7 +548,11 @@ internal fun BoxScope.BiliPaiFloatingDockIndicator(
         )
     }
     val recoilDirection = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
-    val pillHighlight = rememberBiliPaiGravityHighlight(extraDegrees = 90f)
+    val gravityGate = com.android.purebilibili.core.ui.rememberDecorativeAnimationGate()
+    val pillHighlight = rememberBiliPaiGravityHighlight(
+        extraDegrees = 90f,
+        active = highlightEnabled && combinedBackdrop != null && pressProgress > 0.001f && gravityGate.active,
+    )
     Box(
         modifier = Modifier
             .align(alignment)
@@ -491,6 +566,7 @@ internal fun BoxScope.BiliPaiFloatingDockIndicator(
             .width(width)
             .height(height)
             .zIndex(2f)
+            .then(gravityGate.modifier)
             .then(
                 if (combinedBackdrop != null) {
                     Modifier

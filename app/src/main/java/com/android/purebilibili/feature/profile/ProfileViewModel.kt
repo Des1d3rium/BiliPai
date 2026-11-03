@@ -70,6 +70,7 @@ sealed class ProfileUiState {
     data class Error(val message: String) : ProfileUiState()
 }
 
+
 internal fun shouldStartProfileLoad(
     hasLoadedOnce: Boolean,
     isLoadInFlight: Boolean,
@@ -97,6 +98,9 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     val activeAccountMid = _activeAccountMid.asStateFlow()
     private val _playbackAccountMid = MutableStateFlow<Long?>(null)
     val playbackAccountMid = _playbackAccountMid.asStateFlow()
+    private val _purposeAccountMids = MutableStateFlow<Map<com.android.purebilibili.core.store.AccountPurpose, Long?>?>(null)
+    val purposeAccountMids = _purposeAccountMids.asStateFlow()
+    private val accountSnapshotGeneration = java.util.concurrent.atomic.AtomicLong()
     private var hasLoadedProfileOnce = false
     private var isProfileLoadInFlight = false
     private var profileLoadGeneration = 0L
@@ -154,15 +158,21 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshSavedAccounts() {
+        val generation = accountSnapshotGeneration.incrementAndGet()
         val context = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             val accounts = AccountSessionStore.getAccounts(context)
             val activeAccountMid = AccountSessionStore.getActiveAccountMid(context)
             val playbackAccountMid = AccountSessionStore.getPlaybackAccountMid(context)
+            val purposes = com.android.purebilibili.core.store.AccountPurpose.entries.associateWith {
+                AccountSessionStore.getPurposeAccountMid(context, it)
+            }
             withContext(Dispatchers.Main.immediate) {
+                if (generation != accountSnapshotGeneration.get()) return@withContext
                 _accounts.value = accounts
                 _activeAccountMid.value = activeAccountMid
                 _playbackAccountMid.value = playbackAccountMid
+                _purposeAccountMids.value = purposes
             }
         }
     }
@@ -178,6 +188,22 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     onFailure("播放账号不可用，请重新登录后再试")
                 }
+            }
+        }
+    }
+
+    fun setPurposeAccount(
+        purpose: com.android.purebilibili.core.store.AccountPurpose,
+        mid: Long?, onSuccess: () -> Unit, onFailure: (String) -> Unit,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = AccountSessionStore.setPurposeAccountMid(getApplication(), purpose, mid)
+            withContext(Dispatchers.Main.immediate) {
+                if (updated) {
+                    refreshSavedAccounts()
+                    com.android.purebilibili.data.repository.VideoRepository.clearVideoDetailCaches()
+                    onSuccess()
+                } else onFailure("账号不可用，请重新登录后再试")
             }
         }
     }
@@ -537,7 +563,7 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun loadProfileDynamics(generation: Long, mid: Long) {
         val items = profileRequestOrNull {
-            NetworkModule.spaceApi.getSpaceDynamic(mid).data?.items
+            NetworkModule.spaceApi.getSpaceDynamic(mid).data?.items?.let { com.android.purebilibili.data.repository.filterGoodsSpaceDynamics(it) }
         } ?: return
         updateProfileSuccess(generation, mid) { current ->
             current.copy(space = mergeProfileDynamicState(current.space, items))
@@ -730,41 +756,48 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        val csrf = TokenManager.csrfCache.orEmpty()
-        if (csrf.isBlank()) {
-            _uiState.value = current.copy(
-                space = current.space.copy(signSaveMessage = "请先登录后再修改签名")
-            )
+        performAccountEdit("签名已提交，等待审核后生效") { identity ->
+            ProfileAccountRepository.updateSign(identity, sign.trim())
+        }
+    }
+
+    internal fun updateAccountField(field: ProfileAccountField, value: String) {
+        val normalized = value.trim()
+        if (field == ProfileAccountField.NAME && (normalized.isEmpty() || normalized.length > 16)) {
+            val current = _uiState.value as? ProfileUiState.Success ?: return
+            _uiState.value = current.copy(space = current.space.copy(signSaveMessage = "昵称须为 1 至 16 个字符"))
             return
         }
+        performAccountEdit("资料修改成功") { identity ->
+            ProfileAccountRepository.update(identity, field, normalized)
+        }
+    }
 
+    fun updateAccountAvatar(uri: Uri) {
+        performAccountEdit("头像已提交，资料刷新可能需要一些时间") { identity ->
+            ProfileAccountRepository.uploadAvatar(getApplication(), identity, uri)
+        }
+    }
+
+    private fun performAccountEdit(message: String, action: suspend (AccountSessionIdentity) -> Unit) {
         val identity = accountRequests.identity
+        val current = _uiState.value as? ProfileUiState.Success ?: return
+        if (current.space.isSavingSign) return
+        _uiState.value = current.copy(space = current.space.copy(isSavingSign = true, signSaveMessage = null))
         accountRequests.launch {
-            val beforeSave = _uiState.value as? ProfileUiState.Success ?: return@launch
-            _uiState.value = beforeSave.copy(
-                space = beforeSave.space.copy(isSavingSign = true, signSaveMessage = null)
-            )
-            val response = profileRequestOrNull {
-                NetworkModule.api.updateMemberSign(userSign = sign.trim(), csrf = csrf)
-            }
-            currentCoroutineContext().ensureActive()
-            if (!accountRequests.isCurrent(identity)) return@launch
-            val latest = _uiState.value as? ProfileUiState.Success ?: return@launch
-            if (response?.code == 0) {
-                _uiState.value = latest.copy(
-                    editableAccount = latest.editableAccount.copy(sign = sign.trim()),
-                    space = latest.space.copy(
-                        isSavingSign = false,
-                        signSaveMessage = "签名已提交，等待审核后生效"
-                    )
-                )
-            } else {
-                _uiState.value = latest.copy(
-                    space = latest.space.copy(
-                        isSavingSign = false,
-                        signSaveMessage = response?.message?.ifBlank { null } ?: "签名保存失败"
-                    )
-                )
+            try {
+                action(identity)
+                currentCoroutineContext().ensureActive()
+                if (!accountRequests.isCurrent(identity)) return@launch
+                val latest = _uiState.value as? ProfileUiState.Success ?: return@launch
+                _uiState.value = latest.copy(space = latest.space.copy(isSavingSign = false, signSaveMessage = message))
+                loadProfile(force = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!accountRequests.isCurrent(identity)) return@launch
+                val latest = _uiState.value as? ProfileUiState.Success ?: return@launch
+                _uiState.value = latest.copy(space = latest.space.copy(isSavingSign = false, signSaveMessage = error.message ?: "资料修改失败"))
             }
         }
     }

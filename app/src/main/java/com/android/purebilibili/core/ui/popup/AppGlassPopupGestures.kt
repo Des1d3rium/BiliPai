@@ -42,12 +42,12 @@ internal fun popupRubberBandPull(pull: Offset, shortSide: Float, maxPull: Float 
     return Offset(axis(pull.x), axis(pull.y))
 }
 
-/** pull 为经过阻力与跟手弹簧后的位移；按压最多增加 16dp，横纵拉伸分别增加位移的一半。 */
+/** pull 为阻尼后的位移；纵向拖动提供更明显的拉伸，松手后随位移回弹。 */
 internal fun popupElasticFrame(frame: AppGlassPopupFrame, growth: Float, pull: Offset, density: Float, maxGrowthDp: Float = 16f): AppGlassPopupFrame {
     if (frame.rect.isEmpty || (growth == 0f && pull == Offset.Zero)) return frame
     val swell = 1f + growth * minOf(0.25f, maxGrowthDp * density / maxOf(frame.rect.width, frame.rect.height))
     val scaleX = swell * (1f + kotlin.math.abs(pull.x) / frame.rect.width * 0.5f)
-    val scaleY = swell * (1f + kotlin.math.abs(pull.y) / frame.rect.height * 0.5f)
+    val scaleY = swell * (1f + kotlin.math.abs(pull.y) / frame.rect.height)
     val center = frame.rect.center + pull
     val halfWidth = frame.rect.width * scaleX / 2f
     val halfHeight = frame.rect.height * scaleY / 2f
@@ -149,20 +149,26 @@ internal class PopupElasticMotion {
                 growth.animateTo(grow, PopupPressSpring, initialVelocity = releaseVelocity)
             }
         }
-        val follow = if (isTracking) PopupTrackSpring else PopupPressSpring
-        val modeChanged = trackingTarget != isTracking
+        val tracking = isTracking
+        val modeChanged = trackingTarget != tracking
         if (pullTarget?.x != pull.x || modeChanged) {
             val speed = x.velocity
             xJob?.cancel()
-            xJob = scope.launch { x.animateTo(pull.x, follow, initialVelocity = speed) }
+            xJob = scope.launch {
+                if (tracking) x.snapTo(pull.x)
+                else x.animateTo(pull.x, PopupPressSpring, initialVelocity = speed)
+            }
         }
         if (pullTarget?.y != pull.y || modeChanged) {
             val speed = y.velocity
             yJob?.cancel()
-            yJob = scope.launch { y.animateTo(pull.y, follow, initialVelocity = speed) }
+            yJob = scope.launch {
+                if (tracking) y.snapTo(pull.y)
+                else y.animateTo(pull.y, PopupPressSpring, initialVelocity = speed)
+            }
         }
         pullTarget = pull
-        trackingTarget = isTracking
+        trackingTarget = tracking
     }
 
 

@@ -9,7 +9,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import com.android.purebilibili.core.ui.AppSpacingTokens
 import com.android.purebilibili.core.ui.motion.AppMotionTokens
-import com.android.purebilibili.feature.home.policy.quantizeHomeHeaderOffset
 import com.android.purebilibili.feature.home.policy.resolveHomeEmbeddedPageTopPaddingPx
 
 @Composable
@@ -31,10 +30,7 @@ internal fun rememberHomeEmbeddedPageTopPadding(
             with(density) {
                 resolveHomeEmbeddedPageTopPaddingPx(
                     expandedTopPaddingPx = expandedTopPadding.toPx(),
-                    headerOffsetPx = quantizeHomeHeaderOffset(
-                        offsetPx = headerOffsetProvider(),
-                        stepPx = AppSpacingTokens.ExtraSmall.toPx(),
-                    ),
+                    headerOffsetPx = headerOffsetProvider(),
                     collapsedTabInsetPx = collapsedTabInset.value.toPx(),
                     minimumTopPaddingPx = statusBarHeight.toPx(),
                 ).toDp()

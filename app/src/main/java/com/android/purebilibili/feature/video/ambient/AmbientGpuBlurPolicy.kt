@@ -11,14 +11,16 @@ import android.graphics.RenderNode
 import android.graphics.Shader
 import android.hardware.HardwareBuffer
 import android.os.Build
+import androidx.annotation.DoNotInline
 import androidx.annotation.RequiresApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.suspendCoroutine
 import java.util.concurrent.Executor
 
 /**
- * 氛围光晕的 GPU 模糊路径（API 33+）。
+ * 氛围光晕的 GPU 模糊路径（API 34+）。
  *
  * 用 RenderEffect + HardwareBufferRenderer 在采样帧上做高斯模糊，替代 CPU 逐像素
  * 内核；任何一步失败返回 null，调用方回退 [AmbientFrameAnalyzer.blur]。
@@ -37,7 +39,8 @@ internal object AmbientGpuBlurPolicy {
     private val callbackExecutor: Executor = Executor { it.run() }
 
     /** [source] 必须是软件位 ARGB_8888 全帧位图；返回同尺寸的模糊全帧，失败返回 null。 */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @DoNotInline
     suspend fun glow(source: Bitmap, crop: AmbientCrop): Bitmap? {
         val width = source.width
         val height = source.height
@@ -51,7 +54,13 @@ internal object AmbientGpuBlurPolicy {
         if (cropWidth <= 0 || cropHeight <= 0) return null
 
         val region = Bitmap.createBitmap(source, left, top, cropWidth, cropHeight)
-        val blurredRegion = blurRegion(region) ?: return null
+        val blurredRegion = try {
+            blurRegion(region)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return null
         return edgeExtendToFrame(
             blurredRegion = blurredRegion,
             left = left,
@@ -95,7 +104,7 @@ internal object AmbientGpuBlurPolicy {
     }
 
     /** GPU 高斯模糊单帧；异步绘制回调在渲染线程完成前不返回，取消也不中途释放缓冲。 */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun blurRegion(region: Bitmap): Bitmap? {
         val buffer = HardwareBuffer.create(
             region.width,
@@ -104,42 +113,39 @@ internal object AmbientGpuBlurPolicy {
             1,
             HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE,
         )
-        val renderer = HardwareBufferRenderer(buffer)
-        try {
-            val node = RenderNode(RENDER_NODE_NAME)
-            node.setPosition(0, 0, region.width, region.height)
-            node.setRenderEffect(
-                RenderEffect.createBlurEffect(GLOW_BLUR_SIGMA, GLOW_BLUR_SIGMA, Shader.TileMode.CLAMP)
-            )
-            val recording = node.beginRecording()
-            recording.drawBitmap(region, 0f, 0f, null)
-            node.endRecording()
-            renderer.setContentRoot(node)
+        // 构造渲染器失败时也要关闭已分配的缓冲，GPU 失败由 glow 回退 CPU。
+        return buffer.use {
+            HardwareBufferRenderer(buffer).use { renderer ->
+                val node = RenderNode(RENDER_NODE_NAME)
+                node.setPosition(0, 0, region.width, region.height)
+                node.setRenderEffect(
+                    RenderEffect.createBlurEffect(GLOW_BLUR_SIGMA, GLOW_BLUR_SIGMA, Shader.TileMode.CLAMP)
+                )
+                val recording = node.beginRecording()
+                recording.drawBitmap(region, 0f, 0f, null)
+                node.endRecording()
+                renderer.setContentRoot(node)
 
-            val result = withContext(NonCancellable) {
-                suspendCoroutine<HardwareBufferRenderer.RenderResult> { continuation ->
-                    try {
-                        renderer.obtainRenderRequest()
-                            .setColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
-                            .draw(callbackExecutor) { renderResult ->
-                                continuation.resumeWith(Result.success(renderResult))
-                            }
-                    } catch (error: Throwable) {
-                        continuation.resumeWith(Result.failure(error))
+                val result = withContext(NonCancellable) {
+                    suspendCoroutine<HardwareBufferRenderer.RenderResult> { continuation ->
+                        try {
+                            renderer.obtainRenderRequest()
+                                .setColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
+                                .draw(callbackExecutor) { renderResult ->
+                                    continuation.resumeWith(Result.success(renderResult))
+                                }
+                        } catch (error: Throwable) {
+                            continuation.resumeWith(Result.failure(error))
+                        }
                     }
                 }
-            }
 
-            if (result.status != HardwareBufferRenderer.RenderResult.SUCCESS) {
-                return null
+                if (result.status != HardwareBufferRenderer.RenderResult.SUCCESS) {
+                    return null
+                }
+                Bitmap.wrapHardwareBuffer(buffer, null)
+                    ?.copy(Bitmap.Config.ARGB_8888, false)
             }
-            return Bitmap.wrapHardwareBuffer(buffer, null)
-                ?.copy(Bitmap.Config.ARGB_8888, false)
-        } catch (_: Exception) {
-            return null
-        } finally {
-            renderer.close()
-            buffer.close()
         }
     }
 }

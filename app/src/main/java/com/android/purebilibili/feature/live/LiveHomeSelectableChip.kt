@@ -28,6 +28,16 @@ fun LiveHomeSelectableChip(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        com.android.purebilibili.core.ui.components.AppFilterChip(
+            selected = selected,
+            onClick = onClick,
+            modifier = modifier,
+            miuixNavigationColors = true,
+            label = { AppText(text = label) },
+        )
+        return
+    }
     val container = if (selected) {
         MaterialTheme.colorScheme.secondaryContainer
     } else {

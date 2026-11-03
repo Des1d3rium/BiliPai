@@ -16,7 +16,44 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 
 class VideoPlayerOverlayPolicyTest {
+    @Test
+    fun endedPlayback_ignoresStaleRecoveryAndQualitySwitchFlags() {
+        assertNull(resolveCenterLoadingUiState(
+            isBuffering = true,
+            isQualitySwitching = true,
+            isSeekTransitionPending = true,
+            playWhenReady = true,
+            isPlaying = false,
+            bandwidthEstimate = "",
+            playbackState = androidx.media3.common.Player.STATE_ENDED,
+        ))
+        assertFalse(resolveOverlayPlaybackButtonPlayingState(
+            isPlaying = false,
+            playWhenReady = true,
+            playbackState = androidx.media3.common.Player.STATE_ENDED,
+            hasPendingSeekResume = true,
+        ))
+    }
 
+    @Test
+    fun progressSnapshot_fillsLastTwoSecondsOnlyAfterPlaybackEnded() {
+        val ended = resolvePlayerProgressSnapshot(
+            58_000L, 60_000L, 59_000L, androidx.media3.common.Player.STATE_ENDED,
+        )
+        assertEquals(60_000L, ended.current)
+        assertEquals(60_000L, ended.buffered)
+        for (state in listOf(
+            androidx.media3.common.Player.STATE_READY,
+            androidx.media3.common.Player.STATE_BUFFERING,
+        )) {
+            assertEquals(58_000L, resolvePlayerProgressSnapshot(
+                58_000L, 60_000L, 59_000L, state,
+            ).current)
+        }
+        assertEquals(58_000L, resolvePlayerProgressSnapshot(
+            58_000L, 0L, 59_000L, androidx.media3.common.Player.STATE_ENDED,
+        ).current)
+    }
 
     @Test
     fun `long press speed keeps shared progress snapshot at high frequency`() {
@@ -94,47 +131,33 @@ class VideoPlayerOverlayPolicyTest {
     }
 
     @Test
-    fun inlineOverlayProgressPolling_stopsWhenHostLifecycleStops() {
-        assertTrue(
-            shouldPollInlineVideoOverlayProgress(
-                playerExists = true,
-                hostLifecycleStarted = true
-            )
-        )
-        assertFalse(
-            shouldPollInlineVideoOverlayProgress(
-                playerExists = true,
-                hostLifecycleStarted = false
-            )
-        )
-        assertFalse(
-            shouldPollInlineVideoOverlayProgress(
-                playerExists = false,
-                hostLifecycleStarted = true
-            )
-        )
-    }
-
-    @Test
     fun episodeEntryHiddenWhenOnlyRelatedVideosExist() {
         assertFalse(
             shouldShowEpisodeEntryFromVideoData(
                 relatedVideosCount = 1,
                 hasSeasonEpisodes = false,
                 pagesCount = 1,
-                hasFavoritePlaylist = false
+                hasExternalPlaylist = false
             )
         )
     }
 
     @Test
-    fun episodeEntryShownWhenFavoritePlaylistExists() {
+    fun episodeEntryShownWhenSingleItemExternalPlaylistExists() {
         assertTrue(
             shouldShowEpisodeEntryFromVideoData(
                 relatedVideosCount = 0,
                 hasSeasonEpisodes = false,
                 pagesCount = 1,
-                hasFavoritePlaylist = true
+                hasExternalPlaylist = true
+            )
+        )
+        assertTrue(
+            com.android.purebilibili.feature.video.ui.overlay.glass.shouldShowEpisodeEntryFromVideoData(
+                relatedVideosCount = 0,
+                hasSeasonEpisodes = false,
+                pagesCount = 1,
+                hasExternalPlaylist = true
             )
         )
     }
@@ -257,11 +280,124 @@ class VideoPlayerOverlayPolicyTest {
         assertNull(navigateEpisode(first.copy(cid = 999), pages = listOf(first)))
     }
 
+    @Test
+    fun externalQueueTraversesPartsBeforeNextVideoRegardlessOfCollectionSort() {
+        val previous = PiliEpisodeNavigationEntry("previous", 7)
+        val first = PiliEpisodeNavigationEntry("A", 11, pageIndex = 0)
+        val middle = PiliEpisodeNavigationEntry("A", 12, pageIndex = 1)
+        val last = PiliEpisodeNavigationEntry("A", 13, pageIndex = 2)
+        val queued = PiliEpisodeNavigationEntry("B", 29)
+        val seasonSuccessor = PiliEpisodeNavigationEntry("C", 31)
+        val parts = listOf(first, middle, last)
+        val queue = listOf(previous, first.copy(pageIndex = null), queued)
+        val season = listOf(previous, first, seasonSuccessor)
+        for (reverseOuter in listOf(false, true)) {
+            for (reversePages in listOf(false, true)) {
+                val orderedParts = if (reversePages) parts.asReversed() else parts
+                fun next(current: PiliEpisodeNavigationEntry, forward: Boolean = true) = navigateEpisode(
+                    current, pages = parts, outer = season, externalPlaylist = queue,
+                    related = listOf(PiliEpisodeNavigationEntry("related", 41)),
+                    forward = forward, reversePages = reversePages, reverseOuter = reverseOuter,
+                    autoContinue = true,
+                )
+                assertEquals(orderedParts[1], next(orderedParts[0]))
+                assertEquals(orderedParts[2], next(orderedParts[1]))
+                assertEquals(queued, next(orderedParts[2]))
+                assertEquals(orderedParts[1], next(orderedParts[2], forward = false))
+                assertEquals(orderedParts[0], next(orderedParts[1], forward = false))
+                assertEquals(previous, next(orderedParts[0], forward = false))
+            }
+        }
+    }
+
+    @Test
+    fun externalQueueBoundariesStopOnlyAfterPartsAndNeverEscapeToSeasonOrRelated() {
+        val first = PiliEpisodeNavigationEntry("A", 11, pageIndex = 0)
+        val second = PiliEpisodeNavigationEntry("A", 12, pageIndex = 1)
+        val penultimate = PiliEpisodeNavigationEntry("B", 21, pageIndex = 0)
+        val last = PiliEpisodeNavigationEntry("B", 22, pageIndex = 1)
+        val queue = listOf(first.copy(pageIndex = null), penultimate.copy(pageIndex = null))
+        for ((parts, boundary, forward) in listOf(
+            Triple(listOf(first, second), first, false),
+            Triple(listOf(penultimate, last), last, true),
+        )) {
+            assertNull(
+                navigateEpisode(
+                    boundary, pages = parts, externalPlaylist = queue,
+                    outer = listOf(PiliEpisodeNavigationEntry("before", 1), boundary, PiliEpisodeNavigationEntry("after", 41)),
+                    related = listOf(PiliEpisodeNavigationEntry("C", 31)),
+                    forward = forward, autoContinue = true,
+                )
+            )
+        }
+        assertEquals(second, navigateEpisode(first, pages = listOf(first, second), externalPlaylist = queue))
+        assertEquals(penultimate, navigateEpisode(last, pages = listOf(penultimate, last), externalPlaylist = queue, forward = false))
+    }
+
+    @Test
+    fun externalLoopFinishesPartsBeforeWrappingQueueAndPreservesTargetCid() {
+        val first = PiliEpisodeNavigationEntry("A", 11)
+        val beforeLast = PiliEpisodeNavigationEntry("B", 28, pageIndex = 0)
+        val last = PiliEpisodeNavigationEntry("B", 29, pageIndex = 1)
+        val parts = listOf(beforeLast, last)
+        val queue = listOf(first, beforeLast.copy(pageIndex = null))
+        assertEquals(last, navigateEpisode(beforeLast, pages = parts, externalPlaylist = queue, loop = true))
+        assertEquals(
+            first,
+            navigateEpisode(
+                last, pages = parts, externalPlaylist = queue, loop = true,
+                related = listOf(PiliEpisodeNavigationEntry("C", 31)), autoContinue = true,
+            )
+        )
+        assertEquals(beforeLast, navigateEpisode(last, pages = parts, externalPlaylist = queue, forward = false, loop = true))
+        assertEquals(queue.last(), navigateEpisode(first, externalPlaylist = queue, forward = false, loop = true))
+        assertEquals(
+            beforeLast,
+            navigateEpisode(last, pages = parts, externalPlaylist = queue, reversePages = true, loop = true)
+        )
+        assertEquals(
+            first,
+            navigateEpisode(beforeLast, pages = parts, externalPlaylist = queue, reversePages = true, loop = true)
+        )
+    }
+
+    @Test
+    fun emptyOrSingleExternalQueueStillTraversesPartsButNeverFallsBackToSeason() {
+        val first = PiliEpisodeNavigationEntry("A", 11, pageIndex = 0)
+        val last = PiliEpisodeNavigationEntry("A", 12, pageIndex = 1)
+        val parts = listOf(first, last)
+        val season = listOf(PiliEpisodeNavigationEntry("before", 1), first, PiliEpisodeNavigationEntry("after", 41))
+        for (queue in listOf(emptyList(), listOf(first.copy(pageIndex = null)))) {
+            for (loop in listOf(false, true)) {
+                assertEquals(last, navigateEpisode(first, pages = parts, externalPlaylist = queue, loop = loop))
+                assertEquals(first, navigateEpisode(last, pages = parts, externalPlaylist = queue, forward = false, loop = loop))
+                assertNull(
+                    navigateEpisode(
+                        first, pages = parts, externalPlaylist = queue, outer = season,
+                        forward = false, loop = loop, autoContinue = true,
+                    )
+                )
+            }
+            assertNull(
+                navigateEpisode(
+                    last, pages = parts, externalPlaylist = queue, outer = season,
+                    related = listOf(PiliEpisodeNavigationEntry("C", 31)), autoContinue = true,
+                )
+            )
+        }
+        assertNull(navigateEpisode(last, pages = parts, externalPlaylist = emptyList(), loop = true, outer = season, autoContinue = true))
+        assertEquals(
+            first.copy(pageIndex = null),
+            navigateEpisode(last, pages = parts, externalPlaylist = listOf(first.copy(pageIndex = null)), loop = true),
+        )
+    }
+
     private fun navigateEpisode(
         current: PiliEpisodeNavigationEntry,
         pages: List<PiliEpisodeNavigationEntry> = emptyList(),
         outer: List<PiliEpisodeNavigationEntry> = emptyList(),
         related: List<PiliEpisodeNavigationEntry> = emptyList(),
+        externalPlaylist: List<PiliEpisodeNavigationEntry>? = null,
         forward: Boolean = true,
         reversePages: Boolean = false,
         reverseOuter: Boolean = false,
@@ -269,6 +405,7 @@ class VideoPlayerOverlayPolicyTest {
         autoContinue: Boolean = false,
     ): PiliEpisodeNavigationEntry? = resolvePiliEpisodeNavigation(
         pages = pages, outer = outer, related = related,
+        externalPlaylist = externalPlaylist,
         currentBvid = current.bvid, currentCid = current.cid,
         forward = forward, reversePages = reversePages, reverseOuter = reverseOuter,
         loop = loop, autoContinue = autoContinue,

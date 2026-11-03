@@ -9,8 +9,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import com.android.purebilibili.core.ui.components.AppSwitch as Switch
+import com.android.purebilibili.core.ui.components.AppText as Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier

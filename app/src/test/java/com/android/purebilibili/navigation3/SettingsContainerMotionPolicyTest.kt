@@ -1,6 +1,8 @@
 package com.android.purebilibili.navigation3
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.animation.core.TargetBasedAnimation
+import androidx.compose.animation.core.VectorConverter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -9,6 +11,82 @@ import kotlin.test.assertTrue
 class SettingsContainerMotionPolicyTest {
     private val source = Rect(16f, 220f, 384f, 300f)
     private val page = Rect(0f, 0f, 400f, 900f)
+
+    @Test
+    fun mediaAndUpCardsReturnOnlyToTheirActualNavigationOwner() {
+        val owner = BiliPaiNavKey.Search()
+        val targets = listOf(BiliPaiNavKey.Space(42L), BiliPaiNavKey.BangumiDetail(123L, epId = 456L))
+        targets.forEach { target ->
+            assertTrue(isSettingsContainerBoundary(true, listOf(owner, target), target, owner))
+            assertFalse(isSettingsContainerBoundary(false, listOf(owner, target), target, owner))
+            assertFalse(isSettingsContainerBoundary(true, listOf(BiliPaiNavKey.Space(99L), target), target, owner))
+        }
+        val episode = BiliPaiNavKey.BangumiDetail(123L, epId = 456L)
+        assertFalse(isSettingsContainerBoundary(true, listOf(owner, episode.copy(epId = 789L)), episode, owner))
+    }
+
+    @Test
+    fun shopWebContainerRequiresItsCapturedOwnerAndExactProduct() {
+        val owner = BiliPaiNavKey.Space(123L)
+        val target = BiliPaiNavKey.Web("https://mall.bilibili.com/item/1", "商品")
+        assertTrue(isSettingsContainerBoundary(true, listOf(owner, target), target, owner))
+        assertFalse(isSettingsContainerBoundary(false, listOf(owner, target), target, owner))
+        assertFalse(isSettingsContainerBoundary(true, listOf(BiliPaiNavKey.Space(456L), target), target, owner))
+        assertFalse(isSettingsContainerBoundary(true, listOf(owner, target.copy(url = "https://mall.bilibili.com/item/2")), target, owner))
+        assertFalse(isSettingsContainerBoundary(true, listOf(target), target, null))
+    }
+
+    @Test
+    fun liveAreaIconReturnsOnlyToItsCapturedCategorySession() {
+        val owner = BiliPaiNavKey.LiveArea
+        val target = BiliPaiNavKey.LiveAreaDetail(2, 86, "英雄联盟", openId = 10L)
+        assertTrue(isSettingsContainerBoundary(true, listOf(owner, target), target, owner))
+        assertFalse(isSettingsContainerBoundary(false, listOf(owner, target), target, owner))
+        assertFalse(isSettingsContainerBoundary(true, listOf(owner, target.copy(openId = 11L)), target, owner))
+        assertFalse(isSettingsContainerBoundary(true, listOf(BiliPaiNavKey.LiveList, target), target, owner))
+    }
+
+    @Test
+    fun navigationSpringPassesThroughLandingAndSettlesWithoutASecondImpulse() {
+        val animation = TargetBasedAnimation(
+            animationSpec = containerReturnSpringSpec(),
+            typeConverter = Float.VectorConverter,
+            initialValue = 1f,
+            targetValue = 0f,
+            initialVelocity = -1f,
+        )
+        for (origin in listOf(source, Rect(140f, 170f, 200f, 230f))) {
+            var crossedEndpoint = false
+            var minimumWidth = origin.width
+            for (ms in 0..(animation.durationNanos / 1_000_000L).toInt()) {
+                val remaining = animation.getValueFromNanos(ms * 1_000_000L)
+                val frame = resolveSettingsContainerFrame(origin, page, remaining - 1f,
+                    returning = true, springDriven = true)
+                crossedEndpoint = crossedEndpoint || remaining < 0f
+                minimumWidth = minOf(minimumWidth, frame.bounds.width)
+                assertTrue(frame.bounds.width >= origin.width * 0.97f - 0.001f)
+                assertTrue(frame.contentAlpha in 0f..1f)
+                assertTrue(frame.cornerFraction in 0f..1f)
+            }
+            assertTrue(crossedEndpoint)
+            assertTrue(minimumWidth < origin.width)
+            val landed = resolveSettingsContainerFrame(origin, page,
+                animation.getValueFromNanos(animation.durationNanos) - 1f,
+                returning = true, springDriven = true)
+            assertEquals(origin, landed.bounds)
+        }
+    }
+
+    @Test
+    fun liveCardsAndAvatarsReturnOnlyToThePageThatCapturedThem() {
+        val room = BiliPaiNavKey.Live(roomId = "123", title = "直播", uname = "主播")
+        assertTrue(isSettingsContainerBoundary(true, listOf(BiliPaiNavKey.MainHost, room), room, BiliPaiNavKey.MainHost))
+        val followingStack = listOf(BiliPaiNavKey.MainHost, BiliPaiNavKey.LiveFollowing, room)
+        assertTrue(isSettingsContainerBoundary(true, followingStack, room, BiliPaiNavKey.LiveFollowing))
+        assertFalse(isSettingsContainerBoundary(true, followingStack, room, BiliPaiNavKey.MainHost))
+        assertFalse(isSettingsContainerBoundary(true, followingStack, room.copy(title = "旧标题"), BiliPaiNavKey.LiveFollowing))
+        assertFalse(isSettingsContainerBoundary(false, followingStack, room, BiliPaiNavKey.LiveFollowing))
+    }
 
     @Test
     fun realtimeBlurOnlyAffectsCoveredBackgroundAndReversesWithNavigationDepth() {

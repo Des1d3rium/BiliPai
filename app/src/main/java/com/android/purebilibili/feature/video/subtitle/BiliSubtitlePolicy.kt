@@ -70,8 +70,10 @@ fun resolveSubtitleDisplayModeByAutoPreference(
     hasSecondaryTrack: Boolean,
     primaryTrackLikelyAi: Boolean,
     secondaryTrackLikelyAi: Boolean,
-    isMuted: Boolean
-): SubtitleDisplayMode = com.android.purebilibili.core.subtitle.resolveSubtitleDisplayModeByAutoPreference(preference = preference, hasPrimaryTrack = hasPrimaryTrack, hasSecondaryTrack = hasSecondaryTrack, primaryTrackLikelyAi = primaryTrackLikelyAi, secondaryTrackLikelyAi = secondaryTrackLikelyAi, isMuted = isMuted)
+    isMuted: Boolean,
+    primaryTrackLanguage: String?,
+    secondaryTrackLanguage: String?
+): SubtitleDisplayMode = com.android.purebilibili.core.subtitle.resolveSubtitleDisplayModeByAutoPreference(preference = preference, hasPrimaryTrack = hasPrimaryTrack, hasSecondaryTrack = hasSecondaryTrack, primaryTrackLikelyAi = primaryTrackLikelyAi, secondaryTrackLikelyAi = secondaryTrackLikelyAi, isMuted = isMuted, primaryTrackLanguage = primaryTrackLanguage, secondaryTrackLanguage = secondaryTrackLanguage)
 
 fun resolveSubtitlePreferenceSession(
     bvid: String,

@@ -302,9 +302,10 @@ class DanmakuController(private var mDanmakuView: View): ConfigChangeListener, I
     }
 
     /** Capture the touched item before Compose waits to distinguish single and double taps. */
-    fun captureDanmakuClick(x: Float, y: Float): (() -> Unit)? {
+    fun captureDanmakuClick(x: Float, y: Float): Pair<() -> Unit, () -> Unit>? {
         val listener = itemClickListener ?: return null
         var click: (() -> Unit)? = null
+        var capturedData: com.bytedance.danmaku.render.engine.data.DanmakuData? = null
         itemClickListener = object : IItemClickListener {
             override fun onDanmakuClick(
                 data: com.bytedance.danmaku.render.engine.data.DanmakuData,
@@ -314,6 +315,7 @@ class DanmakuController(private var mDanmakuView: View): ConfigChangeListener, I
                 // Renderer reuses these geometry objects between frames.
                 val rect = android.graphics.RectF(itemRect)
                 val point = android.graphics.PointF(clickPoint.x, clickPoint.y)
+                capturedData = data
                 click = { listener.onDanmakuClick(data, rect, point) }
             }
         }
@@ -323,7 +325,12 @@ class DanmakuController(private var mDanmakuView: View): ConfigChangeListener, I
             val target = mRenderEngine.findTouchTarget(event) ?: return null
             event.action = MotionEvent.ACTION_UP
             target.onTouchEvent(event)
-            return click
+            val action = click ?: return null
+            val data = capturedData ?: return null
+            executeCommand(com.bytedance.danmaku.render.engine.utils.CMD_PAUSE_ITEM, data = data)
+            return action to {
+                executeCommand(com.bytedance.danmaku.render.engine.utils.CMD_RESUME_ITEM, data = data)
+            }
         } finally {
             event.recycle()
             itemClickListener = listener

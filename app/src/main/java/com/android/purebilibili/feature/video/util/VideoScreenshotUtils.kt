@@ -235,6 +235,7 @@ suspend fun saveScreenshotToGalleryUri(
     }
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 internal suspend fun captureSurfaceViewBitmap(
     surfaceView: SurfaceView,
     targetWidth: Int,
@@ -254,13 +255,12 @@ internal suspend fun captureSurfaceViewBitmap(
                     return@request
                 }
                 if (result == PixelCopy.SUCCESS) {
-                    continuation.resume(
-                        resizeBitmapIfNeeded(
-                            bitmap = sourceBitmap,
-                            targetWidth = targetWidth,
-                            targetHeight = targetHeight,
-                        )
+                    val captured = resizeBitmapIfNeeded(
+                        bitmap = sourceBitmap,
+                        targetWidth = targetWidth,
+                        targetHeight = targetHeight,
                     )
+                    continuation.resume(captured, onCancellation = { captured.recycle() })
                 } else {
                     Logger.w("VideoScreenshot", "PixelCopy failed with code: $result")
                     sourceBitmap.recycle()

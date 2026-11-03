@@ -20,7 +20,6 @@ import android.content.ClipData
 import android.content.Context
 import android.os.Build
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -43,6 +42,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -54,8 +54,7 @@ import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.IntOffset
-import com.android.purebilibili.core.ui.motion.AppMotionEasing
+import com.android.purebilibili.core.ui.motion.continuityTween
 import androidx.media3.common.Player
 import com.android.purebilibili.core.store.DanmakuSettingsScope
 import com.android.purebilibili.core.store.DanmakuPanelWidthMode
@@ -78,6 +77,7 @@ import com.android.purebilibili.feature.video.ui.components.VideoAspectRatio
 import com.android.purebilibili.feature.video.ui.components.glass.AspectRatioMenu
 import com.android.purebilibili.feature.video.ui.components.glass.VideoSettingsPanel
 import com.android.purebilibili.feature.video.ui.components.PlayerEpisodeMenu
+import com.android.purebilibili.feature.video.ui.components.PlayerEpisodeSourceMenu
 import com.android.purebilibili.feature.video.ui.components.resolveCurrentUgcEpisodeLazyListIndex
 import com.android.purebilibili.feature.video.ui.components.LandscapeSidePanel
 import com.android.purebilibili.feature.video.ui.components.landscapeControlCenterGroup
@@ -138,6 +138,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -169,7 +170,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.lifecycle.compose.currentStateAsState
 import com.android.purebilibili.feature.video.playback.session.PendingPlaybackUserAction
 import dev.chrisbanes.haze.HazeState
 import com.android.purebilibili.core.store.ChapterDisplayMode
@@ -181,38 +181,11 @@ internal fun shouldShowEpisodeEntryFromVideoData(
     relatedVideosCount: Int,
     hasSeasonEpisodes: Boolean,
     pagesCount: Int,
-    hasFavoritePlaylist: Boolean = false
+    hasExternalPlaylist: Boolean = false
 ): Boolean {
-    return pagesCount > 1 || hasSeasonEpisodes || hasFavoritePlaylist
+    return pagesCount > 1 || hasSeasonEpisodes || hasExternalPlaylist
 }
 
-internal data class NextEpisodeTarget(
-    val nextPageIndex: Int? = null,
-    val nextBvid: String? = null
-)
-
-internal fun resolveNextEpisodeTarget(
-    pagesCount: Int,
-    currentPageIndex: Int,
-    seasonEpisodeBvids: List<String>,
-    currentBvid: String,
-    relatedBvids: List<String>
-): NextEpisodeTarget? {
-    if (pagesCount > 1 && currentPageIndex in 0 until (pagesCount - 1)) {
-        return NextEpisodeTarget(nextPageIndex = currentPageIndex + 1)
-    }
-    if (seasonEpisodeBvids.isNotEmpty()) {
-        val currentIndex = seasonEpisodeBvids.indexOf(currentBvid)
-        if (currentIndex in 0 until seasonEpisodeBvids.lastIndex) {
-            return NextEpisodeTarget(nextBvid = seasonEpisodeBvids[currentIndex + 1])
-        }
-    }
-    val nextRelated = relatedBvids.firstOrNull { it != currentBvid }
-    if (!nextRelated.isNullOrBlank()) {
-        return NextEpisodeTarget(nextBvid = nextRelated)
-    }
-    return null
-}
 
 internal fun shouldConsumeBackgroundGesturesForEndDrawer(
     endDrawerVisible: Boolean
@@ -326,13 +299,6 @@ internal suspend fun resolveCastPlayUrl(
     }.getOrNull()
 }
 
-internal fun shouldPollInlineVideoOverlayProgress(
-    playerExists: Boolean,
-    hostLifecycleStarted: Boolean
-): Boolean {
-    return playerExists && hostLifecycleStarted
-}
-
 internal fun resolveInlineVideoOverlayProgressPollingIntervalMs(
     controlsVisible: Boolean,
     isPlaying: Boolean,
@@ -351,6 +317,7 @@ internal fun resolveOverlayPlaybackButtonPlayingState(
     playbackState: Int,
     hasPendingSeekResume: Boolean = false
 ): Boolean {
+    if (playbackState == Player.STATE_ENDED) return false
     return isPlaying || (playWhenReady && (playbackState == Player.STATE_BUFFERING || hasPendingSeekResume))
 }
 
@@ -495,17 +462,6 @@ internal fun resolveDisplayedOnlineCount(
 
 private const val SEEK_RESUME_TRANSITION_GRACE_MS = 350L
 
-// 播放器 overlay 色层动效 token：遮罩/控制栏/锁屏按钮/加载指示共用同一节奏与曲线。
-// 曲线取全局 alpha 主曲线 Continuity（AppMotionTokens 体系），时长保持既有节奏。
-private const val OVERLAY_CHROME_FADE_DURATION_MILLIS = PLAYER_GLASS_VISIBILITY_DURATION_MS
-private const val OVERLAY_CONTROL_FADE_DURATION_MILLIS = 200
-private val OverlayChromeFadeSpec =
-    tween<Float>(OVERLAY_CHROME_FADE_DURATION_MILLIS, easing = AppMotionEasing.Continuity)
-private val OverlayControlFadeSpec =
-    tween<Float>(OVERLAY_CONTROL_FADE_DURATION_MILLIS, easing = AppMotionEasing.Continuity)
-private val OverlayControlSlideSpec =
-    tween<IntOffset>(OVERLAY_CONTROL_FADE_DURATION_MILLIS, easing = AppMotionEasing.Continuity)
-
 @Composable
 fun VideoPlayerOverlay(
     state: VideoPlayerOverlayState,
@@ -527,6 +483,7 @@ private fun VideoPlayerOverlayContent(
     state: VideoPlayerOverlayState,
     actions: VideoPlayerOverlayActions,
 ) {
+    val autoHide = com.android.purebilibili.feature.video.ui.overlay.rememberPlayerControlsAutoHide(4_000L)
     val levelGestureActive = LocalPlayerLevelGestureActive.current
     val player = state.player
     val title = state.title
@@ -746,8 +703,8 @@ private fun VideoPlayerOverlayContent(
     val pages = state.pages
     val currentPageIndex = state.currentPageIndex
     val onPageSelect = actions.onPageSelect
-    val hasFavoritePlaylist = state.hasFavoritePlaylist
-    val onFavoritePlaylistClick = actions.onFavoritePlaylistClick
+    val hasExternalPlaylist = state.hasExternalPlaylist
+    val onExternalPlaylistClick = actions.onExternalPlaylistClick
     val drawerHazeState = state.drawerHazeState
     val statusBarAmbientFrame = state.statusBarAmbientFrame
     val statusBarBackdropHeight = state.statusBarBackdropHeight
@@ -773,6 +730,8 @@ private fun VideoPlayerOverlayContent(
         mutableStateOf<com.android.purebilibili.core.ui.components.AppGlassMenuSource?>(null)
     }
     var showVideoSettings by remember(bvid, cid, isFullscreen) { mutableStateOf(false) }
+    val localShareMenuSource = com.android.purebilibili.core.ui.components.rememberAppGlassMenuSource()
+    val shareMenuSource = actions.shareMenuSource ?: localShareMenuSource
     var pendingVideoShare by remember { mutableStateOf<VideoSharePayload?>(null) }
     fun openVideoShareSheet() {
         if (bvid.isEmpty()) return
@@ -809,11 +768,13 @@ private fun VideoPlayerOverlayContent(
     }
     var showPlaybackOrderSheet by remember { mutableStateOf(false) }
     var showPageSelectorSheet by remember { mutableStateOf(false) }
+    var showEpisodeSourceMenu by remember { mutableStateOf(false) }
     var bottomControlFloatingPanelVisible by remember { mutableStateOf(false) }
     var showCdnDiagnostics by remember { mutableStateOf(false) }
     // 换集后强制关掉分集/菜单等全屏遮罩，避免 Dialog/Sheet 残留挡触摸。
     LaunchedEffect(bvid, cid) {
         showPageSelectorSheet = false
+        showEpisodeSourceMenu = false
         showQualityMenu = false
         showAudioQualityMenu = false
         showSpeedMenu = false
@@ -851,15 +812,15 @@ private fun VideoPlayerOverlayContent(
             selectedAudioQuality = selectedAudioQuality
         )
     }
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
-    val hostLifecycleStarted = lifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
     val configuration = LocalConfiguration.current
     val topActionDockBounds = remember(isFullscreen, configuration.screenWidthDp, configuration.screenHeightDp) {
         mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
     }
     var showInsightDetails by remember(player, bvid, cid) { mutableStateOf(false) }
     val visualWorkActive = com.android.purebilibili.core.ui.rememberVisualWorkActive()
+    // 可见性属于当前布局节点；媒体身份变化不会重新触发仍在视口内的可见性回调。
+    // 进度快照与采样会话仍在 rememberVideoPlayerOverlayProgress 内按媒体身份重建。
+    var progressInViewport by remember { mutableStateOf(false) }
     // The HUD needs only the existing decoder/error summary to decide whether it is visible.
     // Network/display queries and formatted detail rows belong to the visible diagnostics.
     val insightLevel = remember(debugInfo) {
@@ -927,7 +888,11 @@ private fun VideoPlayerOverlayContent(
             screenHeightDp = configuration.screenHeightDp
         )
     }
-    var bufferingStartedAtMs by remember(player) { mutableLongStateOf(0L) }
+    // 检测依据是当前播放面的真实首帧状态，诊断展示字符串缺省不代表黑屏。
+    // 瞬时控件抑制与诊断门控分开：竖屏长期自管加载层，不能因此永久停掉诊断。
+    val playbackIssueMonitoringEnabled = playerDiagnosticLoggingEnabled && visualWorkActive &&
+        !state.isAudioOnly
+    var bufferingStartedAtMs by remember(player, bvid, cid) { mutableLongStateOf(0L) }
     var waitingFirstFrameStartedAtMs by remember(player, bvid, cid) { mutableLongStateOf(0L) }
     var playbackIssueSignal by remember(player, bvid, cid) { mutableStateOf<PlaybackIssueSignal?>(null) }
     var dismissedPlaybackIssueTypes by remember(player, bvid, cid) {
@@ -984,12 +949,15 @@ private fun VideoPlayerOverlayContent(
         }
     }
     LaunchedEffect(
-        playerDiagnosticLoggingEnabled,
+        player,
+        bvid,
+        cid,
+        playbackIssueMonitoringEnabled,
         player.playbackState,
         player.playWhenReady,
-        effectiveDebugInfo.firstFrame
+        hasRenderedFirstFrame
     ) {
-        if (!playerDiagnosticLoggingEnabled) {
+        if (!playbackIssueMonitoringEnabled) {
             bufferingStartedAtMs = 0L
             waitingFirstFrameStartedAtMs = 0L
             playbackIssueSignal = null
@@ -1004,14 +972,14 @@ private fun VideoPlayerOverlayContent(
         waitingFirstFrameStartedAtMs = when {
             player.playbackState == Player.STATE_READY &&
                 player.playWhenReady &&
-                effectiveDebugInfo.firstFrame.isBlank() ->
+                !hasRenderedFirstFrame ->
                 if (waitingFirstFrameStartedAtMs == 0L) now else waitingFirstFrameStartedAtMs
             else -> 0L
         }
         val currentSignal = resolvePlaybackIssueSignal(
             playbackState = player.playbackState,
             playWhenReady = player.playWhenReady,
-            firstFrameRendered = effectiveDebugInfo.firstFrame.isNotBlank(),
+            firstFrameRendered = hasRenderedFirstFrame,
             bufferingDurationMs = if (bufferingStartedAtMs > 0L) now - bufferingStartedAtMs else 0L,
             waitingFirstFrameDurationMs = if (waitingFirstFrameStartedAtMs > 0L) {
                 now - waitingFirstFrameStartedAtMs
@@ -1025,14 +993,14 @@ private fun VideoPlayerOverlayContent(
     }
     LaunchedEffect(
         player,
-        playerDiagnosticLoggingEnabled,
-        effectiveDebugInfo.firstFrame,
+        playbackIssueMonitoringEnabled,
+        hasRenderedFirstFrame,
         bufferingStartedAtMs,
         waitingFirstFrameStartedAtMs,
         dismissedPlaybackIssueTypes,
         pendingUserAction
     ) {
-        if (!playerDiagnosticLoggingEnabled) {
+        if (!playbackIssueMonitoringEnabled) {
             playbackIssueSignal = null
             return@LaunchedEffect
         }
@@ -1041,7 +1009,7 @@ private fun VideoPlayerOverlayContent(
             val playbackSignal = resolvePlaybackIssueSignal(
                 playbackState = player.playbackState,
                 playWhenReady = player.playWhenReady,
-                firstFrameRendered = effectiveDebugInfo.firstFrame.isNotBlank(),
+                firstFrameRendered = hasRenderedFirstFrame,
                 bufferingDurationMs = if (bufferingStartedAtMs > 0L) now - bufferingStartedAtMs else 0L,
                 waitingFirstFrameDurationMs = if (waitingFirstFrameStartedAtMs > 0L) {
                     now - waitingFirstFrameStartedAtMs
@@ -1061,7 +1029,7 @@ private fun VideoPlayerOverlayContent(
                 playbackIssueSignal = signal
             }
             if (!shouldMonitorPlaybackIssues(
-                    diagnosticsEnabled = playerDiagnosticLoggingEnabled,
+                    diagnosticsEnabled = playbackIssueMonitoringEnabled,
                     bufferingStartedAtMs = bufferingStartedAtMs,
                     waitingFirstFrameStartedAtMs = waitingFirstFrameStartedAtMs,
                     hasPendingUserAction = pendingUserAction != null
@@ -1129,38 +1097,67 @@ private fun VideoPlayerOverlayContent(
             showOnlineCount = showOnlineCount
         )
     }
-    val hasEpisodeEntry = remember(relatedVideos, ugcSeason) {
+    val hasEpisodeEntry = remember(pages, ugcSeason, hasExternalPlaylist) {
         shouldShowEpisodeEntryFromVideoData(
             relatedVideosCount = relatedVideos.size,
             hasSeasonEpisodes = ugcSeason?.sections?.any { section ->
                 section.episodes.isNotEmpty()
             } == true,
             pagesCount = pages.size,
-            hasFavoritePlaylist = hasFavoritePlaylist
+            hasExternalPlaylist = hasExternalPlaylist
         )
     }
-    val nextEpisodeTarget = remember(
-        pages,
-        currentPageIndex,
-        ugcSeason,
-        bvid,
-        relatedVideos
-    ) {
-        resolveNextEpisodeTarget(
-            pagesCount = pages.size,
-            currentPageIndex = currentPageIndex,
-            seasonEpisodeBvids = ugcSeason?.sections
-                ?.flatMap { section -> section.episodes }
-                ?.map { episode -> episode.bvid }
-                .orEmpty(),
-            currentBvid = bvid,
-            relatedBvids = relatedVideos.map { it.bvid }
-        )
+    val collectionSession = rememberPiliCollectionMenuSession(
+        ugcSeason, bvid, cid, isParts = pages.size > 1,
+    )
+    val navigationPages = remember(pages, bvid) {
+        if (pages.size > 1) pages.mapIndexed { index, page ->
+            PiliEpisodeNavigationEntry(bvid, page.cid, index)
+        } else emptyList()
     }
+    val navigationPlaylist = if (hasExternalPlaylist) {
+        com.android.purebilibili.feature.video.player.PlaylistManager.playlist.collectAsStateWithLifecycle().value
+    } else emptyList()
+    val externalPlaylistSource by com.android.purebilibili.feature.video.player.PlaylistManager
+        .externalPlaylistSource.collectAsStateWithLifecycle()
+    val navigationExternalPlaylist = remember(hasExternalPlaylist, navigationPlaylist) {
+        if (hasExternalPlaylist) navigationPlaylist.map { PiliEpisodeNavigationEntry(it.bvid, it.cid) } else null
+    }
+    val navigationOuter = remember(ugcSeason, hasExternalPlaylist) {
+        if (hasExternalPlaylist) emptyList() else ugcSeason?.sections?.flatMap { section ->
+            section.episodes.map { PiliEpisodeNavigationEntry(it.bvid, it.cid) }
+        }.orEmpty()
+    }
+    val navigationRelated = remember(relatedVideos, hasExternalPlaylist) {
+        if (hasExternalPlaylist) emptyList() else relatedVideos.map { PiliEpisodeNavigationEntry(it.bvid, 0L) }
+    }
+    val outerReversed = if (hasExternalPlaylist) false else if (pages.size > 1 && ugcSeason != null) {
+        val sort by remember(context, ugcSeason) {
+            SettingsManager.getCollectionSortMode(
+                context, com.android.purebilibili.feature.video.ui.components.resolveCollectionSubscriptionId(ugcSeason),
+            )
+        }.collectAsStateWithLifecycle(
+            initialValue = com.android.purebilibili.feature.video.ui.components.CollectionSortMode.ASCENDING,
+        )
+        sort == com.android.purebilibili.feature.video.ui.components.CollectionSortMode.DESCENDING
+    } else collectionSession.isReversed
     val playbackCompletionBehavior by SettingsManager
         .getPlaybackCompletionBehavior(context)
         .collectAsStateWithLifecycle(initialValue = PlaybackCompletionBehavior.CONTINUE_CURRENT_LOGIC
         )
+    val nextEpisodeTarget = resolvePiliEpisodeNavigation(
+        pages = navigationPages,
+        outer = navigationOuter,
+        related = navigationRelated,
+        externalPlaylist = navigationExternalPlaylist,
+        currentBvid = bvid,
+        currentCid = cid.takeIf { it > 0 } ?: pages.getOrNull(currentPageIndex)?.cid ?: 0L,
+        forward = true,
+        reversePages = pages.size > 1 && collectionSession.isReversed,
+        reverseOuter = outerReversed,
+        loop = playbackCompletionBehavior == PlaybackCompletionBehavior.LOOP_PLAYLIST,
+        autoContinue = playbackCompletionBehavior == PlaybackCompletionBehavior.CONTINUE_CURRENT_LOGIC,
+    )
     // The legacy preference key now enables the inline-player Haze status-bar backdrop.
     val immersiveVideoPageStatusBar by SettingsManager
         .getHideVideoPageStatusBar(context)
@@ -1184,22 +1181,35 @@ private fun VideoPlayerOverlayContent(
         )
     }
 
-    DisposableEffect(player) {
+    DisposableEffect(player, hasPendingSeekResume) {
         currentSpeed = player.playbackParameters.speed
-        val speedListener = object : Player.Listener {
+        fun updatePlayingState() {
+            isPlaying = resolveOverlayPlaybackButtonPlayingState(
+                isPlaying = player.isPlaying,
+                playWhenReady = player.playWhenReady,
+                playbackState = player.playbackState,
+                hasPendingSeekResume = hasPendingSeekResume,
+            )
+        }
+        updatePlayingState()
+        val playbackListener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                updatePlayingState()
+            }
+
             override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
                 currentSpeed = playbackParameters.speed
             }
         }
-        player.addListener(speedListener)
-        onDispose { player.removeListener(speedListener) }
+        player.addListener(playbackListener)
+        onDispose { player.removeListener(playbackListener) }
     }
 
 
-    val glassPanelVisible = bottomControlFloatingPanelVisible || showQualityMenu ||
+    val glassPanelVisible = pendingVideoShare != null || bottomControlFloatingPanelVisible || showQualityMenu ||
         showAudioQualityMenu || showSpeedMenu || showRatioMenu || showDanmakuSettings ||
         showVideoSettings || showChapterList || showCastDialog || showPlaybackOrderSheet ||
-        showPageSelectorSheet || showCdnDiagnostics || danmakuComposerVisible
+        showPageSelectorSheet || showEpisodeSourceMenu || showCdnDiagnostics || danmakuComposerVisible
     val latestPanelVisibility by rememberUpdatedState(actions.onFloatingPanelVisibilityChange)
     LaunchedEffect(glassPanelVisible) { latestPanelVisibility(glassPanelVisible) }
     DisposableEffect(Unit) { onDispose { latestPanelVisibility(false) } }
@@ -1237,16 +1247,17 @@ private fun VideoPlayerOverlayContent(
     // 先打开设备面板；只有用户选择搜索 DLNA 时才请求原始局域网权限。
     val onCastClickAction = { showCastDialog = true }
 
-    val progressState = rememberVideoPlayerOverlayProgress(
+    val progressSamplingActive = com.android.purebilibili.feature.video.ui.overlay
+        .rememberPlayerProgressSamplingActive()
+    val progressState = state.progressSource ?: rememberVideoPlayerOverlayProgress(
         player = player,
         bvid = bvid,
         cid = cid,
         videoDuration = videoDuration,
         controlsVisible = isVisible,
-        hostLifecycleStarted = hostLifecycleStarted,
+        samplingActive = progressSamplingActive && progressInViewport && state.progressSamplingActive,
         hasPendingSeekResume = hasPendingSeekResume,
         highFrequencyProgressActive = highFrequencyProgressActive,
-        onPlayingChanged = { isPlaying = it },
     )
     val effectiveProgressState = remember(progressState, pluginPlaybackState) {
         derivedStateOf {
@@ -1273,6 +1284,7 @@ private fun VideoPlayerOverlayContent(
         seekResumeTransitionGraceActive,
         isPlaybackTransitionPending,
         hasPendingSeekResume,
+        player.playbackState,
         player.playWhenReady,
         player.isPlaying,
         debugInfo.bandwidthEstimate
@@ -1285,6 +1297,7 @@ private fun VideoPlayerOverlayContent(
                 hasPendingSeekResume,
             playWhenReady = player.playWhenReady,
             isPlaying = player.isPlaying,
+            playbackState = player.playbackState,
             bandwidthEstimate = debugInfo.bandwidthEstimate
         )
     }
@@ -1311,7 +1324,9 @@ private fun VideoPlayerOverlayContent(
         showCdnDiagnostics,
         danmakuComposerVisible,
         levelGestureActive,
+        autoHide.timeoutMillis,
     ) {
+        val timeout = autoHide.timeoutMillis ?: return@LaunchedEffect
         if (!danmakuComposerVisible && !levelGestureActive && !showCdnDiagnostics &&
             shouldAutoHideInlineControlsAfterDelay(
                 controlsVisible = isVisible,
@@ -1320,8 +1335,8 @@ private fun VideoPlayerOverlayContent(
                 floatingPanelVisible = bottomControlFloatingPanelVisible
             )
         ) {
-            delay(4000)
-            if (!danmakuComposerVisible && !levelGestureActive && !showCdnDiagnostics &&
+            delay(timeout)
+            if (autoHide.canHide() && !danmakuComposerVisible && !levelGestureActive && !showCdnDiagnostics &&
                 shouldAutoHideInlineControlsAfterDelay(
                     controlsVisible = isVisible,
                     isPlaying = effectiveIsPlaying,
@@ -1405,7 +1420,9 @@ private fun VideoPlayerOverlayContent(
                 player = player,
                 isShowingPauseIcon = isPlaying
             )
-            isPlaying = !isPlaying
+            isPlaying = resolveOverlayPlaybackButtonPlayingState(
+                player.isPlaying, player.playWhenReady, player.playbackState, hasPendingSeekResume,
+            )
         }
     }
 
@@ -1419,7 +1436,13 @@ private fun VideoPlayerOverlayContent(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().playerActionBounds { playerBoundsInWindow = it }) {
+    Box(
+        modifier = Modifier
+            .then(autoHide.focusModifier)
+            .fillMaxSize()
+            .onVisibilityChanged(minFractionVisible = 0f) { progressInViewport = it }
+            .playerActionBounds { playerBoundsInWindow = it },
+    ) {
         if (!isFullscreen) {
             ImmersiveStatusBarBackdrop(
                 ambientFrame = statusBarAmbientFrame,
@@ -1552,7 +1575,11 @@ private fun VideoPlayerOverlayContent(
                         showBatteryLevel = showFullscreenBatteryLevel,
                         showCurrentTime = showFullscreenTime,
                         showInteractiveActions = showFullscreenActionItems,
+                        likeCount = state.likeCount.takeIf { state.engagementCountsKnown },
+                        favoriteCount = state.favoriteCount.takeIf { state.engagementCountsKnown },
+                        commentCount = state.commentCount.takeIf { state.engagementCountsKnown },
                         onBack = onBack,
+                        onHomeClick = actions.onHomeClick,
                         // Interactions
                         isLiked = isLiked,
                         likeStatusKnown = likeStatusKnown,
@@ -1563,6 +1590,7 @@ private fun VideoPlayerOverlayContent(
                         onLikeClick = onToggleLike,
                         onDislikeClick = onDislike,
                         onCoinClick = onCoin,
+                        shareMenuSource = shareMenuSource,
                         onShareClick = {
                             if (onShare != null) {
                                 onShare()
@@ -1639,18 +1667,23 @@ private fun VideoPlayerOverlayContent(
                         onDismissEndDrawer()
                         val target = nextEpisodeTarget
                         when {
-                            target?.nextPageIndex != null -> onPageSelect(target.nextPageIndex)
-                            !target?.nextBvid.isNullOrBlank() -> onDrawerVideoClick(target.nextBvid, null)
+                            target?.pageIndex != null -> onPageSelect(target.pageIndex)
+                            target != null -> onDrawerVideoClick(
+                                target.bvid,
+                                com.android.purebilibili.feature.video.screen.buildVideoNavigationOptions(targetCid = target.cid),
+                            )
                         }
                     },
                     hasNextEpisode = nextEpisodeTarget != null,
                     onEpisodeClick = {
-                        if (pages.size > 1) {
+                        if (hasExternalPlaylist && pages.size > 1) {
+                            showEpisodeSourceMenu = true
+                        } else if (hasExternalPlaylist) {
+                            onExternalPlaylistClick()
+                        } else if (pages.size > 1) {
                             showPageSelectorSheet = true
                         } else if (ugcSeason?.sections?.any { it.episodes.isNotEmpty() } == true) {
                             onShowEndDrawer(1)
-                        } else if (hasFavoritePlaylist) {
-                            onFavoritePlaylistClick()
                         } else {
                             onShowEndDrawer(0)
                         }
@@ -1747,19 +1780,23 @@ private fun VideoPlayerOverlayContent(
             )
         }
 
-        // 玻璃横竖屏统一由中央入口控制播放与暂停，随控制栏显隐。
-        if ((isFullscreen || configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) &&
-            com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
-            CenterPlaybackControl(
-                visible = isVisible &&
-                    (pluginPlaybackStatus.first || player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_ENDED) &&
-                    centerLoadingUiState == null &&
-                    !isScreenLocked && !isSeekScrubbing && !danmakuComposerVisible &&
-                    !endDrawerVisible && !landscapeCommentPanelVisible && !showInsightDetails,
+        val centerPlaybackSupported = (isFullscreen ||
+            configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) &&
+            com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
+        val hideCenterPlayback = if (centerPlaybackSupported) rememberHideGlassCenterPlayback() else true
+        val showCenterPlaybackControl = centerPlaybackSupported && !hideCenterPlayback && showPlayerChrome &&
+            (pluginPlaybackStatus.first || player.playbackState == Player.STATE_READY ||
+                player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_ENDED) &&
+            !isSeekScrubbing && !endDrawerVisible && !landscapeCommentPanelVisible && !showInsightDetails
+        if (centerPlaybackSupported) {
+            com.android.purebilibili.feature.video.ui.overlay.CenterPlaybackControl(
+                visible = showCenterPlaybackControl,
                 isPlaying = effectiveIsPlaying,
                 onPlayPause = { togglePlayPause() },
                 diameter = if (isFullscreen) 72.dp else 56.dp,
                 modifier = Modifier.align(Alignment.Center),
+                isBuffering = !pluginPlaybackStatus.first && player.playWhenReady &&
+                    (player.playbackState == Player.STATE_BUFFERING || centerLoadingUiState != null),
             )
         }
 
@@ -1784,7 +1821,7 @@ private fun VideoPlayerOverlayContent(
 
         if (isFullscreen && showFullscreenScreenshotButton) {
             AnimatedVisibility(
-                visible = isVisible && !isScreenLocked && !danmakuComposerVisible,
+                visible = isVisible && !danmakuComposerVisible,
                 enter = fadeIn(OverlayControlFadeSpec),
                 exit = fadeOut(OverlayControlFadeSpec),
                 modifier = Modifier
@@ -1998,7 +2035,7 @@ private fun VideoPlayerOverlayContent(
                 playWhenReady = player.playWhenReady,
                 hasRenderedFirstFrame = hasRenderedFirstFrame,
                 suppressTransientOverlays = suppressTransientOverlaysForTransition,
-            ) && centerLoadingUiState == null,
+            ) && centerLoadingUiState == null && !showCenterPlaybackControl,
             modifier = Modifier.align(Alignment.Center),
             // 首帧前整段不参与合成，出现时也硬切：淡入会让「已有画面后的再缓冲」
             // 看起来像又一次进场闪烁。
@@ -2012,7 +2049,7 @@ private fun VideoPlayerOverlayContent(
         }
 
         AnimatedVisibility(
-            visible = centerLoadingUiState != null,
+            visible = centerLoadingUiState != null && !showCenterPlaybackControl,
             modifier = Modifier.align(Alignment.Center),
             enter = fadeIn(OverlayControlFadeSpec),
             exit = fadeOut(OverlayControlFadeSpec)
@@ -2049,7 +2086,7 @@ private fun VideoPlayerOverlayContent(
 
         // --- 5.5  清晰度切换中 Loading 指示器 ---
         AnimatedVisibility(
-            visible = isQualitySwitching && centerLoadingUiState == null,
+            visible = isQualitySwitching && centerLoadingUiState == null && !showCenterPlaybackControl,
             modifier = Modifier.align(Alignment.Center),
             enter = fadeIn(OverlayControlFadeSpec),
             exit = fadeOut(OverlayControlFadeSpec)
@@ -2076,6 +2113,7 @@ private fun VideoPlayerOverlayContent(
 
         VideoShareSheetHost(
             payload = pendingVideoShare,
+            glassSource = shareMenuSource,
             onDismiss = { pendingVideoShare = null },
         )
 
@@ -2286,6 +2324,16 @@ private fun VideoPlayerOverlayContent(
 
         if (showVideoSettings) {
             VideoSettingsPanel(
+                playerDiagnosticsEnabled = insightMode != PlayerSettingsStore.PlayerInsightMode.OFF,
+                onPlayerDiagnosticsChange = { enabled ->
+                    if (!enabled) showInsightDetails = false
+                    scope.launch {
+                        SettingsManager.setPlayerInsightMode(
+                            context,
+                            if (enabled) PlayerSettingsStore.PlayerInsightMode.ALWAYS else PlayerSettingsStore.PlayerInsightMode.OFF,
+                        )
+                    }
+                },
                 chapterDisplayMode = chapterDisplayMode,
                 onChapterDisplayModeChange = { mode ->
                     scope.launch { SettingsManager.setChapterDisplayMode(context, mode) }
@@ -2421,6 +2469,20 @@ private fun VideoPlayerOverlayContent(
             )
         }
 
+        if (showEpisodeSourceMenu) {
+            PlayerEpisodeSourceMenu(
+                externalPlaylistTitle = com.android.purebilibili.feature.video.screen
+                    .resolveExternalPlaylistQueueTitle(externalPlaylistSource),
+                isFullscreen = isFullscreen,
+                onDismiss = { showEpisodeSourceMenu = false },
+                onPartsClick = {
+                    onDismissEndDrawer()
+                    showPageSelectorSheet = true
+                },
+                onExternalPlaylistClick = onExternalPlaylistClick,
+            )
+        }
+
         if (showPageSelectorSheet && pages.size > 1) {
             PlayerEpisodeMenu(
                 pages = pages,
@@ -2428,6 +2490,8 @@ private fun VideoPlayerOverlayContent(
                 isFullscreen = isFullscreen,
                 playerBounds = playerBoundsInWindow,
                 cover = coverUrl,
+                isReversed = collectionSession.isReversed,
+                onReverse = collectionSession.onReverse,
                 onDismiss = { showPageSelectorSheet = false },
                 onPageSelect = onPageSelect,
             )
@@ -3298,7 +3362,7 @@ private fun TripleLikeInteractionButton(
         animationSpec = if (isLongPressing) {
             androidx.compose.animation.core.tween(durationMillis = progressDuration, easing = LinearEasing)
         } else {
-            androidx.compose.animation.core.tween(durationMillis = 200, easing = AppMotionEasing.Continuity)
+            continuityTween(200)
         },
         label = "tripleLikeProgress",
         finishedListener = { progress ->

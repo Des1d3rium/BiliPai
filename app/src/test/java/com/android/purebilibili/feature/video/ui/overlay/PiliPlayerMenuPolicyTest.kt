@@ -8,6 +8,15 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PiliPlayerMenuPolicyTest {
+    @Test fun preferredCodecChoicesKeepGlobalPreferencesAndMergeStreamProfiles() {
+        assertEquals(listOf("avc1", "hev1", "av01"), resolvePiliCodecPreferenceOptions(emptyList()))
+        assertEquals(
+            listOf("avc1", "hev1", "av01", "dvh1"),
+            resolvePiliCodecPreferenceOptions(
+                listOf("avc1.640028", "AVC1.640032", "hvc1.1.6", "hev1.1.6", "av01.0.08", "", "dvh1.08.06"),
+            ),
+        )
+    }
     @Test fun decoderChoicesExcludeOtherQualitiesWithoutDuplicatingFormats() {
         fun video(quality: Int, codec: String) =
             com.android.purebilibili.data.model.response.DashVideo(id = quality, codecs = codec)

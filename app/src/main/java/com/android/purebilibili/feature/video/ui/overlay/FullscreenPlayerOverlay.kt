@@ -122,6 +122,8 @@ import com.android.purebilibili.feature.video.ui.components.VideoAspectRatio
 import com.android.purebilibili.feature.video.ui.components.PlaybackSpeed
 import com.android.purebilibili.feature.video.ui.components.SpeedSelectionMenuPlacement
 import com.android.purebilibili.feature.video.ui.components.resolveSafeVideoAspectRatio
+import com.android.purebilibili.feature.video.ui.components.schedulePlayerViewViewportRefresh
+import com.android.purebilibili.feature.video.ui.components.cancelPlayerViewViewportRefresh
 import com.android.purebilibili.feature.video.ui.components.toFullscreenAspectRatio
 import com.android.purebilibili.feature.video.ui.components.toVideoAspectRatio
 import com.android.purebilibili.core.ui.common.copyOnLongPress
@@ -138,7 +140,6 @@ import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 
-private const val AUTO_HIDE_DELAY = 4000L
 private const val VISIBLE_TOP_CONTROLS_GESTURE_EXCLUSION_HEIGHT_DP = 96
 private const val VISIBLE_BOTTOM_CONTROLS_GESTURE_EXCLUSION_HEIGHT_DP = 90
 
@@ -224,6 +225,7 @@ fun FullscreenPlayerOverlay(
     onDismiss: () -> Unit,
     onNavigateToDetail: () -> Unit
 ) {
+    val autoHide = rememberPlayerControlsAutoHide(4_000L)
     val context = LocalContext.current
     val density = LocalDensity.current
     val player = miniPlayerManager.player
@@ -245,21 +247,18 @@ fun FullscreenPlayerOverlay(
     var showSpeedMenu by remember { mutableStateOf(false) }
 
     //  视频比例状态
+    val aspectRatioSession = com.android.purebilibili.feature.video.ui.components.rememberPlayerAspectRatioSession(player, miniPlayerManager.currentBvid.orEmpty())
+    val sessionAspectRatio by aspectRatioSession.selection.collectAsStateWithLifecycle()
     val fixedFullscreenAspectRatio by SettingsManager
         .getFullscreenAspectRatio(context)
         .collectAsStateWithLifecycle(initialValue = FullscreenAspectRatio.FIT
         )
-    var isVerticalContent by remember(player) {
-        mutableStateOf(
-            player?.videoSize?.let { size ->
-                size.width > 0 && size.height > size.width
-            } ?: false
-        )
-    }
-    var aspectRatio by remember {
+    var playerVideoSize by remember(player) { mutableStateOf(player?.videoSize ?: androidx.media3.common.VideoSize.UNKNOWN) }
+    val isVerticalContent = playerVideoSize.width > 0 && playerVideoSize.height > playerVideoSize.width
+    var aspectRatio by remember(aspectRatioSession) {
         mutableStateOf(
             resolveSafeVideoAspectRatio(
-                preferred = fixedFullscreenAspectRatio.toVideoAspectRatio(),
+                preferred = sessionAspectRatio ?: fixedFullscreenAspectRatio.toVideoAspectRatio(),
                 isVerticalVideo = isVerticalContent
             )
         )
@@ -364,7 +363,11 @@ fun FullscreenPlayerOverlay(
     }
 
     // 播放器状态 — 用当前 player 位置 seed，避免全屏重建时先显示 00:00
-    var isPlaying by remember { mutableStateOf(player?.isPlaying ?: false) }
+    var isPlaying by remember(player) {
+        mutableStateOf(player?.let {
+            resolveOverlayPlaybackButtonPlayingState(it.isPlaying, it.playWhenReady, it.playbackState)
+        } == true)
+    }
     var currentProgress by remember {
         mutableFloatStateOf(
             run {
@@ -417,17 +420,13 @@ fun FullscreenPlayerOverlay(
     DisposableEffect(player) {
         val exoPlayer = player
         if (exoPlayer == null) {
-            isVerticalContent = false
+            playerVideoSize = androidx.media3.common.VideoSize.UNKNOWN
             onDispose { }
         } else {
-            fun updateVerticalContent() {
-                val size = exoPlayer.videoSize
-                isVerticalContent = size.width > 0 && size.height > size.width
-            }
-            updateVerticalContent()
+            playerVideoSize = exoPlayer.videoSize
             val listener = object : Player.Listener {
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                    isVerticalContent = videoSize.width > 0 && videoSize.height > videoSize.width
+                    playerVideoSize = videoSize
                 }
             }
             exoPlayer.addListener(listener)
@@ -435,9 +434,9 @@ fun FullscreenPlayerOverlay(
         }
     }
 
-    LaunchedEffect(fixedFullscreenAspectRatio, isVerticalContent) {
+    LaunchedEffect(fixedFullscreenAspectRatio, isVerticalContent, sessionAspectRatio, aspectRatioSession) {
         aspectRatio = resolveSafeVideoAspectRatio(
-            preferred = fixedFullscreenAspectRatio.toVideoAspectRatio(),
+            preferred = sessionAspectRatio ?: fixedFullscreenAspectRatio.toVideoAspectRatio(),
             isVerticalVideo = isVerticalContent
         )
     }
@@ -527,7 +526,7 @@ fun FullscreenPlayerOverlay(
         }
         while (isActive) {
             player?.let {
-                isPlaying = it.isPlaying
+                isPlaying = resolveOverlayPlaybackButtonPlayingState(it.isPlaying, it.playWhenReady, it.playbackState)
                 duration = resolveSeekableDurationMs(
                     playbackDurationMs = it.duration,
                     fallbackDurationMs = miniPlayerManager.duration
@@ -551,7 +550,8 @@ fun FullscreenPlayerOverlay(
     }
 
     // 自动隐藏控制按钮
-    LaunchedEffect(showControls, lastInteractionTime, gestureMode, isPlaying) {
+    LaunchedEffect(showControls, lastInteractionTime, gestureMode, isPlaying, autoHide.timeoutMillis) {
+        val timeout = autoHide.timeoutMillis ?: return@LaunchedEffect
         if (
             shouldAutoHideFullscreenControls(
                 showControls = showControls,
@@ -559,8 +559,8 @@ fun FullscreenPlayerOverlay(
                 isPlaying = isPlaying
             )
         ) {
-            delay(AUTO_HIDE_DELAY)
-            if (System.currentTimeMillis() - lastInteractionTime >= AUTO_HIDE_DELAY) {
+            delay(timeout)
+            if (autoHide.canHide() && System.currentTimeMillis() - lastInteractionTime >= timeout) {
                 showControls = false
             }
         }
@@ -577,7 +577,8 @@ fun FullscreenPlayerOverlay(
             showRatioMenu -> showRatioMenu = false
             showSpeedMenu -> showSpeedMenu = false
             showDanmakuSettings -> showDanmakuSettings = false
-            else -> onNavigateToDetail()
+            // 这个全屏是从小窗展开的，退出回到小窗；「返回详情页」走三个点菜单里的入口。
+            else -> onDismiss()
         }
     }
     val backEventState = rememberNavigationEventState(NavigationEventInfo.None)
@@ -631,6 +632,7 @@ fun FullscreenPlayerOverlay(
 
     Box(
         modifier = Modifier
+            .then(autoHide.focusModifier)
             .fillMaxSize()
             .graphicsLayer {
                 val progress = backProgress.coerceIn(0f, 1f)
@@ -908,16 +910,10 @@ fun FullscreenPlayerOverlay(
                             }
                             FullscreenGestureMode.Seek -> {
                                 val seekDelta = resolveHorizontalSeekDeltaMs(
-                                    isFullscreen = true,
-                                    fullscreenSwipeSeekEnabled = playerInteractionSettings.fullscreenSwipeSeekEnabled,
                                     totalDragDistanceX = dragDelta,
                                     containerWidthPx = screenWidth,
-                                    fullscreenSwipeSeekSeconds = playerInteractionSettings.fullscreenSwipeSeekSeconds,
-                                    inlineSwipeSeekSeconds = playerInteractionSettings.inlineSwipeSeekSeconds,
                                     gestureSensitivity = playerInteractionSettings.gestureSensitivity,
                                     durationMs = duration,
-                                    useRelativeDuration = playerInteractionSettings.swipeSeekUseRelativeDuration,
-                                    relativeSeekPercent = playerInteractionSettings.swipeSeekRelativePercent
                                 )
                                 if (seekDelta != null) {
                                     seekPreviewPosition = (gestureSeekStartPosition + seekDelta).coerceIn(0L, duration)
@@ -992,6 +988,13 @@ fun FullscreenPlayerOverlay(
                 text = { AppText("退出全屏") },
                 onClick = {
                     showContextMenu = false
+                    onDismiss()
+                },
+            )
+            AppDropdownMenuItem(
+                text = { AppText("返回视频详情页") },
+                onClick = {
+                    showContextMenu = false
                     onNavigateToDetail()
                 },
             )
@@ -1064,21 +1067,36 @@ fun FullscreenPlayerOverlay(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                val viewportLayout = remember(maxWidth, maxHeight, aspectRatio) {
+                val viewportLayout = remember(maxWidth, maxHeight, aspectRatio, playerVideoSize) {
                     with(density) {
                         com.android.purebilibili.feature.video.ui.components.resolveVideoViewportLayout(
                             containerWidth = maxWidth.roundToPx(),
                             containerHeight = maxHeight.roundToPx(),
-                            aspectRatio = aspectRatio
+                            aspectRatio = aspectRatio,
+                            videoWidth = playerVideoSize.width,
+                            videoHeight = playerVideoSize.height,
                         )
                     }
                 }
                 val viewportModifier = with(density) {
                     Modifier
-                        .size(
+                        .requiredSize(
                             width = viewportLayout.width.toDp(),
                             height = viewportLayout.height.toDp()
                         )
+                }
+
+                LaunchedEffect(playerViewRef, exoPlayer, viewportLayout, aspectRatio, playerVideoSize) {
+                    playerViewRef?.let { view ->
+                        schedulePlayerViewViewportRefresh(
+                            playerView = view,
+                            resizeMode = aspectRatio.playerResizeMode,
+                            expectedWidth = viewportLayout.width,
+                            expectedHeight = viewportLayout.height,
+                            videoWidth = playerVideoSize.width,
+                            videoHeight = playerVideoSize.height,
+                        )
+                    }
                 }
 
                 key(exoPlayer, useTextureSurface) {
@@ -1100,6 +1118,7 @@ fun FullscreenPlayerOverlay(
                         playerViewRef = playerView
                     },
                     onRelease = { view ->
+                        cancelPlayerViewViewportRefresh(view)
                         if (playerViewRef === view) playerViewRef = null
                         view.player = null
                     },
@@ -1207,8 +1226,8 @@ fun FullscreenPlayerOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        AppIconButton(onClick = onNavigateToDetail) {
-                            AppIcon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "返回详情页", tint = Color.White)
+                        AppIconButton(onClick = onDismiss) {
+                            AppIcon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "回到小窗", tint = Color.White)
                         }
                         Spacer(Modifier.width(8.dp))
                         AppText(
@@ -1637,12 +1656,8 @@ fun FullscreenPlayerOverlay(
                             isVerticalVideo = isVerticalContent
                         )
                         aspectRatio = safeRatio
-                        scope.launch {
-                            SettingsManager.setFullscreenAspectRatio(
-                                context,
-                                safeRatio.toFullscreenAspectRatio()
-                            )
-                        }
+                        aspectRatioSession.select(safeRatio)
+                        scope.launch { aspectRatioSession.saveIfRemembered(context, safeRatio) }
                         showRatioMenu = false
                         lastInteractionTime = System.currentTimeMillis()
                     },

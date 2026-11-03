@@ -424,9 +424,8 @@ private fun SearchFilterSelectableChip(
         label = {
             AppText(
                 text = label,
-                // Inherit the renderer's paired content color: Miuix owns its native fill,
-                // while MD3 receives the readable selection pair below. An accent override
-                // becomes invisible on Miuix's accent-filled selected chip, in either glass mode.
+                // 文字继承渲染器提供的配对前景色；原生 Miuix 统一使用淡色选中底，
+                // MD3 与玻璃保留各自的填充及对比度规则。
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 textAlign = if (center) TextAlign.Center else TextAlign.Start,

@@ -3,6 +3,9 @@
 
 package com.android.purebilibili.feature.video.player
 
+import com.android.purebilibili.core.player.withAppVideoDecoderDiagnostics
+import com.android.purebilibili.core.player.withAppVideoDecoderPreference
+
 import coil3.request.allowHardware
 import coil3.request.transformations
 
@@ -95,10 +98,13 @@ internal fun shouldShowInAppMiniPlayerByPolicy(
     mode: SettingsManager.MiniPlayerMode,
     isActive: Boolean,
     isNavigatingToVideo: Boolean,
-    stopPlaybackOnExit: Boolean
+    stopPlaybackOnExit: Boolean,
+    forcedByUser: Boolean = false,
 ): Boolean {
     if (stopPlaybackOnExit) return false
-    return mode.supportsInAppMiniPlayer && isActive && !isNavigatingToVideo
+    // forcedByUser：用户点了播放器上的小窗按钮。那是显式意图，不该被
+    // 「小窗播放模式 = 关闭」的设置挡住，否则按钮点下去什么都不发生。
+    return (mode.supportsInAppMiniPlayer || forcedByUser) && isActive && !isNavigatingToVideo
 }
 
 internal fun shouldEnterPipByPolicy(
@@ -439,29 +445,16 @@ internal fun <T> resolveEffectiveNotificationArtwork(
     return incomingArtwork ?: cachedArtwork
 }
 
-internal fun resolveNotificationIconResByPriority(
-    launcherIconRes: Int,
-    fallbackIconKey: String
-): Int {
-    return if (launcherIconRes != 0) launcherIconRes else resolveNotificationSmallIconRes(fallbackIconKey)
-}
-
-internal fun resolveLaunchActivityIconRes(context: Context): Int {
-    return runCatching {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        val component = launchIntent?.component ?: return@runCatching 0
-        context.packageManager.getActivityInfo(component, 0).iconResource
-    }.getOrDefault(0)
-}
+// 通知 small icon 必须是单色透明底图形：自适应启动图标自带彩色背景层，在部分系统上
+// 会被直接渲染成纯色圆形，因此无论启动器图标能否解析，都使用所选图标变体配套的单色资源。
+internal fun resolveNotificationIconRes(iconKey: String): Int =
+    resolveNotificationSmallIconRes(iconKey)
 
 internal fun resolveActivePlaybackLaunchIntent(
     context: Context,
     bvid: String?,
 ): Intent {
-    val launchIntent = context.packageManager
-        .getLaunchIntentForPackage(context.packageName)
-        ?: Intent(context, com.android.purebilibili.MainActivity::class.java)
-    return launchIntent.apply {
+    return Intent(context, com.android.purebilibili.MainActivity::class.java).apply {
         bvid?.takeIf { it.isNotBlank() }?.let { activeBvid ->
             action = Intent.ACTION_VIEW
             data = Uri.parse("https://www.bilibili.com/video/$activeBvid")
@@ -487,11 +480,13 @@ internal fun resolveNotificationSmallIconRes(iconKey: String): Int {
     return when (normalizedKey) {
         "icon_blue_snow_maid" -> R.mipmap.ic_launcher_blue_snow_maid_monochrome
         "icon_blue_snow_maid_front" -> R.mipmap.ic_launcher_blue_snow_maid_front_monochrome
-        "icon_bilipai" -> R.mipmap.ic_launcher_bilipai
-        "icon_bilipai_pink" -> R.mipmap.ic_launcher_bilipai_pink
-        "icon_bilipai_white" -> R.mipmap.ic_launcher_bilipai_white
-        "icon_bilipai_monet" -> R.mipmap.ic_launcher_bilipai_monet
-        "icon_3d" -> R.mipmap.ic_launcher_3d
+        // BiliPai 各变体的自适应启动图标与彩色前景图都不能作为 small icon，
+        // 与它们 monochrome 层共用同一白色字形资源。
+        "icon_bilipai" -> R.mipmap.ic_launcher_bilipai_monet_foreground
+        "icon_bilipai_pink" -> R.mipmap.ic_launcher_bilipai_monet_foreground
+        "icon_bilipai_white" -> R.mipmap.ic_launcher_bilipai_monet_foreground
+        "icon_bilipai_monet" -> R.mipmap.ic_launcher_bilipai_monet_foreground
+        "icon_3d" -> R.drawable.ic_launcher_foreground_flat
         else -> R.mipmap.ic_launcher_blue_snow_maid_monochrome
     }
 }
@@ -822,6 +817,8 @@ class MiniPlayerManager private constructor(private val context: Context) :
     private var remoteTransferJob: Job? = null
     private var playbackStopGeneration = 0L
     private var remotePreferencesJob: Job? = null
+    private var remoteBackgroundOverride: Pair<String, Boolean>? = null
+    private var pendingBackgroundOverride: Pair<String, Boolean>? = null
     private val remoteReclaimMutex = kotlinx.coroutines.sync.Mutex()
 
     /** Only detached listen-video sessions enter this path; mounted video/PiP keeps its player. */
@@ -842,7 +839,11 @@ class MiniPlayerManager private constructor(private val context: Context) :
             quality = state.currentQuality, audioQuality = state.selectedAudioQuality,
             audioUrl = state.audioUrl.orEmpty(), audioLanguage = state.currentAudioLang,
             volume = local.volume, handleAudioFocus = SettingsManager.getAudioFocusEnabledSync(context),
-            reportHistory = !SettingsManager.isPrivacyModeEnabledSync(context)
+            reportHistory = !SettingsManager.isPrivacyModeEnabledSync(context),
+            savedPlayMode = PlaylistManager.savedTransport.value.playMode,
+            savedShuffle = PlaylistManager.savedTransport.value.shuffleEnabled,
+            backgroundPlaybackOverride = PlayerBackgroundPlaybackSessions.selection(local, "video:$currentBvid"),
+            backgroundOverrideBvid = currentBvid,
         )
         if (!com.android.purebilibili.feature.audio.player.canTransferBackgroundAudio(
                 listening = AudioNowPlayingSession.active.value,
@@ -871,6 +872,9 @@ class MiniPlayerManager private constructor(private val context: Context) :
                     }
                 }
                 if (transferred) {
+                    remoteBackgroundOverride = request.backgroundPlaybackOverride?.let { value ->
+                        request.backgroundOverrideBvid?.let { it to value }
+                    }
                     clearPlaybackNotificationArtifacts(stopServiceDirectly = true)
                     cachedUiState = null
                     if (player === local && !pageOwnership.isRetained(local)) {
@@ -918,6 +922,10 @@ class MiniPlayerManager private constructor(private val context: Context) :
                 remoteAudio.close()
                 return@withLock null
             }
+            pendingBackgroundOverride = state.backgroundPlaybackOverride?.let { value ->
+                state.backgroundOverrideBvid?.takeIf { it == state.current?.bvid }?.let { it to value }
+            }
+            remoteBackgroundOverride = null
             state.current?.let { item ->
                 com.android.purebilibili.core.player.PlaybackProgressManager.getInstance(context).apply {
                     // A return near the beginning must replace an older (>5s) cached position too.
@@ -972,9 +980,11 @@ class MiniPlayerManager private constructor(private val context: Context) :
         remotePreferencesJob?.cancel()
         remotePreferencesJob = scope.launch {
             combine(PlaylistManager.playMode, PlaylistManager.shuffleEnabled,
-                SettingsManager.getPrivacyModeEnabled(context), PlaylistManager.playlist) { mode, shuffle, privacy, queue ->
-                Triple(mode, shuffle, privacy) to queue
-            }.collect { (preferences, queue) ->
+                SettingsManager.getPrivacyModeEnabled(context), PlaylistManager.playlist,
+                PlaylistManager.savedTransport) { mode, shuffle, privacy, queue, saved ->
+                (Triple(mode, shuffle, privacy) to queue) to saved
+            }.collect { (runtime, saved) ->
+                val (preferences, queue) = runtime
                 val (mode, shuffle, privacy) = preferences
                 if (!remoteAudio.active) return@collect
                 remoteAudio.controller?.sendCustomCommand(
@@ -982,6 +992,8 @@ class MiniPlayerManager private constructor(private val context: Context) :
                         com.android.purebilibili.feature.audio.player.AUDIO_TRANSPORT, android.os.Bundle.EMPTY
                     ), android.os.Bundle().apply {
                         putString("mode", mode.name); putBoolean("shuffle", shuffle)
+                        putString("saved_mode", saved.playMode.name)
+                        putBoolean("saved_shuffle", saved.shuffleEnabled)
                         putBoolean("report_history", !privacy)
                         if (queue.size in 1..128 && queue.none { it.isBangumi }) {
                             val json = com.android.purebilibili.feature.audio.player.backgroundAudioJson.encodeToString(
@@ -1460,6 +1472,9 @@ class MiniPlayerManager private constructor(private val context: Context) :
         private set
 
     var isMiniMode by mutableStateOf(false)
+
+    /** 用户点了播放器上的小窗按钮。显式意图，不受「小窗播放模式」设置限制。 */
+    var forcedMiniMode by mutableStateOf(false)
         private set
 
     /**
@@ -1882,7 +1897,8 @@ class MiniPlayerManager private constructor(private val context: Context) :
             mode = mode,
             isActive = isActive,
             isNavigatingToVideo = isNavigatingToVideo,
-            stopPlaybackOnExit = stopPlaybackOnExit
+            stopPlaybackOnExit = stopPlaybackOnExit,
+            forcedByUser = forcedMiniMode,
         )
         Logger.d(TAG, "📲 shouldShowInAppMiniPlayer: mode=$mode, isActive=$isActive, navigating=$isNavigatingToVideo, result=$result")
         return result
@@ -1912,7 +1928,12 @@ class MiniPlayerManager private constructor(private val context: Context) :
      */
     fun shouldContinueBackgroundAudio(): Boolean {
         val mode = getCurrentMode()
-        val backgroundPlaybackEnabled = SettingsManager.getBackgroundPlaybackEnabledSync(context)
+        val backgroundKey = if (isLiveMode) "live:$currentRoomId" else currentBvid?.takeIf { it.isNotBlank() }?.let { "video:$it" }
+        val backgroundPlaybackEnabled = remoteBackgroundOverride?.takeIf {
+            remoteAudio.active && it.first == currentBvid
+        }?.second ?: PlayerBackgroundPlaybackSessions.effective(
+            player, backgroundKey, SettingsManager.getBackgroundPlaybackEnabledSync(context),
+        )
         val stopPlaybackOnExit = SettingsManager.getStopPlaybackOnExitSync(context)
         return shouldContinueBackgroundAudioByPolicy(
             backgroundPlaybackEnabled = backgroundPlaybackEnabled,
@@ -2087,6 +2108,11 @@ class MiniPlayerManager private constructor(private val context: Context) :
             )
             return
         }
+        // 小窗接管后仍是活跃播放会话，不能留下阻断后台播放与前台恢复的离开标记。
+        if (isMiniMode && !forceStop) {
+            isLeavingByNavigation = false
+            return
+        }
         if (!forceStop) prepareAudioNowPlayingForNavigationExit(expectedBvid)
         isLeavingByNavigation = true
         Logger.d(
@@ -2122,6 +2148,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
             if (forceStop || !keepForAudioNowPlaying) AudioNowPlayingSession.dismiss()
             isPlaying = false
             isMiniMode = false
+            forcedMiniMode = false
             Logger.d(TAG, "🔇 ${mode.label}：通过导航离开，立即停止播放")
             // 停止所有播放器（外部和内部）
             _externalPlayer?.let { player ->
@@ -2182,15 +2209,20 @@ class MiniPlayerManager private constructor(private val context: Context) :
             val stopPlaybackOnExit = SettingsManager.getStopPlaybackOnExitSync(context)
             val audioFocusEnabled = SettingsManager.getAudioFocusEnabledSync(context)
 
-            // 音乐氛围在 HiResCompatibleRenderersFactory 的公共音频入口动态读取开关。
+            // 封面律动在公共音频入口按需读取开关。
             val renderersFactory = if (SettingsManager.getLoudnessNormalizationEnabledSync(context)) {
                 com.android.purebilibili.core.player.LoudnessAwareRenderersFactory(context)
             } else {
                 HiResCompatibleRenderersFactory(context)
             }.setExtensionRendererMode(
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
-            )
+            ).withAppVideoDecoderPreference(context)
             _player = ExoPlayer.Builder(context)
+                .apply {
+                    if (SettingsManager.getResilientVideoBufferSync(context)) {
+                        setLoadControl(com.android.purebilibili.feature.video.state.createVideoLoadControl(context))
+                    }
+                }
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                 .setAudioAttributes(
@@ -2204,7 +2236,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
                         stopPlaybackOnExit = stopPlaybackOnExit
                     )
                 )
-                .build()
+                .build().withAppVideoDecoderDiagnostics(context)
                 .apply {
                     addListener(playerListener)
                     //  [修复] 确保音量正常
@@ -2214,8 +2246,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
                     prepare()
                 }
             
-            // Follow the currently enabled launcher alias. Targeting MainActivity directly can
-            // create a second activity instance when the selected app icon uses a splash alias.
+            // Every media entry targets the canonical UI host, never a launcher routing activity.
             val sessionIntent = resolveActivePlaybackLaunchIntent(context, currentBvid)
             val pendingIntent = PendingIntent.getActivity(
                 context, 0, sessionIntent,
@@ -2259,6 +2290,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         currentOwner = owner
         isActive = true
         isMiniMode = false
+        forcedMiniMode = false
 
         // 构建媒体源
         val headers = mapOf(
@@ -2325,6 +2357,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         currentLiveUname = ""
         isActive = true
         isMiniMode = false
+        forcedMiniMode = false
         isLeavingByNavigation = false
         requestForegroundServiceIfNeeded()
 
@@ -2402,6 +2435,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         isLeavingByNavigation = false
         if (!isMiniMode) miniPlayerSessionId++
         isMiniMode = true
+        if (forced) forcedMiniMode = true
         // Detail-session handoff may have muted the shared player; always restore for mini window.
         currentPlayer?.let(PlayerVolumeController::applyPreferredVolume)
         if (shouldResumePlayback && currentPlayer != null) {
@@ -2428,6 +2462,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         Logger.d(TAG) { "Exiting mini mode, animate=$animate" }
         shouldAnimateExit = animate
         isMiniMode = false
+        forcedMiniMode = false
     }
 
     /**
@@ -2455,6 +2490,8 @@ class MiniPlayerManager private constructor(private val context: Context) :
 
     fun endBangumiPlayback(expectedPlayer: ExoPlayer) {
         if (clearExternalPlayerIfMatches(expectedPlayer)) {
+            PlayerBackgroundPlaybackSessions.clear(expectedPlayer)
+            PlaylistManager.endPlaybackPreferenceSession()
             isPlaying = false
             releaseMediaSession()
             clearPlaybackNotificationArtifacts()
@@ -2475,6 +2512,11 @@ class MiniPlayerManager private constructor(private val context: Context) :
     }
 
     private fun dismiss(taskRemoved: Boolean) {
+        PlayerBackgroundPlaybackSessions.clear(_externalPlayer)
+        PlayerBackgroundPlaybackSessions.clear(_player)
+        remoteBackgroundOverride = null
+        pendingBackgroundOverride = null
+        PlaylistManager.endPlaybackPreferenceSession()
         playbackStopGeneration++
         remoteTransferJob?.cancel()
         remotePreferencesJob?.cancel()
@@ -2510,6 +2552,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         }
         
         isMiniMode = false
+        forcedMiniMode = false
         isActive = false
         playbackServiceRequested = false
         lastForegroundStartAtMs = 0L
@@ -2605,8 +2648,13 @@ class MiniPlayerManager private constructor(private val context: Context) :
         isLiveMode = false  // 📺 视频模式
         
         replaceExternalPlayer(externalPlayer)
+        pendingBackgroundOverride?.takeIf { it.first == bvid }?.let { (_, value) ->
+            PlayerBackgroundPlaybackSessions.forContent(externalPlayer, "video:$bvid").select(value)
+        }
+        pendingBackgroundOverride = null
         isActive = true
         isMiniMode = false
+        forcedMiniMode = false
         // A visible detail reclaim ends the previous navigation handoff.
         isLeavingByNavigation = false
 
@@ -3269,10 +3317,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
     /** 只补充品牌外观和当前内容；播放状态、按钮和通知发布由媒体服务负责。 */
     internal fun decoratePlaybackNotification(notification: android.app.Notification): android.app.Notification {
         val builder = android.app.Notification.Builder.recoverBuilder(context, notification)
-            .setSmallIcon(resolveNotificationIconResByPriority(
-                launcherIconRes = resolveLaunchActivityIconRes(context),
-                fallbackIconKey = SettingsManager.getAppIconSync(context),
-            ))
+            .setSmallIcon(resolveNotificationIconRes(SettingsManager.getAppIconSync(context)))
             .setContentTitle(currentTitle)
             .setContentText(currentOwner)
             .setContentIntent(PendingIntent.getActivity(

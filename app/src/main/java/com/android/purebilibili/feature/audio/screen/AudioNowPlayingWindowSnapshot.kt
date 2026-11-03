@@ -28,6 +28,7 @@ internal data class AudioNowPlayingWindowSnapshot(
 internal suspend fun captureAudioNowPlayingWindowSnapshot(
     window: Window,
     bounds: ComposeRect,
+    cornerRadiusPx: Float? = null,
 ): AudioNowPlayingWindowSnapshot? {
     val root = window.decorView
     if (!root.isAttachedToWindow || bounds.isEmpty ||
@@ -56,9 +57,9 @@ internal suspend fun captureAudioNowPlayingWindowSnapshot(
                     bitmap.recycle()
                     continuation.resume(null)
                 } else {
-                    // Match the bar's RoundedCornerShape(50%); keep surrounding page pixels
-                    // out of the particles while preserving the visible blurred material.
-                    val radius = min(bitmap.width, bitmap.height) / 2f
+                    // Keep surrounding page pixels out of the particles.
+                    val radius = (cornerRadiusPx ?: (min(bitmap.width, bitmap.height) / 2f))
+                        .coerceIn(0f, min(bitmap.width, bitmap.height) / 2f)
                     val capsule = Path().apply {
                         addRoundRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(),
                             radius, radius, Path.Direction.CW)

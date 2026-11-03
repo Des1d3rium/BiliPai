@@ -22,22 +22,32 @@ internal fun nextWatchRemainingSeconds(durationMs: Long, positionMs: Long): Int?
     return ((durationMs - positionMs + 999) / 1_000).toInt()
 }
 
-/** Same collection lookahead for the hint and end-of-playback navigation. */
-internal fun resolveCollectionNextWatch(
-    info: com.android.purebilibili.data.model.response.ViewInfo
+/** Same-video CID navigation, independent of collection membership. */
+internal fun resolvePageWatchTarget(
+    info: com.android.purebilibili.data.model.response.ViewInfo,
+    forward: Boolean = true
 ): NextWatchSuggestion? {
     val step = PiliPlaybackOrder.step(info)
     val pageIndex = info.pages.indexOfFirst { it.cid == info.cid }
-    val nextPageIndex = pageIndex + step
+    val nextPageIndex = pageIndex + if (forward) step else -step
     if (pageIndex >= 0 && nextPageIndex in info.pages.indices) {
         val next = info.pages[nextPageIndex]
         return NextWatchSuggestion(info.bvid, info.cid, info.bvid, next.cid,
             next.part, info.pic, "下一 P", pageIndex = nextPageIndex)
     }
+    return null
+}
+
+/** Cross-video collection navigation; external queues must never select this target. */
+internal fun resolveSeasonWatchTarget(
+    info: com.android.purebilibili.data.model.response.ViewInfo,
+    forward: Boolean = true
+): NextWatchSuggestion? {
+    val step = PiliPlaybackOrder.step(info)
     val episodes = info.ugc_season?.sections?.flatMap { it.episodes }.orEmpty()
     val index = com.android.purebilibili.feature.video.viewmodel.resolveUgcSeasonEpisodeIndex(
         episodes, info.bvid, info.cid)
-    val nextEpisodeIndex = index + step
+    val nextEpisodeIndex = index + if (forward) step else -step
     if (index >= 0 && nextEpisodeIndex in episodes.indices) {
         val next = episodes[nextEpisodeIndex]
         if (next.bvid.isNotBlank() && (next.bvid != info.bvid || next.cid != info.cid)) {
@@ -47,3 +57,8 @@ internal fun resolveCollectionNextWatch(
     }
     return null
 }
+
+/** Non-external collection navigation finishes the current video's parts first. */
+internal fun resolveCollectionNextWatch(
+    info: com.android.purebilibili.data.model.response.ViewInfo
+): NextWatchSuggestion? = resolvePageWatchTarget(info) ?: resolveSeasonWatchTarget(info)

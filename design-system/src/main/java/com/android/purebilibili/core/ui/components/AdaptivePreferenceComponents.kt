@@ -263,7 +263,7 @@ internal fun resolveAdaptiveGroupContainerColor(
 fun adaptivePreferenceGroupContainerColor(): Color = resolveAdaptiveGroupContainerColor(
     uiStyle = LocalAppUiStyle.current,
     colorScheme = MaterialTheme.colorScheme,
-    globalWallpaperVisible = LocalGlobalWallpaperBackdropVisible.current && !isMiuixNonGlassEnabled(),
+    globalWallpaperVisible = LocalGlobalWallpaperBackdropVisible.current && LocalAppUiStyle.current != AppUiStyle.MIUIX,
 )
 
 internal fun resolveAdaptiveSearchBarContainerColor(
@@ -644,6 +644,8 @@ private fun AdaptiveSwitchPreferenceBody(
         // MD3 原生:ListItem + M3 Switch
         val haptic = LocalHapticFeedback.current
         val hapticsEnabled = LocalAppThemeConfig.current.hapticFeedbackEnabled
+        // 与 AppSingleChoicePreference 的禁用态保持一致：整行 alpha 0.6。
+        // 只给文字降透明度会和开关的禁用态不同步。
         ListItem(
             headlineContent = {
                 if (titleTrailingContent == null) {
@@ -703,6 +705,7 @@ private fun AdaptiveSwitchPreferenceBody(
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
                 .fillMaxWidth()
+                .alpha(if (enabled) 1f else 0.6f)
                 .heightIn(min = rowSpec.minTouchTargetHeightDp.dp)
                 .clickable(enabled = enabled) {
                     if (hapticsEnabled) {
@@ -1617,6 +1620,7 @@ fun AdaptiveTextFieldRenderer(
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     isError: Boolean = false,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
     supportingText: @Composable (() -> Unit)? = null,
 ) {
     val uiStyle = LocalAppUiStyle.current
@@ -1628,6 +1632,7 @@ fun AdaptiveTextFieldRenderer(
                 modifier = Modifier.fillMaxWidth(),
                 label = label ?: placeholder.orEmpty(),
                 useLabelAsPlaceholder = label == null,
+                keyboardOptions = keyboardOptions,
                 singleLine = singleLine,
                 minLines = minLines,
                 maxLines = maxLines,
@@ -1649,6 +1654,7 @@ fun AdaptiveTextFieldRenderer(
         modifier = modifier.fillMaxWidth(),
         label = label?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it) } },
+        keyboardOptions = keyboardOptions,
         singleLine = singleLine,
         minLines = minLines,
         maxLines = maxLines,

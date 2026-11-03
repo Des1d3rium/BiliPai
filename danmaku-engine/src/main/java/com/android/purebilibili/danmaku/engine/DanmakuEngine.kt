@@ -55,9 +55,32 @@ interface DanmakuEngine : AutoCloseable {
     fun invalidate()
 
     /** Capture a tap in renderer-local pixels; invoke only after single-tap confirmation. */
-    fun captureClick(x: Float, y: Float): (() -> Unit)?
+    fun captureClick(x: Float, y: Float): DanmakuClickCapture?
+
+    fun clearClickSelection()
 
     fun setOnItemClickListener(listener: ((DanmakuItem, RectF, PointF) -> Unit)?)
 
     override fun close()
+}
+
+/** A press owns the frozen item until cancellation or the action menu closes. */
+class DanmakuClickCapture(
+    private val confirm: () -> Unit,
+    private val release: () -> Unit,
+) {
+    private var cancelled = false
+    private var confirmed = false
+    operator fun invoke() {
+        if (!cancelled && !confirmed) {
+            confirmed = true
+            confirm()
+        }
+    }
+    fun cancel() {
+        if (!cancelled) {
+            cancelled = true
+            release()
+        }
+    }
 }

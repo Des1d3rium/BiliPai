@@ -29,6 +29,18 @@ internal fun resolveHomeTopSearchRowMetrics(
     }
 }
 
+/** 首页与顶栏共用实际搜索行的收起距离，隐藏分类或迁移到底栏后不预留不存在的间距。 */
+internal fun resolveHomeTopSearchScrollDistance(
+    searchBarHeight: Dp,
+    searchToTabsSpacing: Dp,
+    extraSpacing: Dp,
+    hideTopTabs: Boolean,
+): Dp = if (searchBarHeight > 0.dp) {
+    searchBarHeight + (if (hideTopTabs) 0.dp else searchToTabsSpacing) + extraSpacing
+} else {
+    0.dp
+}
+
 /**
  * 顶 Tab 与首个内容的紧凑收紧量。
  *

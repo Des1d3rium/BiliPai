@@ -89,6 +89,8 @@ internal fun ImmersiveAppScaffold(
     val blurActive = hazeActive || progressiveActive || fadeActive
     AppScaffold(
         modifier = modifier,
+        // 外部源可能仅含壁纸；只复用本框架录制的完整页面内容。
+        topBarIconBackdropSource = source.takeIf { chromeBackdropSource == null },
         topBar = {
             if (topBar != null) {
                 BiliPaiImmersiveTopBar(
@@ -106,6 +108,8 @@ internal fun ImmersiveAppScaffold(
                                 .unifiedBlur(
                                     hazeState = hazeState,
                                     surfaceType = BlurSurfaceType.HEADER,
+                                    // 仅本框架的完整页面源允许采样当前窗口，外部壁纸源保持原语义。
+                                    preferWindowBackdrop = externalHazeState == null && chromeBackdropSource == null,
                                 )
                                 .background(
                                     globalWallpaperAwareChromeColor(topBarSurfaceColor)

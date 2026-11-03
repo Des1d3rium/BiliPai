@@ -218,6 +218,7 @@ fun AppTextField(
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     isError: Boolean = false,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
     supportingText: @Composable (() -> Unit)? = null,
 ) = AdaptiveTextFieldRenderer(
     value = value,
@@ -230,4 +231,5 @@ fun AppTextField(
     maxLines = maxLines,
     isError = isError,
     supportingText = supportingText,
+    keyboardOptions = keyboardOptions,
 )

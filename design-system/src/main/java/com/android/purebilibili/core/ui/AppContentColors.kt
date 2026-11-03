@@ -23,7 +23,7 @@ object AppContentColors {
     @Composable
     @ReadOnlyComposable
     fun secondaryText(): Color = LocalAppContentPalette.current?.secondary
-        ?: resolveReadableNeutralContent(AppSurfaceTokens.onSurfaceVariantSummary(), MaterialTheme.colorScheme)
+        ?: resolveReadableNeutralContent(AppSurfaceTokens.onSurfaceVariantSummary(), AppInteractionColors.nativeContentScheme() ?: MaterialTheme.colorScheme)
 
     @Composable
     @ReadOnlyComposable
@@ -48,7 +48,9 @@ object AppContentColors {
 
     @Composable
     @ReadOnlyComposable
-    fun onAccent(): Color = MaterialTheme.colorScheme.onPrimary
+    fun onAccent(): Color = if (nativeInteractionColorsEnabled()) {
+        top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onPrimary
+    } else MaterialTheme.colorScheme.onPrimary
 
     @Composable
     @ReadOnlyComposable
@@ -57,17 +59,17 @@ object AppContentColors {
     @Composable
     @ReadOnlyComposable
     fun link(): Color = LocalAppContentPalette.current?.link
-        ?: resolveReadableNeutralContent(accent(), MaterialTheme.colorScheme)
+        ?: resolveReadableNeutralContent(accent(), AppInteractionColors.nativeContentScheme() ?: MaterialTheme.colorScheme)
 
     @Composable
     @ReadOnlyComposable
     fun success(): Color = LocalAppContentPalette.current?.success
-        ?: resolveStatusContentColor(AppContentStatus.SUCCESS, MaterialTheme.colorScheme)
+        ?: resolveStatusContentColor(AppContentStatus.SUCCESS, AppInteractionColors.nativeContentScheme() ?: MaterialTheme.colorScheme)
 
     @Composable
     @ReadOnlyComposable
     fun warning(): Color = LocalAppContentPalette.current?.warning
-        ?: resolveStatusContentColor(AppContentStatus.WARNING, MaterialTheme.colorScheme)
+        ?: resolveStatusContentColor(AppContentStatus.WARNING, AppInteractionColors.nativeContentScheme() ?: MaterialTheme.colorScheme)
 
     /** Scores use a readable warm hue; the role is informational, not a warning state. */
     @Composable
@@ -80,14 +82,27 @@ private val LocalAppContentPalette = staticCompositionLocalOf<AppContentPalette?
 
 /** Palette work runs once per theme change; root text and icons share the native foreground. */
 @Composable
-fun ProvideAppContentColors(content: @Composable () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
+fun ProvideAppContentColors(
+    nativeInteractionColors: Boolean = nativeInteractionColorsEnabled(),
+    miuixContentColors: Boolean = com.android.purebilibili.core.theme.LocalAppUiStyle.current == com.android.purebilibili.core.theme.AppUiStyle.MIUIX,
+    content: @Composable () -> Unit,
+) {
+    // 主题可在运行时配置 Provider 外层组合，材质边界由主题显式传入。
+    CompositionLocalProvider(LocalAppNativeInteractionColorsEnabled provides nativeInteractionColors) {
+        ProvideResolvedAppContentColors(miuixContentColors, content)
+    }
+}
+
+@Composable
+private fun ProvideResolvedAppContentColors(miuixContentColors: Boolean, content: @Composable () -> Unit) {
+    val nativeScheme = AppInteractionColors.nativeContentScheme(forceMiuix = miuixContentColors)
+    val scheme = nativeScheme ?: MaterialTheme.colorScheme
     val secondary = AppSurfaceTokens.onSurfaceVariantSummary()
     val foreground = AppSurfaceTokens.onSurface()
-    val palette = remember(scheme, secondary) {
+    val palette = remember(scheme, secondary, nativeScheme != null) {
         AppContentPalette(
-            secondary = resolveReadableNeutralContent(secondary, scheme),
-            link = resolveReadableNeutralContent(scheme.primary, scheme),
+            secondary = if (nativeScheme != null) secondary else resolveReadableNeutralContent(secondary, scheme),
+            link = if (nativeScheme != null) scheme.primary else resolveReadableNeutralContent(scheme.primary, scheme),
             success = resolveStatusContentColor(AppContentStatus.SUCCESS, scheme),
             warning = resolveStatusContentColor(AppContentStatus.WARNING, scheme),
         )

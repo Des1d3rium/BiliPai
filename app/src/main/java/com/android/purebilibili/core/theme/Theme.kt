@@ -348,13 +348,20 @@ internal fun resolveMaterialColorSchemeFromMiuixBridge(
 /**
  * Keep upstream neutral/control roles; only the user's accent is adapted from Material.
  * Dark canvas roles honor the ordinary/AMOLED preference; light colors and native
- * control roles retain Miuix defaults. Both theme APIs consume this resolved palette.
+ * control roles retain Miuix defaults unless advanced custom roles are explicitly enabled.
+ * Both theme APIs consume this resolved palette.
  */
 internal fun resolveNativeMiuixColors(
     scheme: ColorScheme,
     darkTheme: Boolean,
     amoledDarkTheme: Boolean = false,
+    customRolesEnabled: Boolean = false,
 ): top.yukonga.miuix.kmp.theme.Colors {
+    // 仅显式开启高级自定义时映射背景、卡片、文字与控件；玻璃开关共用此色板。
+    // 手动背景优先于 AMOLED 预设，关闭自定义后恢复下面的原生角色。
+    if (customRolesEnabled) {
+        return resolveMiuixColorsFromMaterialBridge(createMiuixMaterialBridge(scheme), darkTheme)
+    }
     val upstream = if (darkTheme) miuixDarkColorScheme() else miuixLightColorScheme()
     // Upstream's dark surface is already pure black. Give ordinary dark mode a
     // charcoal canvas, and apply AMOLED roles before bridging both theme APIs.
@@ -461,7 +468,8 @@ internal fun alignMaterialSurfacesWithMiuix(
 
 internal fun resolveMiuixColorsFromMaterialBridge(
     bridge: MiuixMaterialBridge,
-    darkTheme: Boolean
+    darkTheme: Boolean,
+    useMonetMapping: Boolean = false,
 ): top.yukonga.miuix.kmp.theme.Colors {
     val base = if (darkTheme) miuixDarkColorScheme() else miuixLightColorScheme()
     val disabledPrimary = opaqueCompositeOver(bridge.primary.copy(alpha = 0.38f), bridge.surface)
@@ -496,7 +504,7 @@ internal fun resolveMiuixColorsFromMaterialBridge(
         primaryContainer = bridge.primaryContainer,
         onPrimaryContainer = bridge.onPrimaryContainer,
         secondary = bridge.outlineVariant,
-        onSecondary = resolveReadableTextColor(
+        onSecondary = if (useMonetMapping) bridge.outline else resolveReadableTextColor(
             candidate = bridge.outline,
             background = bridge.outlineVariant,
             fallback = bridge.onSurface,
@@ -519,7 +527,7 @@ internal fun resolveMiuixColorsFromMaterialBridge(
         onError = bridge.onError,
         background = bridge.background,
         onBackground = bridge.onBackground,
-        onBackgroundVariant = bridge.onSurfaceVariant,
+        onBackgroundVariant = if (useMonetMapping) bridge.primary else bridge.onSurfaceVariant,
         surface = bridge.surface,
         onSurface = bridge.onSurface,
         surfaceVariant = bridge.surfaceVariant,
@@ -971,34 +979,37 @@ fun PureBiliBiliTheme(
         seedPaletteStyle = seedPaletteStyle,
     )
 
-    val baseThemeRoleOverrides = remember(lightMaterialScheme, darkMaterialScheme) {
-        themeRoleOverridesFromSchemes(lightMaterialScheme, darkMaterialScheme)
+    val baseThemeRoleOverrides = remember(lightMaterialScheme, darkMaterialScheme, uiStyle, amoledDarkTheme, liquidGlassEnabled) {
+        // 高级编辑器从当前材质的实际色板开始，保留背景、文字与控件的配对关系。
+        themeRoleOverridesFromSchemes(
+            lightMaterialScheme, darkMaterialScheme, uiStyle, amoledDarkTheme, liquidGlassEnabled,
+        )
     }
     val effectiveThemeRoleOverrides = remember(md3ColorSource, themeRoleOverrides, uiStyle, baseThemeRoleOverrides, md3CustomColorHex, seedPaletteStyle) {
         // Extended palettes own all generated roles. Saved advanced edits remain
         // available when returning to Standard; no seed/primary rewrite in this mode.
-        val effective = resolveEffectiveThemeRoleOverrides(md3ColorSource, themeRoleOverrides, uiStyle)
+        val effective = resolveEffectiveThemeRoleOverrides(md3ColorSource, themeRoleOverrides)
             .let { if (seedPaletteStyle.enabled) it.copy(enabled = false) else it }
         if (effective.enabled) {
             enableThemeRoleOverrides(effective, baseThemeRoleOverrides, md3CustomColorHex)
         } else effective
     }
     val resolvedLightMaterialScheme = remember(
-        lightMaterialScheme, effectiveThemeRoleOverrides, colorStyle, colorSpec,
+        lightMaterialScheme, effectiveThemeRoleOverrides, colorStyle, colorSpec, uiStyle,
         liquidGlassEnabled, md3ColorSource, customPrimaryColor, colorContrast, seedPaletteStyle,
     ) {
         resolveConfiguredMaterialScheme(
             lightMaterialScheme, effectiveThemeRoleOverrides, false, colorStyle, colorSpec,
-            colorContrast, seedPaletteStyle, md3ColorSource, customPrimaryColor, liquidGlassEnabled,
+            colorContrast, seedPaletteStyle, md3ColorSource, customPrimaryColor, liquidGlassEnabled, uiStyle,
         )
     }
     val resolvedDarkMaterialScheme = remember(
-        darkMaterialScheme, effectiveThemeRoleOverrides, colorStyle, colorSpec,
+        darkMaterialScheme, effectiveThemeRoleOverrides, colorStyle, colorSpec, uiStyle,
         liquidGlassEnabled, md3ColorSource, customPrimaryColor, colorContrast, seedPaletteStyle,
     ) {
         resolveConfiguredMaterialScheme(
             darkMaterialScheme, effectiveThemeRoleOverrides, true, colorStyle, colorSpec,
-            colorContrast, seedPaletteStyle, md3ColorSource, customPrimaryColor, liquidGlassEnabled,
+            colorContrast, seedPaletteStyle, md3ColorSource, customPrimaryColor, liquidGlassEnabled, uiStyle,
         )
     }
     val lightEndpointPalette = remember(
@@ -1106,7 +1117,13 @@ fun PureBiliBiliTheme(
                 typography = materialTypography,
                 shapes = shapes,
                 motionScheme = materialMotionScheme,
-                content = { com.android.purebilibili.core.ui.ProvideAppContentColors(content) }
+                content = {
+                    com.android.purebilibili.core.ui.ProvideAppContentColors(
+                        nativeInteractionColors = com.android.purebilibili.core.ui.isMiuixNonGlassEnabled(uiStyle, liquidGlassEnabled),
+                        miuixContentColors = uiStyle == AppUiStyle.MIUIX,
+                        content = content,
+                    )
+                }
             )
         }
     }

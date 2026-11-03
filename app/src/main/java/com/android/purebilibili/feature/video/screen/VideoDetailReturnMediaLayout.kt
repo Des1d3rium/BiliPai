@@ -492,14 +492,17 @@ internal fun Modifier.videoDetailReturnPlayerLayout(
     return drawWithCache {
         val path = Path()
         onDrawWithContent {
-            val mediaFrame = frame(size.width.roundToInt(), size.height.roundToInt())
+            val progress = handoffProgressProvider().coerceIn(0f, 1f)
             val hasTargetGeometry = landingLayout?.canRender == true ||
                 nativeSnapshotBoundsProvider?.invoke()?.let { it.width > 1f && it.height > 1f } == true
-            val radius = if (hasTargetGeometry) {
-                clipCornerDp.toPx() * handoffProgressProvider().coerceIn(0f, 1f)
-            } else {
-                0f
+            // The card owns clipping only during the handoff. A zero-radius RoundRect still
+            // records a path clip around the native player; release it at the detail endpoint.
+            if (progress == 0f || !hasTargetGeometry) {
+                drawContent()
+                return@onDrawWithContent
             }
+            val mediaFrame = frame(size.width.roundToInt(), size.height.roundToInt())
+            val radius = clipCornerDp.toPx() * progress
             path.reset()
             path.addRoundRect(
                 RoundRect(

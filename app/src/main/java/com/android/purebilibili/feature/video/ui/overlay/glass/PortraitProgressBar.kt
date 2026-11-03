@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -32,6 +33,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import android.os.SystemClock
+import com.android.purebilibili.core.player.SeekTickHapticPolicy
+import com.android.purebilibili.core.ui.AppHapticScene
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
 import com.android.purebilibili.data.model.response.VideoshotData
 import com.android.purebilibili.feature.video.ui.components.CompactSeekPreview
 import com.android.purebilibili.feature.video.ui.components.SeekPreviewBubblePlacement
@@ -130,6 +136,9 @@ fun ThinWigglyProgressBar(
     val currentOnSeekDragStart by rememberUpdatedState(onSeekDragStart)
     val currentOnSeekDragUpdate by rememberUpdatedState(onSeekDragUpdate)
     val currentOnSeekDragCancel by rememberUpdatedState(onSeekDragCancel)
+    // 拖动进度条刻度触感：拖起轻振，跨过整秒时短振，快速滑动按 60ms 限频。
+    val seekHaptic = rememberHapticFeedback(AppHapticScene.PLAYER_SEEK)
+    val seekHapticPolicy = remember { SeekTickHapticPolicy() }
     val activePositionMs = resolveSeekPreviewTargetPositionMs(
         displayPositionMs = seekPositionMs,
         dragTargetPositionMs = dragTargetPositionMs,
@@ -181,9 +190,13 @@ fun ThinWigglyProgressBar(
                             dragTargetPositionMs = targetPositionMs
                             currentOnSeekStart()
                             currentOnSeekDragStart(targetPositionMs)
+                            if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                                seekHaptic(HapticType.LIGHT)
+                            }
                         },
                         onDragEnd = {
                             dragInProgress = false
+                            seekHapticPolicy.finish()
                             val committedProgress = if (duration > 0L) {
                                 dragTargetPositionMs.toFloat() / duration.toFloat()
                             } else {
@@ -195,6 +208,7 @@ fun ThinWigglyProgressBar(
                             if (dragInProgress) {
                                 dragInProgress = false
                                 currentOnSeekDragCancel()
+                                seekHapticPolicy.finish()
                             }
                         },
                         onHorizontalDrag = { change, _ ->
@@ -206,10 +220,16 @@ fun ThinWigglyProgressBar(
                             )
                             dragTargetPositionMs = targetPositionMs
                             currentOnSeekDragUpdate(targetPositionMs)
+                            if (seekHapticPolicy.update(targetPositionMs, SystemClock.uptimeMillis())) {
+                                seekHaptic(HapticType.GESTURE_STEP)
+                            }
                         }
                     )
                 } finally {
-                    if (dragInProgress) currentOnSeekDragCancel()
+                    if (dragInProgress) {
+                        currentOnSeekDragCancel()
+                        seekHapticPolicy.finish()
+                    }
                 }
             }
             // 也支持点击跳转
@@ -225,6 +245,10 @@ fun ThinWigglyProgressBar(
                         currentOnSeekStart()
                         currentOnSeekDragStart(targetPositionMs)
                         currentOnSeekDragUpdate(targetPositionMs)
+                        if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                            seekHaptic(HapticType.LIGHT)
+                        }
+                        seekHapticPolicy.finish()
                         val committedProgress = if (duration > 0L) {
                             targetPositionMs.toFloat() / duration.toFloat()
                         } else {
@@ -237,37 +261,54 @@ fun ThinWigglyProgressBar(
         ,
         contentAlignment = Alignment.CenterStart
     ) {
-        // 背景轨道
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(barHeight)
-                .background(
-                    Color.White.copy(alpha = 0.3f),
-                    RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
-                )
-        )
+        val glassTrackHighlight = rememberPlayerProgressGlassHighlight()
+        val trackContent: @Composable () -> Unit = {
+            // 背景轨道
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    .background(
+                        Color.White.copy(alpha = 0.3f),
+                        RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
+                    )
+            )
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(bufferProgress.coerceIn(0f, 1f))
-                .height(barHeight)
-                .background(
-                    Color.White.copy(alpha = 0.55f),
-                    RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
-                )
-        )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(bufferProgress.coerceIn(0f, 1f))
+                    .height(barHeight)
+                    .background(
+                        Color.White.copy(alpha = 0.55f),
+                        RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
+                    )
+            )
 
-        // 进度 (当前进度)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(displayProgress)
-                .height(barHeight)
-                .background(
-                    Color.White.copy(alpha = 0.9f),
-                    RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
-                )
-        )
+            // 进度 (当前进度)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(displayProgress)
+                    .height(barHeight)
+                    .background(
+                        Color.White.copy(alpha = 0.9f),
+                        RoundedCornerShape(layoutPolicy.trackCornerRadiusDp.dp)
+                    )
+            )
+        }
+        if (glassTrackHighlight != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    .drawWithContent {
+                        drawContent()
+                        glassTrackHighlight.draw(this, size.height)
+                    },
+                contentAlignment = Alignment.CenterStart,
+            ) { trackContent() }
+        } else {
+            trackContent()
+        }
 
         // 滑块 (Thumb) - 仅拖拽时显示
         if (isSeekScrubbing) {
@@ -294,7 +335,7 @@ fun ThinWigglyProgressBar(
                 val isPortraitVideo = videoAspectRatio
                     ?.let { it.isFinite() && it > 0f && it < 1f }
                     ?: false
-                val compactPreviewOffsetY = if (isPortraitVideo) {
+                val preferredCompactPreviewOffsetY = if (isPortraitVideo) {
                     layoutPolicy.compactPortraitPreviewOffsetYDp
                 } else {
                     layoutPolicy.compactLandscapePreviewOffsetYDp
@@ -303,15 +344,20 @@ fun ThinWigglyProgressBar(
                     videoshotData.img_x_size,
                     videoshotData.img_y_size,
                     configuration.screenWidthDp,
-                    videoAspectRatio
+                    videoAspectRatio,
+                    configuration.screenHeightDp,
                 ) {
                     resolveCompactSeekPreviewSize(
                         sourceWidthPx = videoshotData.img_x_size,
                         sourceHeightPx = videoshotData.img_y_size,
                         screenWidthDp = configuration.screenWidthDp,
-                        videoAspectRatio = videoAspectRatio
+                        videoAspectRatio = videoAspectRatio,
+                        containerHeightDp = configuration.screenHeightDp,
                     )
                 }
+                val compactPreviewOffsetY = if (configuration.screenHeightDp < 480) {
+                    -(compactPreviewSize.heightDp + 48)
+                } else preferredCompactPreviewOffsetY
                 val previewWidthPx = with(LocalDensity.current) {
                     compactPreviewSize.widthDp.dp.toPx()
                 }

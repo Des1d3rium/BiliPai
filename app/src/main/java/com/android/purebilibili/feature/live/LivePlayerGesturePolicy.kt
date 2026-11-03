@@ -12,3 +12,14 @@ data class LivePlayerGesturePolicy(
         )
     }
 }
+
+internal fun shouldToggleLiveFullscreenForDrag(
+    dragY: Float,
+    threshold: Float,
+    isFullscreen: Boolean,
+    reverse: Boolean,
+): Boolean {
+    if (kotlin.math.abs(dragY) <= threshold) return false
+    val entering = (dragY < 0f) != reverse
+    return entering != isFullscreen
+}

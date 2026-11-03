@@ -28,4 +28,12 @@ class TopControlBarLayoutPolicyTest {
             assertFalse(shouldApplyStatusBarPaddingToTopControlBar(fullscreen, statusBarVisible = false))
         }
     }
+
+    @Test
+    fun portraitFullscreen_reservesTopSafetyEvenWithHiddenSystemBars() {
+        assertTrue(shouldReserveHiddenPlayerStatusBar(isFullscreen = true, isPortrait = true))
+        assertFalse(shouldReserveHiddenPlayerStatusBar(isFullscreen = true, isPortrait = false))
+        assertFalse(shouldReserveHiddenPlayerStatusBar(isFullscreen = false, isPortrait = true))
+        assertFalse(shouldReserveHiddenPlayerStatusBar(isFullscreen = false, isPortrait = false))
+    }
 }

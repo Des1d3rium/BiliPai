@@ -84,7 +84,7 @@ internal fun Modifier.appGlassDrawerSurface(
         block
     }
     return this.drawBackdrop(
-        backdrop = backdrop,
+        backdrop = com.android.purebilibili.core.ui.blur.rememberContinuousBackdrop(backdrop),
         shape = { shape },
         effects = effects,
         highlight = null,

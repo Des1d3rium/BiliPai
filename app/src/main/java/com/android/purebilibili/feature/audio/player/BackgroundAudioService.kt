@@ -26,7 +26,6 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
-import com.android.purebilibili.MainActivity
 import com.android.purebilibili.R
 import com.android.purebilibili.core.network.NetworkModule
 import com.android.purebilibili.core.player.SharedPlaybackRepository
@@ -37,11 +36,14 @@ import com.android.purebilibili.core.util.MediaUtils
 import com.android.purebilibili.core.util.Logger
 import com.android.purebilibili.feature.video.playback.audio.resolveAudioStreamSelection
 import com.android.purebilibili.feature.video.player.PlayMode
+import com.android.purebilibili.feature.video.player.resolveActivePlaybackLaunchIntent
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -75,6 +77,7 @@ class BackgroundAudioService : MediaSessionService() {
     private var restoring: Job? = null
     private val stateStore by lazy { MultiProcessPreferences.get(this, "background_audio") }
     private val snapshotKey = stringPreferencesKey("snapshot")
+    private val persistenceMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -97,9 +100,8 @@ class BackgroundAudioService : MediaSessionService() {
                     .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
                 addListener(listener)
             }
-        val activity = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        session = MediaSession.Builder(this, player).setCallback(callback).setSessionActivity(activity).build()
+        session = MediaSession.Builder(this, player).setCallback(callback).build()
+        updateSessionActivity(null)
         setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this)
             .setNotificationId(NOTIFICATION_ID).setChannelId(CHANNEL_ID).build())
         scope.launch {
@@ -128,6 +130,13 @@ class BackgroundAudioService : MediaSessionService() {
                 }
             }
         }
+    }
+
+    private fun updateSessionActivity(bvid: String?) {
+        session.setSessionActivity(PendingIntent.getActivity(
+            this, 1, resolveActivePlaybackLaunchIntent(this, bvid),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        ))
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -205,6 +214,7 @@ class BackgroundAudioService : MediaSessionService() {
                         }
                         AUDIO_RETURN -> {
                             restoring?.join()
+                            persist()
                             val state = currentSnapshot()
                             committed = false
                             player.pause()
@@ -229,7 +239,12 @@ class BackgroundAudioService : MediaSessionService() {
                             }?.takeIf { entries -> entries.size in 1..128 && entries.none { it.isBangumi || it.bvid.isBlank() } &&
                                 entries.distinctBy { it.bvid }.size == entries.size }
                             val newIndex = queue?.indexOfFirst { it.bvid == current.current?.bvid }
+                            val savedMode = args.getString("saved_mode")?.let { value ->
+                                com.android.purebilibili.feature.video.player.PlayMode.entries.firstOrNull { it.name == value }
+                            } ?: current.savedPlayMode
                             val next = current.copy(playMode = mode, shuffle = args.getBoolean("shuffle"),
+                                savedPlayMode = savedMode,
+                                savedShuffle = if (args.containsKey("saved_shuffle")) args.getBoolean("saved_shuffle") else current.savedShuffle,
                                 reportHistory = args.getBoolean("report_history", current.reportHistory),
                                 queue = queue?.takeIf { newIndex != null && newIndex >= 0 } ?: current.queue,
                                 index = newIndex?.takeIf { it >= 0 } ?: current.index)
@@ -265,6 +280,7 @@ class BackgroundAudioService : MediaSessionService() {
     }
 
     private suspend fun prepare(request: BackgroundAudioSnapshot, resume: Boolean) {
+        if (committed) persist()
         TokenManager.refreshServiceSession(this)
         check(request.accountMid == TokenManager.midCache)
         generation++
@@ -273,6 +289,7 @@ class BackgroundAudioService : MediaSessionService() {
         snapshot = request
         committed = resume
         val item = request.current ?: error("Missing audio entry")
+        updateSessionActivity(item.bvid)
         val media = if (request.audioUrl.isNotBlank()) mediaItem(request.index, item, request.audioUrl) else resolve(request.index)
         player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), request.handleAudioFocus)
@@ -364,6 +381,40 @@ class BackgroundAudioService : MediaSessionService() {
                 if (committed) prefetchNext()
             }
         }
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (!committed) return
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                scope.launch {
+                    try {
+                        persist()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Logger.w("BackgroundAudio", "Seek checkpoint save failed", error)
+                    }
+                }
+            } else if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                val extras = oldPosition.mediaItem?.mediaMetadata?.extras ?: return
+                val bvid = extras.getString("bvid") ?: return
+                val checkpoint = com.android.purebilibili.core.store.AudioPlaybackCheckpoint(
+                    accountMid = snapshot?.accountMid ?: 0L,
+                    bvid = bvid, cid = extras.getLong("cid"), positionMs = 0L,
+                )
+                scope.launch {
+                    try {
+                        com.android.purebilibili.core.store.AudioPlaybackProgressStore.save(this@BackgroundAudioService, checkpoint)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Logger.w("BackgroundAudio", "Completed audio checkpoint save failed", error)
+                    }
+                }
+            }
+        }
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
             updateWatchTime()
             playedMs = 0L
@@ -377,6 +428,7 @@ class BackgroundAudioService : MediaSessionService() {
             snapshot = current.copy(index = index, queue = current.queue.toMutableList().also {
                 it[index] = it[index].copy(cid = cid)
             }, audioUrl = "")
+            updateSessionActivity(bvid)
             generation++
             nextLoad?.cancel()
             if (player.currentMediaItemIndex > 1) player.removeMediaItems(0, player.currentMediaItemIndex - 1)
@@ -458,13 +510,35 @@ class BackgroundAudioService : MediaSessionService() {
         speed = player.playbackParameters.speed, audioUrl = ""
     )
 
-    private suspend fun persist() {
-        val state = currentSnapshot() ?: return
-        stateStore.edit { it[snapshotKey] = backgroundAudioJson.encodeToString(BackgroundAudioSnapshot.serializer(), state) }
+    private suspend fun persist(): Unit = persistenceMutex.withLock {
+        if (nativeReleased) return@withLock
+        val state = currentSnapshot() ?: return@withLock
+        if (committed && player.playbackState != Player.STATE_IDLE) {
+            state.current?.let { item ->
+                com.android.purebilibili.core.store.AudioPlaybackProgressStore.save(
+                    this,
+                    com.android.purebilibili.core.store.AudioPlaybackCheckpoint(
+                        accountMid = state.accountMid ?: 0L, bvid = item.bvid, cid = item.cid,
+                        positionMs = if (player.playbackState == Player.STATE_ENDED) 0L else state.positionMs,
+                    ),
+                )
+            }
+        }
+        stateStore.edit { it[snapshotKey] = backgroundAudioJson.encodeToString(BackgroundAudioSnapshot.serializer(), state.forPersistence()) }
+        Unit
     }
 
     private suspend fun closeSession() {
         if (!nativeReleased) {
+            if (committed) {
+                try {
+                    withContext(NonCancellable) { persist() }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Logger.w("BackgroundAudio", "Final audio checkpoint save failed", error)
+                }
+            }
             committed = false
             generation++
             nextLoad?.cancel()
@@ -512,6 +586,27 @@ class BackgroundAudioService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (!nativeReleased && committed && player.playbackState != Player.STATE_IDLE) {
+            val state = currentSnapshot()
+            val item = state?.current
+            if (state != null && item != null) {
+                val checkpoint = com.android.purebilibili.core.store.AudioPlaybackCheckpoint(
+                    accountMid = state.accountMid ?: 0L, bvid = item.bvid, cid = item.cid,
+                    positionMs = if (player.playbackState == Player.STATE_ENDED) 0L else state.positionMs,
+                )
+                scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    withContext(NonCancellable) {
+                        try {
+                            com.android.purebilibili.core.store.AudioPlaybackProgressStore.save(this@BackgroundAudioService, checkpoint)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            Logger.w("BackgroundAudio", "Service shutdown checkpoint save failed", error)
+                        }
+                    }
+                }
+            }
+        }
         scope.cancel()
         releaseNativeResources()
         super.onDestroy()

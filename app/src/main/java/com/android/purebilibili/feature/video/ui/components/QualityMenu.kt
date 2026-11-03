@@ -46,6 +46,15 @@ fun QualitySelectionMenu(
 
 enum class SpeedSelectionMenuPlacement { CENTER, RIGHT_SIDE, ANCHOR_END }
 
+/** 未加载的配置不能被当前速度补成单项菜单；已加载的自定义列表保持原样。 */
+internal fun resolveSpeedSelectionMenuOptions(
+    speedOptions: List<Float>?,
+    currentSpeed: Float,
+): List<Float>? {
+    val loaded = speedOptions ?: return null
+    return if (currentSpeed in loaded) loaded else (loaded + currentSpeed).sorted()
+}
+
 @Composable
 fun SpeedSelectionMenu(
     currentSpeed: Float, onSpeedSelected: (Float) -> Unit,
@@ -53,12 +62,12 @@ fun SpeedSelectionMenu(
     anchorBounds: IntRect? = null,
 ) {
     val context = LocalContext.current
-    val speedOptions by SettingsManager.getPlaybackSpeedOptions(context)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val speedOptionsFlow = remember(context) { SettingsManager.getPlaybackSpeedOptions(context) }
+    val speedOptions by speedOptionsFlow
+        .collectAsStateWithLifecycle<List<Float>?>(initialValue = null)
     val options = remember(speedOptions, currentSpeed) {
-        if (currentSpeed in speedOptions) speedOptions
-        else (speedOptions + currentSpeed).sorted()
-    }
+        resolveSpeedSelectionMenuOptions(speedOptions, currentSpeed)
+    } ?: return
     PlayerSelectionPopup(
         title = "播放速度", showTitle = false, onDismissRequest = onDismiss,
         placement = when (placement) {

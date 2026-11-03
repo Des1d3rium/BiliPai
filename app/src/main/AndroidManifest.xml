@@ -102,6 +102,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:enabled="true"
+            android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:theme="@style/Theme.PureBiliBili"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|mnc|colorMode|density|smallestScreenSize|uiMode"

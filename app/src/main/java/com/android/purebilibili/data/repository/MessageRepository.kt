@@ -5,6 +5,8 @@ import com.android.purebilibili.core.network.NetworkModule
 import com.android.purebilibili.core.store.TokenManager
 import com.android.purebilibili.data.model.response.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import com.android.purebilibili.core.store.MessageCenterPreferences
 import com.android.purebilibili.app.PureApplication
 import kotlinx.coroutines.CancellationException
@@ -33,6 +35,13 @@ data class MessageSessionControlInfo(
 object MessageRepository {
     private val api = NetworkModule.messageApi
     private val bilibiliApi = NetworkModule.api
+    private val _readEvents = MutableSharedFlow<MessageReadEvent>()
+    internal val readEvents = _readEvents.asSharedFlow()
+
+    internal suspend fun notifyReadStateChanged(event: MessageReadEvent = MessageReadEvent.Changed) {
+        _readEvents.emit(event)
+    }
+
     
     // 设备ID缓存 (用于发送私信)
     private var deviceIdCache: String? = null
@@ -157,6 +166,7 @@ object MessageRepository {
                 val response = api.getReplyFeed(cursor = cursor, cursorTime = cursorTime)
                 if (response.code == 0 && response.data != null) {
                     val checkedResponseData = requireNotNull(response.data)
+                    if (cursor == null) notifyReadStateChanged()
                     Result.success(checkedResponseData)
                 } else {
                     Result.failure(Exception(response.message.ifEmpty { "获取回复消息失败 (${response.code})" }))
@@ -174,6 +184,7 @@ object MessageRepository {
                 val response = api.getAtFeed(cursor = cursor, cursorTime = cursorTime)
                 if (response.code == 0 && response.data != null) {
                     val checkedResponseData = requireNotNull(response.data)
+                    if (cursor == null) notifyReadStateChanged()
                     Result.success(checkedResponseData)
                 } else {
                     Result.failure(Exception(response.message.ifEmpty { "获取@我消息失败 (${response.code})" }))
@@ -191,6 +202,7 @@ object MessageRepository {
                 val response = api.getLikeFeed(cursor = cursor, cursorTime = cursorTime)
                 if (response.code == 0 && response.data != null) {
                     val checkedResponseData = requireNotNull(response.data)
+                    if (cursor == null) notifyReadStateChanged()
                     Result.success(checkedResponseData)
                 } else {
                     Result.failure(Exception(response.message.ifEmpty { "获取点赞消息失败 (${response.code})" }))
@@ -227,6 +239,7 @@ object MessageRepository {
 
             val response = api.updateSystemNoticeCursor(csrf = csrf, cursor = cursor)
             if (response.code == 0) {
+                notifyReadStateChanged()
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(response.message.ifEmpty { "更新系统通知已读失败" }))
@@ -531,6 +544,7 @@ object MessageRepository {
             val csrf = requireCsrf().getOrElse { return@withContext Result.failure(it) }
             val response = api.batchUpdateDustbinAck(csrf = csrf, csrfToken = csrf)
             if (response.code == 0) {
+                notifyReadStateChanged()
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(response.message.ifEmpty { "拦截会话已读失败 (${response.code})" }))
@@ -717,6 +731,7 @@ object MessageRepository {
             )
             
             if (response.code == 0) {
+                notifyReadStateChanged(MessageReadEvent.PrivateSession(talkerId, sessionType, ackSeqno))
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(response.message.ifEmpty { "标记已读失败" }))

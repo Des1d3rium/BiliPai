@@ -19,8 +19,17 @@ internal val LocalBaseThemeRoleOverrides = staticCompositionLocalOf {
 
 internal fun themeRoleOverridesFromSchemes(
     lightScheme: ColorScheme,
-    darkScheme: ColorScheme
+    darkScheme: ColorScheme,
+    uiStyle: AppUiStyle = AppUiStyle.MATERIAL3,
+    @Suppress("UNUSED_PARAMETER") amoledDarkTheme: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") liquidGlassEnabled: Boolean = true,
 ): ThemeRoleOverrides {
+    fun ColorScheme.nativeStartingScheme(dark: Boolean): ColorScheme =
+        if (shouldUseNativeMiuixPalette(uiStyle)) {
+            val colors = resolveMiuixColorsFromMaterialBridge(createMiuixMaterialBridge(this), dark, useMonetMapping = true)
+            alignMaterialSurfacesWithMiuix(this, colors)
+        } else this
+
     fun ColorScheme.toRoles(): ThemeModeRoleOverrides {
         return ThemeModeRoleOverrides(
             backgroundHex = formatMd3CustomColorHex(background),
@@ -32,8 +41,8 @@ internal fun themeRoleOverridesFromSchemes(
 
     return ThemeRoleOverrides(
         enabled = false,
-        light = lightScheme.toRoles(),
-        dark = darkScheme.toRoles()
+        light = lightScheme.nativeStartingScheme(false).toRoles(),
+        dark = darkScheme.nativeStartingScheme(true).toRoles()
     )
 }
 
@@ -69,9 +78,8 @@ internal fun enableThemeRoleOverrides(
 internal fun resolveEffectiveThemeRoleOverrides(
     source: Md3ColorSource,
     overrides: ThemeRoleOverrides,
-    uiStyle: AppUiStyle = AppUiStyle.MATERIAL3,
 ): ThemeRoleOverrides {
-    return if (source == Md3ColorSource.CUSTOM && uiStyle == AppUiStyle.MATERIAL3) {
+    return if (source == Md3ColorSource.CUSTOM) {
         overrides
     } else {
         overrides.copy(enabled = false)
@@ -214,6 +222,7 @@ internal fun resolveConfiguredMaterialScheme(
     source: Md3ColorSource,
     customSeed: Color,
     liquidGlassEnabled: Boolean,
+    uiStyle: AppUiStyle = AppUiStyle.MATERIAL3,
 ): ColorScheme {
     val overridden = applyThemeRoleOverrides(base, overrides, darkTheme, paletteStyle, colorSpec, colorContrast)
     return if (seedPaletteStyle.enabled) overridden else alignLiquidAccentColorScheme(
@@ -222,7 +231,7 @@ internal fun resolveConfiguredMaterialScheme(
             source, customSeed, overridden.primary, overrides.enabled,
             if (darkTheme) overrides.dark.controlAccentHex else overrides.light.controlAccentHex,
         ),
-        liquidGlassEnabled = liquidGlassEnabled,
+        liquidGlassEnabled = liquidGlassEnabled && uiStyle != AppUiStyle.MIUIX,
         source = source,
     )
 }

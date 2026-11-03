@@ -60,7 +60,6 @@ internal enum class SettingsFeaturePreview(
     LONG_PRESS("playback.long_press_speed", R.string.preview_title_long_press, R.string.preview_summary_long_press),
     CARD_ENTRANCE("animation.card_animation_enabled", R.string.preview_title_card_entrance, R.string.preview_summary_card_entrance),
     CARD_EXPAND("animation.card_transition_enabled", R.string.preview_title_card_expand, R.string.preview_summary_card_expand),
-    RELATED_EXPAND("animation.related_video_transition_enabled", R.string.preview_title_related_expand, R.string.preview_summary_related_expand),
     LIVE_FRAME("animation.live_surface_card_transition_enabled", R.string.preview_title_live_frame, R.string.preview_summary_live_frame),
     RETURN_CONTENT("animation.app_navigation_settings.video_return_content_follow_progress_enabled", R.string.preview_title_return_content, R.string.preview_summary_return_content),
     RETURN_TILT("animation.app_navigation_settings.video_shared_return_gesture_follow_enabled", R.string.preview_title_return_tilt, R.string.preview_summary_return_tilt),
@@ -347,7 +346,7 @@ private fun FeaturePreviewScene(
 }
 
 @Composable
-private fun PreviewScrollingCards(progress: () -> Float, accent: Color, modifier: Modifier = Modifier) {
+internal fun PreviewScrollingCards(progress: () -> Float, accent: Color, modifier: Modifier = Modifier) {
     val background = MaterialTheme.colorScheme.surfaceVariant
     Canvas(modifier) {
         drawRect(background)

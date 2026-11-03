@@ -91,12 +91,8 @@ internal fun resolveMiuixPreferredHomeNavigationIcon(
     return resolveMiuixHomeNavigationIcon(role, selected)
 }
 
-/** Bottom selection crossfades an actual filled glyph; tint alone cannot fill an outline. */
-internal fun resolveMiuixBottomNavigationFilledIcon(item: BottomNavItem): Int =
-    resolveMiuixNavigationFilledResource(resolveHomeNavigationIconRole(item.name))
-
 /** Top tabs and bottom navigation share the same selected glyph for the same role. */
-private fun resolveMiuixNavigationFilledResource(role: HomeNavigationIconRole): Int = when (role) {
+private fun resolveMiuixNavigationFilledResource(role: HomeNavigationIconRole): Int? = when (role) {
     HomeNavigationIconRole.HOME -> R.drawable.ms_home_fill_24
     HomeNavigationIconRole.DYNAMIC -> R.drawable.bp_nav_community_filled_24
     HomeNavigationIconRole.STORY, HomeNavigationIconRole.ANIME -> R.drawable.ic_home_nav_story_filled
@@ -106,7 +102,7 @@ private fun resolveMiuixNavigationFilledResource(role: HomeNavigationIconRole): 
     HomeNavigationIconRole.FAVORITE -> R.drawable.bp_nav_favorite_filled_24
     HomeNavigationIconRole.LIVE -> R.drawable.ic_home_nav_live_filled
     HomeNavigationIconRole.WATCH_LATER -> R.drawable.ms_watch_later_fill_24
-    HomeNavigationIconRole.SETTINGS -> R.drawable.ms_settings_fill_24
+    HomeNavigationIconRole.SETTINGS -> null
     HomeNavigationIconRole.PLUGINS -> R.drawable.bp_nav_folder_filled_24
     HomeNavigationIconRole.FOLLOW -> R.drawable.ms_person_fill_24
     HomeNavigationIconRole.POPULAR -> R.drawable.ms_trending_up_fill_24
@@ -121,12 +117,10 @@ private fun resolveMiuixNavigationFilledResource(role: HomeNavigationIconRole): 
 internal fun resolveMiuixBottomNavigationIcon(
     item: BottomNavItem,
     selected: Boolean,
-): ImageVector = if (selected) {
-    ImageVector.vectorResource(resolveMiuixBottomNavigationFilledIcon(item))
-} else if (item == BottomNavItem.LIVE) {
+): ImageVector = if (item == BottomNavItem.LIVE && !selected) {
     ImageVector.vectorResource(R.drawable.ic_home_nav_live)
 } else {
-    resolveMiuixPreferredHomeNavigationIcon(item.name, selected = false)
+    resolveMiuixPreferredHomeNavigationIcon(item.name, selected = selected)
 }
 
 @Composable
@@ -136,7 +130,7 @@ private fun resolveMiuixHomeNavigationIcon(
 ): ImageVector {
     if (selected) {
         val filledResource = resolveMiuixNavigationFilledResource(role)
-        return ImageVector.vectorResource(filledResource)
+        if (filledResource != null) return ImageVector.vectorResource(filledResource)
     }
     return when (role) {
         HomeNavigationIconRole.HOME -> ImageVector.vectorResource(R.drawable.bp_nav_home_outline_24)
@@ -148,7 +142,7 @@ private fun resolveMiuixHomeNavigationIcon(
         HomeNavigationIconRole.FAVORITE -> MiuixIcons.Light.Favorites
         HomeNavigationIconRole.LIVE -> MiuixIcons.Light.Recording
         HomeNavigationIconRole.WATCH_LATER -> MiuixIcons.Light.Stopwatch
-        HomeNavigationIconRole.SETTINGS -> MiuixIcons.Light.Settings
+        HomeNavigationIconRole.SETTINGS -> if (selected) MiuixIcons.Demibold.Settings else MiuixIcons.Light.Settings
         HomeNavigationIconRole.PLUGINS -> MiuixIcons.Light.Folder
         HomeNavigationIconRole.FOLLOW -> MiuixIcons.Light.Contacts
         HomeNavigationIconRole.POPULAR -> MiuixIcons.Light.TopDownloads

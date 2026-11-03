@@ -1,5 +1,8 @@
 package com.android.purebilibili.feature.download
 
+import com.android.purebilibili.core.player.withAppVideoDecoderDiagnostics
+import com.android.purebilibili.core.player.withAppVideoDecoderPreference
+
 import com.android.purebilibili.core.ui.AppContentColors
 
 import com.android.purebilibili.feature.video.ui.overlay.NextWatchOverlay
@@ -95,7 +98,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.purebilibili.feature.video.ui.section.rebindPlayerSurfaceIfNeeded
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 
@@ -243,8 +250,55 @@ fun OfflineVideoPlayerScreen(
 
     // 创建播放器
     val player = remember(context, task.id, file.absolutePath) {
-        ExoPlayer.Builder(context).build()
+        ExoPlayer.Builder(context)
+            .setRenderersFactory(
+                com.android.purebilibili.core.player.HiResCompatibleRenderersFactory(context)
+                    .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+                    .withAppVideoDecoderPreference(context)
+            )
+            .build().withAppVideoDecoderDiagnostics(context)
     }
+    var playerView by remember(player) { mutableStateOf<PlayerView?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var foregroundRecoveryGeneration by remember(player) { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner, player) {
+        var hasObservedPause = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> hasObservedPause = true
+                Lifecycle.Event.ON_RESUME -> if (hasObservedPause) {
+                    hasObservedPause = false
+                    foregroundRecoveryGeneration++
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(lifecycleOwner, player, playerView, foregroundRecoveryGeneration) {
+        if (foregroundRecoveryGeneration == 0) return@LaunchedEffect
+        val view = playerView ?: return@LaunchedEffect
+        // 等前台轨道恢复与当前布局提交后再重绑；横竖屏共用此恢复入口。
+        withFrameNanos { }
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            return@LaunchedEffect
+        }
+        val needsSurfaceRecovery = miniPlayerManager.consumeForegroundSurfaceRecoveryNeed()
+        if (!task.isAudioOnly && needsSurfaceRecovery) {
+            // PlayerView 仍持有同一个 player 时，直接赋值不会恢复已被后台清除的输出。
+            rebindPlayerSurfaceIfNeeded(view, player)
+        }
+        danmakuManager.recoverAfterForeground(
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            playWhenReady = player.playWhenReady,
+            playbackState = player.playbackState,
+            preserveTimeline = !needsSurfaceRecovery,
+        )
+    }
+
     var playbackFailure by remember(player) { mutableStateOf<OfflinePlaybackFailure?>(null) }
     var retryVersion by remember(player) { mutableIntStateOf(0) }
     var lastKnownPlaybackPosition by remember(player) {
@@ -652,16 +706,10 @@ fun OfflineVideoPlayerScreen(
                                         totalDragDistanceX += dragAmount.x
                                         val duration = player.duration.coerceAtLeast(0L)
                                         val seekDelta = resolveHorizontalSeekDeltaMs(
-                                            isFullscreen = isFullscreen,
-                                            fullscreenSwipeSeekEnabled = playerInteractionSettings.fullscreenSwipeSeekEnabled,
                                             totalDragDistanceX = totalDragDistanceX,
                                             containerWidthPx = size.width.toFloat(),
-                                            fullscreenSwipeSeekSeconds = playerInteractionSettings.fullscreenSwipeSeekSeconds,
-                                            inlineSwipeSeekSeconds = playerInteractionSettings.inlineSwipeSeekSeconds,
                                             gestureSensitivity = playerInteractionSettings.gestureSensitivity,
                                             durationMs = duration,
-                                            useRelativeDuration = playerInteractionSettings.swipeSeekUseRelativeDuration,
-                                            relativeSeekPercent = playerInteractionSettings.swipeSeekRelativePercent
                                         )
                                         if (seekDelta != null) {
                                             seekTargetTime = (startPosition + seekDelta).coerceIn(0L, duration)
@@ -762,13 +810,17 @@ fun OfflineVideoPlayerScreen(
                         this.player = player
                         useController = false
                         keepScreenOn = true
+                        playerView = this
                     }
                 },
                 update = { view ->
                     view.player = player
                     view.keepScreenOn = playbackFailure == null && isPlaying
                 },
-                onRelease = { view -> view.player = null },
+                onRelease = { view ->
+                    view.player = null
+                    if (playerView === view) playerView = null
+                },
                 modifier = Modifier.fillMaxSize()
             )
 

@@ -17,15 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.lazy.grid.GridCells
-import com.android.purebilibili.core.ui.components.AppLazyVerticalGrid as LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import com.android.purebilibili.core.ui.components.AppLazyVerticalStaggeredGrid as LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.MaterialTheme
 import com.android.purebilibili.core.ui.components.AppFloatingToolbar
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -336,8 +334,8 @@ fun FavoriteCategoryRoute(
     onTopicClick: (Long) -> Unit,
     onWebClick: (String, String) -> Unit,
     onCheeseClick: ((Long) -> Unit)? = null,
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState =
-        androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+    gridState: androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState =
+        com.android.purebilibili.core.ui.rememberCompatibleStaggeredGridState(),
     viewModel: FavoriteCategoryViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -370,7 +368,7 @@ private fun FavoriteCategoryContent(
     state: FavoriteCategoryUiState,
     query: String,
     contentPadding: androidx.compose.foundation.layout.PaddingValues,
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    gridState: androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState,
     onPgcStatusSelected: (FavoritePgcStatus) -> Unit,
     onPublishedNotesSelected: (Boolean) -> Unit,
     onRetry: () -> Unit,
@@ -463,20 +461,18 @@ private fun FavoriteCategoryContent(
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(start = 12.dp, end = 12.dp, bottom = contentPadding.calculateBottomPadding() + 12.dp),
             ) {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    if (state.section == FavoriteSection.BANGUMI || state.section == FavoriteSection.CINEMA) {
-                        FavoritePgcStatus.entries.forEach { status ->
-                            AppTextButton(onClick = { onUpdateSelectedPgcStatus(status) }) {
-                                AppText("移至${status.label}")
-                            }
-                        }
-                    } else {
-                        AppTextButton(onClick = onRemoveSelected) {
-                            AppText("删除(${state.selectedIds.size})")
+                if (state.section == FavoriteSection.BANGUMI || state.section == FavoriteSection.CINEMA) {
+                    FavoritePgcStatus.entries.forEach { status ->
+                        AppTextButton(onClick = { onUpdateSelectedPgcStatus(status) }) {
+                            AppText("移至${status.label}")
                         }
                     }
-                    AppTextButton(onClick = onClearSelection) { AppText("取消选择") }
+                } else {
+                    AppTextButton(onClick = onRemoveSelected) {
+                        AppText("删除(${state.selectedIds.size})")
+                    }
                 }
+                AppTextButton(onClick = onClearSelection) { AppText("取消选择") }
             }
         }
     }
@@ -527,7 +523,7 @@ private fun FavoriteCategoryFilterRow(
 @Composable
 private fun FavoriteCategoryGrid(
     state: FavoriteCategoryUiState,
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    gridState: androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState,
     topPadding: androidx.compose.ui.unit.Dp,
     bottomPadding: androidx.compose.ui.unit.Dp,
     onLoadMore: () -> Unit,
@@ -542,9 +538,10 @@ private fun FavoriteCategoryGrid(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val columns = resolveFavoriteCategoryColumnCount(state.section, maxWidth.value)
-        LazyVerticalGrid(
+        val alignRows = columns > 1 && !com.android.purebilibili.core.ui.LocalFullVideoCardContentVisible.current
+        LazyVerticalStaggeredGrid(
             state = gridState,
-            columns = GridCells.Fixed(columns),
+            columns = StaggeredGridCells.Fixed(columns),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = AppSpacingTokens.Medium,
                 end = AppSpacingTokens.Medium,
@@ -552,15 +549,18 @@ private fun FavoriteCategoryGrid(
                 bottom = bottomPadding + AppSpacingTokens.Medium,
             ),
             horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium),
-            verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium),
+            verticalItemSpacing = AppSpacingTokens.Medium,
         ) {
-            itemsIndexed(state.items, key = { _, item -> "${item.section}_${item.id}" }) { index, item ->
+            val itemKeys = state.items.map { "${it.section}_${it.id}" }
+            val renderCard: @Composable (Int, Modifier) -> Unit = { index, cardModifier ->
+                val item = state.items[index]
                 if (index == state.items.lastIndex && state.hasMore && !state.isLoadingMore) {
                     LaunchedEffect(state.page, state.items.size) { onLoadMore() }
                 }
                 when (state.section) {
                     FavoriteSection.BANGUMI, FavoriteSection.CINEMA -> FavoritePgcCard(
                         item = item,
+                        modifier = cardModifier,
                         selected = item.id in state.selectedIds,
                         batchMode = state.selectedIds.isNotEmpty(),
                         selectedStatus = state.pgcStatus,
@@ -576,10 +576,11 @@ private fun FavoriteCategoryGrid(
                         onClick = { onTopicClick(item.id) },
                         label = { AppText("# ${item.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = null,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = cardModifier.fillMaxWidth(),
                     )
                     else -> FavoriteGenericCategoryCard(
                         item = item,
+                        modifier = cardModifier,
                         selected = item.id in state.selectedIds,
                         batchMode = state.selectedIds.isNotEmpty(),
                         onClick = {
@@ -603,6 +604,25 @@ private fun FavoriteCategoryGrid(
                     )
                 }
             }
+            if (!alignRows) {
+                itemsIndexed(state.items, key = { index, _ -> itemKeys[index] }) { index, _ ->
+                    renderCard(index, Modifier)
+                }
+            } else {
+                com.android.purebilibili.feature.home.resolveHomeFeedAlignedRows(state.items.size, columns)
+                    .forEach { row ->
+                        item(key = "favorite_category_row_${itemKeys[row.first]}", span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) {
+                            com.android.purebilibili.feature.home.HomeAlignedVideoRow(
+                                indices = row,
+                                itemKeys = itemKeys,
+                                columns = columns,
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium),
+                                modifier = Modifier.fillMaxWidth(),
+                                content = renderCard,
+                            )
+                        }
+                    }
+            }
         }
     }
 }
@@ -611,6 +631,7 @@ private fun FavoriteCategoryGrid(
 @OptIn(ExperimentalFoundationApi::class)
 private fun FavoritePgcCard(
     item: FavoriteCategoryItem,
+    modifier: Modifier = Modifier,
     selected: Boolean,
     batchMode: Boolean,
     selectedStatus: FavoritePgcStatus,
@@ -620,7 +641,7 @@ private fun FavoritePgcCard(
     onRemove: () -> Unit,
 ) {
     AppSurface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = appActionWithFeedback(onClick), onLongClick = onLongClick),
         shape = AppShapes.container(ContainerLevel.Card),
@@ -693,13 +714,21 @@ private fun FavoritePgcCard(
 @Composable
 private fun FavoriteGenericCategoryCard(
     item: FavoriteCategoryItem,
+    modifier: Modifier = Modifier,
     selected: Boolean,
     batchMode: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
     onRemove: () -> Unit,
 ) {
+    val container = if (item.section == FavoriteSection.ARTICLE && !batchMode && item.id > 0L) {
+        com.android.purebilibili.core.ui.rememberNativeCardContainerTransition(
+            com.android.purebilibili.navigation3.BiliPaiNavKey.DynamicDetail(item.id.toString()), onClick,
+        )
+    } else null
     PersonalMediaCardFrame(
+        modifier = modifier.then(container?.modifier ?: Modifier),
+        horizontalCoverMaxWidthDp = com.android.purebilibili.feature.home.components.cards.WIDE_LIST_COVER_MAX_WIDTH_DP,
         selected = selected,
         headlineContent = {
             AppText(
@@ -738,7 +767,7 @@ private fun FavoriteGenericCategoryCard(
                 }
             }
         },
-        onClick = if (batchMode) ({ onLongClick?.invoke(); Unit }) else onClick,
+        onClick = if (batchMode) ({ onLongClick?.invoke(); Unit }) else container?.onClick ?: onClick,
         onLongClick = onLongClick,
     )
 }

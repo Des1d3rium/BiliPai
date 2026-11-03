@@ -1,5 +1,15 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
+import androidx.compose.runtime.key
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.findRootCoordinates
+import com.android.purebilibili.danmaku.engine.DanmakuClickCapture
+import com.android.purebilibili.feature.video.danmaku.DanmakuTapAnchor
+import com.android.purebilibili.feature.video.danmaku.configureAsPassiveDanmakuOverlay
+import com.android.purebilibili.feature.live.components.LiveDanmakuActionToolbar
+import java.util.IdentityHashMap
 import android.graphics.Color as AndroidColor
 import android.os.SystemClock
 import android.view.ViewGroup
@@ -58,15 +68,29 @@ private class PendingLiveDanmakuItem(
 @Composable
 fun LiveDanmakuOverlay(
     danmakuFlow: SharedFlow<LiveDanmakuItem>,
+    sessionKey: String,
+    active: Boolean,
+    interactionEnabled: Boolean,
+    onCaptureReady: (((Offset) -> DanmakuClickCapture?)?) -> Unit,
+    onUserClick: (Long) -> Unit,
+    onReport: (LiveDanmakuItem) -> Unit,
     isFullscreen: Boolean,
     displayArea: Float = 1f,
     danmakuSettings: DanmakuSettings = DanmakuSettings(),
     modifier: Modifier = Modifier
-) {
+) = key(sessionKey) {
     val context = LocalContext.current
     val density = context.resources.displayMetrics.density
     val safeDisplayArea = displayArea.takeIf(Float::isFinite)?.coerceIn(0.25f, 1f) ?: 1f
     val latestDanmakuSettings by rememberUpdatedState(danmakuSettings)
+    val latestCaptureReady by rememberUpdatedState(onCaptureReady)
+    val latestUserClick by rememberUpdatedState(onUserClick)
+    val latestReport by rememberUpdatedState(onReport)
+    var inViewport by remember { mutableStateOf(false) }
+    val renderingActive = active && inViewport
+    val latestRenderingActive by rememberUpdatedState(renderingActive)
+    val sources = remember { IdentityHashMap<DanmakuItem, LiveDanmakuItem>() }
+    var selection by remember { mutableStateOf<LiveOverlaySelection?>(null) }
     var renderView by remember { mutableStateOf<DanmakuRenderView?>(null) }
     var engine by remember { mutableStateOf<DanmakuEngine?>(null) }
     var startTime by remember { mutableLongStateOf(0L) }
@@ -81,6 +105,7 @@ fun LiveDanmakuOverlay(
     AndroidView(
         factory = { viewContext ->
             DanmakuRenderView(viewContext).apply {
+                configureAsPassiveDanmakuOverlay()
                 setBackgroundColor(AndroidColor.TRANSPARENT)
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -89,13 +114,17 @@ fun LiveDanmakuOverlay(
                 renderView = this
                 engine = this.engine
                 startTime = SystemClock.elapsedRealtime()
-                this.engine.start(0L)
                 isStarted = true
             }
         },
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight(safeDisplayArea),
+            .fillMaxHeight(safeDisplayArea)
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInWindow()
+                inViewport = coordinates.isAttached && bounds.width > 0f && bounds.height > 0f &&
+                    bounds.overlaps(coordinates.findRootCoordinates().boundsInWindow())
+            },
         update = { view ->
             val textSize = resolveDanmakuTextSizePx(
                 density = density,
@@ -116,7 +145,7 @@ fun LiveDanmakuOverlay(
                         scrollFixedVelocity = danmakuSettings.scrollFixedVelocity,
                         viewportWidthPx = view.width
                     ),
-                    lineHeightPx = textSize * danmakuSettings.lineHeight.coerceIn(0.8f, 2.2f),
+                    lineHeightPx = textSize * danmakuSettings.lineHeight.coerceIn(1f, 3f),
                     lineCount = resolveDanmakuVisibleLineCount(
                         visibleHeightPx = view.height.toFloat(),
                         areaRatioHint = safeDisplayArea,
@@ -134,7 +163,71 @@ fun LiveDanmakuOverlay(
         }
     )
 
-    LaunchedEffect(engine, isStarted) {
+    fun dismissSelection() {
+        engine?.clearClickSelection()
+        selection = null
+    }
+
+    DisposableEffect(engine, renderView, renderingActive, interactionEnabled, isFullscreen, safeDisplayArea) {
+        val currentEngine = engine
+        val view = renderView
+        dismissSelection()
+        if (renderingActive) currentEngine?.start(SystemClock.elapsedRealtime() - startTime)
+        else {
+            currentEngine?.pause()
+            pendingItems.clear()
+            pendingItemsBeforeStart.clear()
+        }
+        if (renderingActive && interactionEnabled && currentEngine != null && view != null) {
+            currentEngine.setOnItemClickListener { rendered, rect, point ->
+                val source = sources[rendered]
+                if (source == null || source.isSystem) {
+                    dismissSelection()
+                } else {
+                    val location = IntArray(2)
+                    view.getLocationInWindow(location)
+                    selection = LiveOverlaySelection(rendered, source, DanmakuTapAnchor(
+                        left = rect.left + location[0], top = rect.top + location[1],
+                        right = rect.right + location[0], bottom = rect.bottom + location[1],
+                        tapX = point.x + location[0],
+                        viewportLeft = location[0].toFloat(), viewportTop = location[1].toFloat(),
+                        viewportRight = (location[0] + view.width).toFloat(),
+                        viewportBottom = (location[1] + view.height).toFloat(),
+                    ))
+                }
+            }
+            latestCaptureReady { windowPoint ->
+                val location = IntArray(2)
+                view.getLocationInWindow(location)
+                val x = windowPoint.x - location[0]
+                val y = windowPoint.y - location[1]
+                selection = null
+                if (x >= 0f && y >= 0f && x < view.width && y < view.height) currentEngine.captureClick(x, y)
+                else { currentEngine.clearClickSelection(); null }
+            }
+        } else {
+            latestCaptureReady(null)
+        }
+        onDispose {
+            currentEngine?.setOnItemClickListener(null)
+            currentEngine?.clearClickSelection()
+            latestCaptureReady(null)
+            selection = null
+        }
+    }
+
+    selection?.takeIf { renderingActive && interactionEnabled }?.let { selected ->
+        LiveDanmakuActionToolbar(
+            item = selected.source,
+            anchor = selected.anchor,
+            onDismiss = { dismissSelection() },
+            onUserClick = { dismissSelection(); latestUserClick(selected.source.uid) },
+            onReport = { dismissSelection(); latestReport(selected.source) },
+        )
+    }
+
+    LaunchedEffect(engine, isStarted, renderingActive) {
+        if (!renderingActive) return@LaunchedEffect
         while (isActive) {
             val currentEngine = engine
             if (currentEngine != null && isStarted) {
@@ -167,7 +260,8 @@ fun LiveDanmakuOverlay(
                     }
                     // 排队时间较久的消息以当前时间入场，避免使用已过期的时间戳。
                     val readyTime = SystemClock.elapsedRealtime() - startTime + 50L
-                    batch.forEach {
+                    batch.forEachIndexed { index, it ->
+                        sources[it] = pendingBatch[index].item
                         it.showAtTime = maxOf(it.showAtTime, readyTime)
                         activeItems.addLast(it)
                     }
@@ -179,7 +273,15 @@ fun LiveDanmakuOverlay(
                     (activeItems.first.showAtTime < trimBefore || activeItems.size > MAX_ACTIVE_LIVE_DANMAKU)
                 ) {
                     val removed = activeItems.removeFirst()
+                    sources.remove(removed)
+                    if (selection?.rendered === removed) dismissSelection()
                     trimBefore = maxOf(trimBefore, removed.showAtTime + 1L)
+                }
+                // 同批消息可能共享时间戳，引擎按时间整批清理，来源表也必须同步移除。
+                while (activeItems.isNotEmpty() && activeItems.first.showAtTime < trimBefore) {
+                    val removed = activeItems.removeFirst()
+                    sources.remove(removed)
+                    if (selection?.rendered === removed) dismissSelection()
                 }
                 currentEngine.trimBefore(trimBefore)
             }
@@ -189,6 +291,7 @@ fun LiveDanmakuOverlay(
 
     LaunchedEffect(danmakuFlow) {
         danmakuFlow.collect { item ->
+            if (!latestRenderingActive) return@collect
             val settings = latestDanmakuSettings
             val typeFilter = DanmakuTypeFilterSettings(
                 allowScroll = settings.allowScroll,
@@ -229,6 +332,7 @@ fun LiveDanmakuOverlay(
             engine?.close()
             renderView?.releaseRenderer()
             // 队列中的表情位图由弹幕引擎的渲染数据持有，这里只清理引用不主动回收。
+            sources.clear()
             activeItems.clear()
             pendingItems.clear()
             pendingItemsBeforeStart.clear()
@@ -238,6 +342,12 @@ fun LiveDanmakuOverlay(
         }
     }
 }
+
+private data class LiveOverlaySelection(
+    val rendered: DanmakuItem,
+    val source: LiveDanmakuItem,
+    val anchor: DanmakuTapAnchor,
+)
 
 private fun createLiveDanmakuItem(
     item: LiveDanmakuItem,

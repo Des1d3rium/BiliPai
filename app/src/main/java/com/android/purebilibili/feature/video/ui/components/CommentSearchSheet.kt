@@ -185,6 +185,12 @@ fun CommentSearchSheet(
     val listState = rememberLazyListState()
     val avatarPushEnabled = rememberCommentAvatarPushEnabled()
     val glassActive = LocalAppThemeConfig.current.liquidGlassEnabled
+    val backdropDemand = com.android.purebilibili.core.ui.blur.LocalFloatingChromeBackdropDemand.current
+    androidx.compose.runtime.DisposableEffect(backdropDemand, miuixBackdrop) {
+        val token = Any()
+        if (miuixBackdrop == null) backdropDemand?.acquire(token)
+        onDispose { backdropDemand?.release(token) }
+    }
     // 原生路径保留页面背景来源；玻璃筛选控件在弹层窗口内单独采样。
     val sheetBackdrop = miuixBackdrop ?: LocalFloatingChromeBackdrop.current
     CompositionLocalProvider(LocalFloatingChromeBackdrop provides sheetBackdrop) {
@@ -720,10 +726,11 @@ private fun CommentSearchResultRow(
 @Composable
 private fun CommentSearchAvatar(item: ReplyItem, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val face = item.member.avatar
     Box(modifier = modifier) {
         AsyncImage(
             model = ImageRequest.Builder(context)
-                .data(FormatUtils.fixImageUrl(item.member.avatar))
+                .data(FormatUtils.fixImageUrl(face))
                 .crossfade(true)
                 .build(),
             contentDescription = item.member.uname,

@@ -12,12 +12,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import com.android.purebilibili.core.store.home.GlassPopupPalette
+import com.android.purebilibili.core.store.home.GlassMotionStyle
 import com.android.purebilibili.core.store.home.LiquidGlassSettingsStore
 import com.android.purebilibili.core.ui.components.AppSingleChoicePreference
 import com.android.purebilibili.core.ui.components.AppChoiceOption
@@ -57,12 +59,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.R
 import com.android.purebilibili.core.store.LiquidGlassAdvancedPreset
@@ -92,6 +94,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun LiquidGlassAdjustmentPanel(
     persistedProgress: Float,
@@ -113,6 +116,10 @@ internal fun LiquidGlassAdjustmentPanel(
     val context = LocalContext.current
     val paletteFlow = remember(context) { LiquidGlassSettingsStore.observePopupPalette(context) }
     val popupPalette by paletteFlow.collectAsStateWithLifecycle(initialValue = GlassPopupPalette.DOCK)
+    val motionStyleFlow = remember(context) { LiquidGlassSettingsStore.observePopupMotionStyle(context) }
+    val popupMotionStyle by motionStyleFlow.collectAsStateWithLifecycle(initialValue = GlassMotionStyle.STANDARD)
+    val dockMotionFlow = remember(context) { LiquidGlassSettingsStore.observeDockMotionStyle(context) }
+    val dockMotionStyle by dockMotionFlow.collectAsStateWithLifecycle(initialValue = GlassMotionStyle.STANDARD)
     val paletteScope = rememberCoroutineScope()
     val previewImagePicker = rememberLauncherForActivityResult(
         contract = PickGalleryVisualMedia(),
@@ -227,6 +234,30 @@ internal fun LiquidGlassAdjustmentPanel(
             style = MaterialTheme.typography.bodySmall,
             color = AppContentColors.secondaryText(),
         )
+
+        SettingsItemAnchor("glass.dock_motion_style") {
+            AppSingleChoicePreference(
+                title = settingItemTitle("glass.dock_motion_style"),
+                subtitle = "控制底栏合体、解体与搜索框伸缩；标准保留当前节奏，弹性让展开与收回分别回弹",
+                selectedValue = dockMotionStyle,
+                options = remember { GlassMotionStyle.entries.map { AppChoiceOption(it, it.label) } },
+                onValueChange = { style ->
+                    paletteScope.launch { LiquidGlassSettingsStore.setDockMotionStyle(context, style) }
+                },
+            )
+        }
+
+        SettingsItemAnchor("glass.popup_motion_style") {
+            AppSingleChoicePreference(
+                title = settingItemTitle("glass.popup_motion_style"),
+                subtitle = "标准保留当前动画；弹性让展开与收回更柔和、回弹更明显。下次打开菜单时生效",
+                selectedValue = popupMotionStyle,
+                options = remember { GlassMotionStyle.entries.map { AppChoiceOption(it, it.label) } },
+                onValueChange = { style ->
+                    paletteScope.launch { LiquidGlassSettingsStore.setPopupMotionStyle(context, style) }
+                },
+            )
+        }
 
         SettingsItemAnchor("glass.popup_palette") {
             AppSingleChoicePreference(
@@ -394,27 +425,37 @@ internal fun LiquidGlassAdjustmentPanel(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
         )
-        Row(
+        // Size actions by their content; narrow windows move the second action to its own row.
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             AppTextButton(
                 onClick = onImportSettings,
                 enabled = !isImportingSettings,
-                modifier = Modifier.weight(1f),
             ) {
                 Icon(com.android.purebilibili.feature.settings.rememberMaterialSymbol(com.android.purebilibili.R.drawable.ms_file_download_24), contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
-                AppText(if (isImportingSettings) "正在读取" else "导入他人设置")
+                AppText(
+                    text = if (isImportingSettings) "正在读取" else "导入他人设置",
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             AppTextButton(
                 onClick = onShareSettings,
                 enabled = !isImportingSettings,
-                modifier = Modifier.weight(1f),
             ) {
                 Icon(com.android.purebilibili.feature.settings.rememberMaterialSymbol(com.android.purebilibili.R.drawable.ms_share_24), contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
-                AppText("分享我的设置")
+                AppText(
+                    text = "分享我的设置",
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         AppText(
@@ -862,14 +903,11 @@ private fun LiquidGlassHomeSample(
                     HorizontalPager(
                         state = previewArtworkPagerState,
                         key = { page -> LiquidGlassPreviewArtwork.entries[page].name },
-                        beyondViewportPageCount = 1,
                         modifier = Modifier.fillMaxSize(),
                     ) { page ->
                         Box(modifier = Modifier.fillMaxSize()) {
-                            Image(
-                                painter = painterResource(
-                                    LiquidGlassPreviewArtwork.entries[page].drawableResId
-                                ),
+                            AsyncImage(
+                                model = LiquidGlassPreviewArtwork.entries[page].drawableResId,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),

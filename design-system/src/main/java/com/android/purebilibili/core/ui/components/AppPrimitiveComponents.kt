@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,7 +51,8 @@ import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.android.purebilibili.core.ui.LocalAppThemeConfig
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
 import top.yukonga.miuix.kmp.window.WindowListPopup
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -98,6 +100,8 @@ import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -208,7 +212,6 @@ private fun AppElasticTabIndicator(
     if (tabSlots.isEmpty()) return
     val animateIndicator = !com.android.purebilibili.core.ui.LocalSystemReduceMotion.current &&
         indicatorPositionProvider == null
-    val followPosition = indicatorPositionProvider?.invoke()
     val safeIndex = selectedTabIndex.coerceIn(tabSlots.indices)
     val previousIndex = remember { mutableIntStateOf(selectedTabIndex) }
     val movingRight = remember(safeIndex) { safeIndex >= previousIndex.intValue }
@@ -216,7 +219,7 @@ private fun AppElasticTabIndicator(
     val targetWidth = if (matchContentSize) target.contentWidth else target.width
     val targetLeft = target.left + (target.width - targetWidth) / 2f
     val targetRight = targetLeft + targetWidth
-    val animatedLeft by animateDpAsState(
+    val animatedLeft = animateDpAsState(
         targetValue = targetLeft,
         animationSpec = if (!animateIndicator) snap() else tween(
             durationMillis = APP_TAB_INDICATOR_DURATION_MILLIS,
@@ -224,7 +227,7 @@ private fun AppElasticTabIndicator(
         ),
         label = "appTabIndicatorLeft",
     )
-    val animatedRight by animateDpAsState(
+    val animatedRight = animateDpAsState(
         targetValue = targetRight,
         animationSpec = if (!animateIndicator) snap() else tween(
             durationMillis = APP_TAB_INDICATOR_DURATION_MILLIS,
@@ -235,29 +238,29 @@ private fun AppElasticTabIndicator(
     SideEffect {
         previousIndex.intValue = safeIndex
     }
-    val left: Dp
-    val right: Dp
-    if (followPosition != null) {
-        val bounds = resolveElasticTabIndicatorBounds(
-            position = followPosition,
-            tabLeftsDp = tabSlots.map { it.left.value },
-            tabWidthsDp = tabSlots.map { it.width.value },
-            contentWidthsDp = tabSlots.map { it.contentWidth.value },
-            matchContentSize = matchContentSize,
-        )
-        left = bounds.leftDp.dp
-        right = (bounds.leftDp + bounds.widthDp).dp
-    } else {
-        left = animatedLeft
-        right = animatedRight
-    }
+    val tabLefts = remember(tabSlots) { tabSlots.map { it.left.value } }
+    val tabWidths = remember(tabSlots) { tabSlots.map { it.width.value } }
+    val contentWidths = remember(tabSlots) { tabSlots.map { it.contentWidth.value } }
     val indicatorModifier = Modifier
-        // Legacy TabRow measures the indicator slot to the full row. Recreate Material's
-        // indicator host contract so the elastic line stays pinned above the bottom divider.
         .fillMaxWidth()
         .wrapContentSize(Alignment.BottomStart)
-        .offset(x = left)
-        .width((right - left).coerceAtLeast(0.dp))
+        .tabIndicatorBounds {
+            val followPosition = indicatorPositionProvider?.invoke()
+            if (followPosition != null) {
+                resolveElasticTabIndicatorBounds(
+                    position = followPosition,
+                    tabLeftsDp = tabLefts,
+                    tabWidthsDp = tabWidths,
+                    contentWidthsDp = contentWidths,
+                    matchContentSize = matchContentSize,
+                )
+            } else {
+                ElasticTabIndicatorBounds(
+                    leftDp = animatedLeft.value.value,
+                    widthDp = (animatedRight.value - animatedLeft.value).coerceAtLeast(0.dp).value,
+                )
+            }
+        }
     if (primary) {
         TabRowDefaults.PrimaryIndicator(
             modifier = indicatorModifier,
@@ -500,13 +503,15 @@ fun AppButton(
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
     val feedbackClick = appActionWithFeedback(onClick)
-    // 普通 MD3 按钮的形状、内边距与涟漪不随玻璃开关变化；Miuix 保留既有反馈。
-    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    // MD3 保留原有反馈；非玻璃 Miuix 只使用原生按钮的按压反馈。
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+        LocalAppThemeConfig.current.liquidGlassEnabled
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
         val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
             .appDesktopInteractionVisuals(resolvedInteractionSource, enabled)
-        val readableContentColor = resolveButtonContentColor(containerColor, contentColor, MaterialTheme.colorScheme)
+        val readableContentColor = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) contentColor
+            else resolveButtonContentColor(containerColor, contentColor, MaterialTheme.colorScheme)
         val miuixColors = MiuixButtonColors(
             color = containerColor,
             disabledColor = disabledContainerColor,
@@ -571,8 +576,9 @@ fun AppButton(
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
     val feedbackClick = appActionWithFeedback(onClick)
-    // 普通 MD3 按钮的形状、内边距与涟漪不随玻璃开关变化；Miuix 保留既有反馈。
-    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    // MD3 保留原有反馈；非玻璃 Miuix 只使用原生按钮的按压反馈。
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+        LocalAppThemeConfig.current.liquidGlassEnabled
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
         val interactionModifier = modifier.appElasticPress(enabled = elasticFeedbackEnabled, highlightShape = shape)
@@ -585,7 +591,7 @@ fun AppButton(
                 disabledContentColor = it.disabledContentColor,
             )
         } ?: MiuixButtonDefaults.buttonColorsPrimary()
-        val readableMiuixColors = MiuixButtonColors(
+        val readableMiuixColors = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) miuixColors else MiuixButtonColors(
             color = miuixColors.color,
             disabledColor = miuixColors.disabledColor,
             contentColor = resolveButtonContentColor(miuixColors.color, miuixColors.contentColor, MaterialTheme.colorScheme),
@@ -636,10 +642,21 @@ fun AppButton(
 
 /** Secondary actions use the active renderer's own neutral palette. */
 @Composable
-private fun appSecondaryButtonColors(materialColors: ButtonColors): ButtonColors = materialColors.copy(
-    contentColor = com.android.purebilibili.core.ui.AppContentColors.neutralAction(),
-    disabledContentColor = com.android.purebilibili.core.ui.AppContentColors.disabled(),
-)
+private fun appSecondaryButtonColors(materialColors: ButtonColors): ButtonColors {
+    if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        val native = MiuixButtonDefaults.buttonColors()
+        return materialColors.copy(
+            containerColor = native.color,
+            contentColor = native.contentColor,
+            disabledContainerColor = native.disabledColor,
+            disabledContentColor = native.disabledContentColor,
+        )
+    }
+    return materialColors.copy(
+        contentColor = com.android.purebilibili.core.ui.AppContentColors.neutralAction(),
+        disabledContentColor = com.android.purebilibili.core.ui.AppContentColors.disabled(),
+    )
+}
 
 @Composable
 private fun appButtonPadding(materialPadding: PaddingValues): PaddingValues =
@@ -657,9 +674,10 @@ fun AppTextButton(
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
     val feedbackClick = appActionWithFeedback(onClick)
-    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+        LocalAppThemeConfig.current.liquidGlassEnabled
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
-        val readableColors = colors.copy(
+        val readableColors = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) colors else colors.copy(
             contentColor = resolveButtonContentColor(colors.containerColor, colors.contentColor, MaterialTheme.colorScheme),
         )
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
@@ -736,6 +754,7 @@ fun AppOutlinedTextField(
             uiStyle = LocalAppUiStyle.current,
             hasPrefix = prefix != null,
             hasSuffix = suffix != null,
+            liquidGlassEnabled = LocalAppThemeConfig.current.liquidGlassEnabled,
         )
     ) {
         androidx.compose.foundation.layout.Column(
@@ -758,8 +777,22 @@ fun AppOutlinedTextField(
                 textStyle = textStyle,
                 keyboardOptions = keyboardOptions,
                 keyboardActions = keyboardActions,
-                leadingIcon = leadingIcon,
-                trailingIcon = trailingIcon,
+                leadingIcon = if (prefix == null) leadingIcon else {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            leadingIcon?.invoke()
+                            prefix()
+                        }
+                    }
+                },
+                trailingIcon = if (suffix == null) trailingIcon else {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            suffix()
+                            trailingIcon?.invoke()
+                        }
+                    }
+                },
                 singleLine = singleLine,
                 maxLines = maxLines,
                 minLines = minLines,
@@ -843,9 +876,10 @@ fun AppDropdownMenu(
             popupModifier = modifier,
             onDismissRequest = onDismissRequest,
         ) {
-            ListPopupColumn {
-                Column(content = content)
-            }
+            Column(
+                modifier = Modifier.widthIn(max = 288.dp).verticalScroll(scrollState),
+                content = content,
+            )
         }
     } else {
         DropdownMenu(
@@ -880,6 +914,27 @@ fun AppDropdownMenuItem(
     val menuModifier = modifier.glassMenuItem(enabled, dismissOnClick, feedbackClick).glassMenuSelectedItem(selected == true)
     val menuClick = { if (glassScope != null) glassScope.dispatch(feedbackClick, dismissOnClick) else feedbackClick() }
     val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
+    // MD3 弹窗查询菜单项固有宽度，原生行在无限宽度测量时会产生无效约束。
+    // 原生弹窗保留原生行；其他弹窗使用下方可计算固有尺寸的布局。
+    if (glassScope == null && com.android.purebilibili.core.ui.isMiuixNonGlassEnabled() &&
+        LocalAppThemeConfig.current.nativeMiuixPopupsEnabled
+    ) {
+        top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = menuModifier.semantics { if (!enabled) disabled() },
+            startAction = leadingIcon,
+            endActions = trailingIcon?.let { slot -> { slot() } },
+            enabled = enabled,
+            holdDownState = selected == true,
+            onClick = menuClick,
+            interactionSource = resolvedInteractionSource,
+        ) {
+            ProvideAppActionContentColor(
+                if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.disabledOnSurface,
+                text,
+            )
+        }
+        return
+    }
     if (glassScope == null && LocalAppUiStyle.current == AppUiStyle.MIUIX) {
         AppSurface(
             onClick = menuClick,
@@ -978,7 +1033,9 @@ fun AppOutlinedButton(
     shape: Shape = ButtonDefaults.outlinedShape,
     colors: ButtonColors = appSecondaryButtonColors(ButtonDefaults.outlinedButtonColors()),
     elevation: androidx.compose.material3.ButtonElevation? = null,
-    border: BorderStroke? = if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
+    border: BorderStroke? = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        null
+    } else if (LocalAppUiStyle.current == AppUiStyle.MIUIX) {
         BorderStroke(1.dp, MiuixTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.20f else 0.10f))
     } else ButtonDefaults.outlinedButtonBorder(enabled),
     contentPadding: PaddingValues = appButtonPadding(AppButtonDefaults.ContentPadding),
@@ -986,9 +1043,10 @@ fun AppOutlinedButton(
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ): Unit = AppExactTouchTargets {
     val feedbackClick = appActionWithFeedback(onClick)
-    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX
+    val elasticFeedbackEnabled = enabled && LocalAppUiStyle.current == AppUiStyle.MIUIX &&
+        LocalAppThemeConfig.current.liquidGlassEnabled
     ProvideAppElasticFeedback(enabled = elasticFeedbackEnabled) {
-        val readableColors = colors.copy(
+        val readableColors = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) colors else colors.copy(
             contentColor = resolveButtonContentColor(colors.containerColor, colors.contentColor, MaterialTheme.colorScheme),
         )
         val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
@@ -1055,7 +1113,8 @@ fun AppAssistChip(
                 onClick = feedbackClick,
                 selected = false,
                 enabled = enabled,
-                modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
+                modifier = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) modifier else
+                    modifier.appElasticPress(enabled = enabled, highlightShape = shape),
                 leadingIcon = leadingIcon,
                 trailingIcon = trailingIcon,
                 interactionSource = interactionSource,
@@ -1097,6 +1156,8 @@ fun AppFilterChip(
     horizontalArrangement: Arrangement.Horizontal = FilterChipDefaults.horizontalArrangement(),
     contentPadding: PaddingValues = FilterChipDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
+    // 仅供承担导航作用的标签选择原生 Miuix 导航配色。
+    miuixNavigationColors: Boolean = false,
 ): Unit = AppExactTouchTargets {
     val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
     ProvideAppElasticFeedback(enabled = enabled) {
@@ -1105,10 +1166,12 @@ fun AppFilterChip(
                 onClick = feedbackClick,
                 selected = selected,
                 enabled = enabled,
-                modifier = modifier.appElasticPress(enabled = enabled, highlightShape = shape),
+                modifier = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) modifier else
+                    modifier.appElasticPress(enabled = enabled, highlightShape = shape),
                 leadingIcon = leadingIcon,
                 trailingIcon = trailingIcon,
                 interactionSource = interactionSource,
+                navigationColors = miuixNavigationColors,
                 label = label,
             )
             return@ProvideAppElasticFeedback
@@ -1149,7 +1212,8 @@ fun AppInputChip(
                 onClick = feedbackClick,
                 selected = selected,
                 enabled = enabled,
-                modifier = modifier.appElasticPress(enabled = enabled),
+                modifier = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) modifier else
+                    modifier.appElasticPress(enabled = enabled),
                 leadingIcon = leadingIcon,
                 trailingIcon = trailingIcon,
                 interactionSource = null,
@@ -1181,7 +1245,8 @@ private fun resolveReadableFloatingActionButtonColors(
         resolveMiuixFabContainerColor(
             requested = requestedContainerColor,
             defaultMaterialContainer = defaultContainer,
-            miuixDefaultContainer = MiuixTheme.colorScheme.primaryContainer,
+            miuixDefaultContainer = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled())
+                MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.primaryContainer,
         )
     } else {
         requestedContainerColor
@@ -1190,7 +1255,8 @@ private fun resolveReadableFloatingActionButtonColors(
         resolveMiuixFabContentColor(
             requested = requestedContentColor,
             defaultMaterialContent = defaultContent,
-            miuixDefaultContent = MiuixTheme.colorScheme.onPrimaryContainer,
+            miuixDefaultContent = if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled())
+                MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onPrimaryContainer,
         )
     } else {
         requestedContentColor

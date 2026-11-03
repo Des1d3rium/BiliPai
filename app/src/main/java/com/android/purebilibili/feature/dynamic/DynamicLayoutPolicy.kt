@@ -132,6 +132,7 @@ internal fun resolveDynamicSidebarUserAvatarUrl(face: String): String {
     val raw = face.trim()
     return when {
         raw.isEmpty() -> ""
+        raw.startsWith("file://") || raw.startsWith("content://") -> raw
         raw.startsWith("https://") -> raw
         raw.startsWith("http://") -> raw.replace("http://", "https://")
         raw.startsWith("//") -> "https:$raw"

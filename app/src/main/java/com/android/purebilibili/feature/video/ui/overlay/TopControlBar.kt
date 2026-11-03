@@ -1,5 +1,6 @@
 package com.android.purebilibili.feature.video.ui.overlay
 
+import com.android.purebilibili.feature.video.ui.components.favoriteFolderMenuSource
 import com.android.purebilibili.core.util.HapticType
 import com.android.purebilibili.core.util.rememberHapticFeedback
 import com.android.purebilibili.core.ui.components.appActionWithFeedback
@@ -55,11 +56,13 @@ import com.android.purebilibili.core.ui.components.AppIcon
 import com.android.purebilibili.core.ui.components.AppText
 import com.android.purebilibili.feature.video.ui.components.PiliPlusDanmakuGlyph
 import com.android.purebilibili.feature.video.ui.components.PiliPlusDanmakuSettingsIcon
+import com.android.purebilibili.feature.video.ui.components.PiliPlusDanmakuSendIcon
 import com.android.purebilibili.feature.video.ui.feedback.likeBurstAnchor
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.outlined.Home
 
 /**
  * Shared Android PiliPlus HeaderControl for inline/fullscreen and portrait/landscape.
@@ -76,6 +79,9 @@ fun TopControlBar(
     showBatteryLevel: Boolean = false,
     showCurrentTime: Boolean = true,
     showInteractiveActions: Boolean = true,
+    likeCount: Long? = null,
+    favoriteCount: Long? = null,
+    commentCount: Long? = null,
     onBack: () -> Unit,
     isLiked: Boolean = false,
     likeStatusKnown: Boolean,
@@ -84,6 +90,7 @@ fun TopControlBar(
     onLikeClick: (() -> Unit)? = null,
     onDislikeClick: (() -> Unit)? = null,
     onCoinClick: (() -> Unit)? = null,
+    shareMenuSource: com.android.purebilibili.core.ui.components.AppGlassMenuSource? = null,
     onShareClick: (() -> Unit)? = null,
     onCastClick: (() -> Unit)? = null,
     showCastButton: Boolean = true,
@@ -126,6 +133,10 @@ fun TopControlBar(
         isUgc = isUgc,
         showFullscreenActionItems = showInteractiveActions,
     )
+    val visibleCounts = rememberVisibleFullscreenCounts()
+    val showCounts = isFullscreen
+    fun visibleCount(kind: com.android.purebilibili.core.store.FullscreenActionCount, value: Long?): Long? =
+        value.takeIf { showCounts && kind in visibleCounts }
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
@@ -165,17 +176,19 @@ fun TopControlBar(
     PlayerControlTouchBounds(height = policy.buttonHeightDp.dp) {
         Column(
             modifier = modifier.fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                .then(if (shouldApplyStatusBarPaddingToTopControlBar(isFullscreen, statusBarVisible)) {
-                    Modifier.statusBarsPadding()
-                } else Modifier)
+                .windowInsetsPadding(playerControlHorizontalInsets(isFullscreen, isPortrait))
+                .playerControlTopSafeArea(isFullscreen, isPortrait, statusBarVisible)
                 .padding(vertical = policy.verticalPaddingDp.dp),
         ) {
             PiliHeaderSlots(
                 hasTitle = hasTitle,
+                allowSeparateTitleRow = isFullscreen && !isPortrait,
                 left = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(buttonSpacing)) {
-                        HeaderIcon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, iconSize = 15)
+                        HeaderIcon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, iconSize = if (glass) 15 else 20)
+                        if (policy.showHome && onHomeClick != null) {
+                            HeaderIcon(Icons.Outlined.Home, "返回首页", onHomeClick)
+                        }
                     }
                 },
                 right = {
@@ -219,7 +232,9 @@ fun TopControlBar(
                         }
                         if (policy.showDanmakuActions) {
                             if (onSendDanmakuClick != null) {
-                                HeaderIcon(Icons.Outlined.Comment, "发弹幕", onSendDanmakuClick)
+                                HeaderButton("发弹幕", onSendDanmakuClick) {
+                                    PiliPlusDanmakuSendIcon(tint = Color.White, size = 20.dp)
+                                }
                             }
                             if (onDanmakuToggle != null) {
                                 val description = if (danmakuEnabled) "关闭弹幕" else "开启弹幕"
@@ -288,12 +303,15 @@ fun TopControlBar(
                         .fillMaxWidth()
                         // 两排玻璃轮廓留出独立呼吸空间；原生控件保持原有间距。
                         .then(if (glass) Modifier.padding(top = 6.dp) else Modifier)
-                        .horizontalScroll(rememberScrollState()),
+                        .horizontalScroll(rememberScrollState())
+                        // 角标伸出按钮的部分也必须位于滚动视口内；两种材质共用此边界。
+                        .padding(top = PlayerActionCountTopOverflow, end = PlayerActionCountEndOverflow),
                     horizontalArrangement = if (glass) Arrangement.spacedBy(buttonSpacing, Alignment.End) else Arrangement.End,
                 ) {
                     if (onCommentClick != null) {
                         HeaderIcon(Icons.Outlined.Forum, "评论", onCommentClick,
-                            active = commentsVisible, iconSize = 18)
+                            active = commentsVisible, iconSize = 18,
+                            count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.COMMENT, commentCount))
                     }
                     if (onRelatedVideosClick != null) {
                         HeaderIcon(Icons.Outlined.VideoLibrary, "相关推荐", onRelatedVideosClick,
@@ -307,6 +325,7 @@ fun TopControlBar(
                                     if (likeStatusKnown) "点赞" else "点赞状态尚未确认",
                                     requireNotNull(likeClick), active = likeStatusKnown && isLiked, iconSize = 18,
                                     gestureModifier = likeGesture, progress = triplePress.progress,
+                                    count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.LIKE, likeCount),
                                 )
                             }
                         }
@@ -325,9 +344,11 @@ fun TopControlBar(
                                 if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                 "收藏", { haptic(HapticType.LIGHT); onFavoriteClick() }, active = isFavorited, iconSize = 18,
                                 onLongClick = onFavoriteLongClick, progress = triplePress.progress,
+                                modifier = Modifier.favoriteFolderMenuSource(),
+                                count = visibleCount(com.android.purebilibili.core.store.FullscreenActionCount.FAVORITE, favoriteCount),
                             )
                         }
-                        if (onShareClick != null) HeaderIcon(Icons.Outlined.Share, "分享", onShareClick, iconSize = 18)
+                        if (onShareClick != null) HeaderIcon(Icons.Outlined.Share, "分享", onShareClick, iconSize = 18, modifier = shareMenuSource?.let { Modifier.appGlassMenuSource(it, onOpen = onShareClick) } ?: Modifier)
                     }
                 }
             }
@@ -335,13 +356,15 @@ fun TopControlBar(
     }
 }
 
-/** Natural-size edge groups leave exactly the remaining width to the scrolling title.
- * When an inline window cannot fit both edge groups, scale them together as PlayerBar does;
- * transformed placement keeps pointer hit testing in the same coordinates as the drawing.
+/**
+ * 左右操作先按自然尺寸测量；横屏全屏的标题空间不足时独占下一行。
+ * 由实际播放器宽度判断，因此左右侧栏、窄窗口和大字体共用同一条布局路径。
+ * 材质只由各控件负责，不改变玻璃、MD3、Miuix 的字号、按钮尺寸或默认间距。
  */
 @Composable
 private fun PiliHeaderSlots(
     hasTitle: Boolean,
+    allowSeparateTitleRow: Boolean,
     left: @Composable () -> Unit,
     right: @Composable () -> Unit,
     title: @Composable () -> Unit,
@@ -360,27 +383,40 @@ private fun PiliHeaderSlots(
         val edgeWidth = leftPlaceable.width + rightPlaceable.width
         val width = constraints.maxWidth
         val scale = if (edgeWidth > width) width.toFloat() / edgeWidth else 1f
+        // 至少为八个标题字及材质内边距留出空间，避免标题退化成竖长窄条。
+        val minimumTitleWidth = 128.sp.roundToPx() + 34.dp.roundToPx()
+        val separateTitleRow = hasTitle && allowSeparateTitleRow &&
+            width - edgeWidth < minimumTitleWidth
+        val edgeHeight = maxOf(leftPlaceable.height, rightPlaceable.height)
+        val titleRowGap = if (separateTitleRow) 4.dp.roundToPx() else 0
         val titlePlaceable = if (hasTitle) measurables[2].measure(
-            Constraints(maxWidth = (width - edgeWidth).coerceAtLeast(0), maxHeight = constraints.maxHeight),
+            Constraints(
+                maxWidth = if (separateTitleRow) width else (width - edgeWidth).coerceAtLeast(0),
+                maxHeight = constraints.maxHeight,
+            ),
         ) else null
-        val height = constraints.constrainHeight(maxOf(
-            leftPlaceable.height, rightPlaceable.height, titlePlaceable?.height ?: 0,
-        ))
+        val rowHeight = if (separateTitleRow) edgeHeight else maxOf(edgeHeight, titlePlaceable?.height ?: 0)
+        val height = constraints.constrainHeight(
+            rowHeight + if (separateTitleRow) titleRowGap + (titlePlaceable?.height ?: 0) else 0,
+        )
         layout(width, height) {
             if (scale < 1f) {
-                leftPlaceable.placeRelativeWithLayer(0, ((height - leftPlaceable.height * scale) / 2).toInt()) {
+                leftPlaceable.placeRelativeWithLayer(0, ((rowHeight - leftPlaceable.height * scale) / 2).toInt()) {
                     scaleX = scale; scaleY = scale; transformOrigin = TransformOrigin(0f, 0f)
                 }
                 rightPlaceable.placeRelativeWithLayer(
-                    (leftPlaceable.width * scale).toInt(), ((height - rightPlaceable.height * scale) / 2).toInt(),
+                    (leftPlaceable.width * scale).toInt(), ((rowHeight - rightPlaceable.height * scale) / 2).toInt(),
                 ) {
                     scaleX = scale; scaleY = scale; transformOrigin = TransformOrigin(0f, 0f)
                 }
             } else {
-                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2)
-                rightPlaceable.placeRelative(width - rightPlaceable.width, (height - rightPlaceable.height) / 2)
+                leftPlaceable.placeRelative(0, (rowHeight - leftPlaceable.height) / 2)
+                rightPlaceable.placeRelative(width - rightPlaceable.width, (rowHeight - rightPlaceable.height) / 2)
             }
-            titlePlaceable?.placeRelative(leftPlaceable.width, (height - titlePlaceable.height) / 2)
+            titlePlaceable?.placeRelative(
+                if (separateTitleRow) 0 else leftPlaceable.width,
+                if (separateTitleRow) rowHeight + titleRowGap else (rowHeight - titlePlaceable.height) / 2,
+            )
         }
     }
 }
@@ -420,18 +456,21 @@ private fun HeaderIcon(
     onLongClick: (() -> Unit)? = null,
     gestureModifier: Modifier? = null,
     progress: Float = 0f,
+    count: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val progressColor = AppContentColors.accent()
-    HeaderButton(description, onClick, active, onLongClick, gestureModifier, modifier = modifier) {
-        if (progress > 0f) Canvas(Modifier.size(28.dp)) {
-            drawArc(progressColor, -90f, -360f * progress, useCenter = false, style = Stroke(2.dp.toPx()))
+    CountedPlayerAction(count = count, iconSize = iconSize.dp, modifier = modifier) {
+        HeaderButton(description, onClick, active, onLongClick, gestureModifier) {
+            if (progress > 0f) Canvas(Modifier.size(28.dp)) {
+                drawArc(progressColor, -90f, -360f * progress, useCenter = false, style = Stroke(2.dp.toPx()))
+            }
+            AppIcon(
+                imageVector = icon, contentDescription = null,
+                tint = if (active) AppContentColors.accent() else Color.White,
+                modifier = Modifier.size(iconSize.dp),
+            )
         }
-        AppIcon(
-            imageVector = icon, contentDescription = null,
-            tint = if (active) AppContentColors.accent() else Color.White,
-            modifier = Modifier.size(iconSize.dp),
-        )
     }
 }
 
@@ -447,9 +486,14 @@ private fun HeaderButton(
     content: @Composable () -> Unit,
 ) {
     val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.VIDEO_ACTIONS, onClick)
-    PlayerControlGlassDock(enabled = true, modifier = modifier, shape = if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) androidx.compose.foundation.shape.RoundedCornerShape(50) else CircleShape) {
+    PlayerControlGlassDock(enabled = true, modifier = modifier, shape = CircleShape) {
         Box(
-            modifier = Modifier.size(width = 42.dp, height = 34.dp)
+            modifier = Modifier
+                .then(if (com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled) {
+                    Modifier.size(PlayerGlassIconButtonSize)
+                } else {
+                    Modifier.size(34.dp)
+                })
                 .semantics(mergeDescendants = true) {
                     contentDescription = description
                     selected = active

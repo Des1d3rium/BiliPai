@@ -65,8 +65,6 @@ import com.android.purebilibili.core.ui.components.rememberAdaptiveListVisualCap
 import com.android.purebilibili.core.ui.AppAlertDialog
 import com.android.purebilibili.core.ui.AppDialogAction
 import com.android.purebilibili.core.ui.components.AppTextField
-import com.android.purebilibili.core.store.MAX_HOME_REFRESH_COUNT
-import com.android.purebilibili.core.store.MIN_HOME_REFRESH_COUNT
 import com.android.purebilibili.core.store.NetworkProxyStore
 import com.android.purebilibili.core.store.SettingsManager
 import com.android.purebilibili.core.network.policy.AppHttpProxySettings
@@ -140,6 +138,8 @@ internal data class SettingsRootCategoryActions(
     val onPlaybackClick: () -> Unit,
     val onBottomBarClick: () -> Unit,
     val onPermissionClick: () -> Unit,
+    val onSpacePrivacyClick: () -> Unit,
+    val onLoginActivityClick: () -> Unit,
     val onMessageNotificationClick: () -> Unit,
     val onBlockedListClick: () -> Unit,
     val onCommentFraudHistoryClick: () -> Unit,
@@ -186,7 +186,6 @@ internal data class SettingsRootCategoryActions(
     val onDynamicFeedLayoutModeChange: (com.android.purebilibili.core.store.SettingsManager.DynamicFeedLayoutMode) -> Unit,
     val onDynamicTabVisibilityChange: (String) -> Unit,
     val onDynamicTabOrderChange: (List<String>) -> Unit,
-    val onHomeRefreshCountChange: (Int) -> Unit
 )
 
 internal data class SettingsRootCategoryState(
@@ -227,7 +226,6 @@ internal data class SettingsRootCategoryState(
     val dynamicFeedLayoutMode: com.android.purebilibili.core.store.SettingsManager.DynamicFeedLayoutMode,
     val dynamicVisibleTabIds: Set<String>,
     val dynamicTabOrder: List<String>,
-    val homeRefreshCount: Int
 )
 
 @Composable
@@ -310,7 +308,9 @@ private fun SettingsCategoryContainerOrigin(
         .drawWithContent {
             layer.record { this@drawWithContent.drawContent() }
             anchor.recorded = true
-            drawLayer(layer)
+            if (sources.sources[target]?.takeIf { it.anchor === anchor }?.returnInFlight?.invoke() != true) {
+                drawLayer(layer)
+            }
         }
     ) {
         content {
@@ -507,6 +507,8 @@ internal fun SettingsRootCategoryContent(
                 }
             }
             SettingsRootCategory.HOME_RECOMMENDATION -> {
+                // 推荐流与动态条目统一在「首页与推荐」页的「推荐与动态」分组渲染,
+                // 分类页不再内联第二份 FeedApiSection;分类直跳首页设置页。
                 SettingsRootCategoryEntranceSection {
                     SettingsDetailGroup(title = "首页展示") {
                         SettingsDetailEntrySection(
@@ -522,33 +524,6 @@ internal fun SettingsRootCategoryContent(
                                     onClick = actions.onHomeClick,
                                 ),
                             ),
-                        )
-                    }
-                }
-                SettingsRootCategoryEntranceSection {
-                    SettingsDetailGroup(title = "推荐流与动态") {
-                        FeedApiSection(
-                            feedApiType = state.feedApiType,
-                            onFeedApiTypeChange = actions.onFeedApiTypeChange,
-                            incrementalTimelineRefreshEnabled = state.incrementalTimelineRefreshEnabled,
-                            onIncrementalTimelineRefreshChange = actions.onIncrementalTimelineRefreshChange,
-                            dynamicImagePreviewTextVisible = state.dynamicImagePreviewTextVisible,
-                            onDynamicImagePreviewTextVisibleChange = actions.onDynamicImagePreviewTextVisibleChange,
-                            dynamicCommentPreviewVisible = state.dynamicCommentPreviewVisible,
-                            onDynamicCommentPreviewVisibleChange = actions.onDynamicCommentPreviewVisibleChange,
-                            dynamicDetailImageLayout = state.dynamicDetailImageLayout,
-                            onDynamicDetailImageLayoutChange = actions.onDynamicDetailImageLayoutChange,
-                            dynamicTopBarCollapseOnScroll = state.dynamicTopBarCollapseOnScroll,
-                            onDynamicTopBarCollapseOnScrollChange =
-                                actions.onDynamicTopBarCollapseOnScrollChange,
-                            dynamicFeedLayoutMode = state.dynamicFeedLayoutMode,
-                            onDynamicFeedLayoutModeChange = actions.onDynamicFeedLayoutModeChange,
-                            dynamicVisibleTabIds = state.dynamicVisibleTabIds,
-                            onDynamicTabVisibilityChange = actions.onDynamicTabVisibilityChange,
-                            dynamicTabOrder = state.dynamicTabOrder,
-                            onDynamicTabOrderChange = actions.onDynamicTabOrderChange,
-                            homeRefreshCount = state.homeRefreshCount,
-                            onHomeRefreshCountChange = actions.onHomeRefreshCountChange,
                         )
                     }
                 }
@@ -593,7 +568,8 @@ internal fun SettingsRootCategoryContent(
             }
             SettingsRootCategory.PRIVACY_PERMISSION -> {
                 SettingsRootCategoryEntranceSection {
-                    SettingsDetailGroup(title = "隐私与权限") {
+                    // 分组名描述内容范围,不复读分类名,避免"隐私与权限里还有隐私与权限"。
+                    SettingsDetailGroup(title = "历史记录与权限") {
                         PrivacySection(
                             privacyModeEnabled = state.privacyModeEnabled,
                             searchSuggestionsEnabled = state.searchSuggestionsEnabled,
@@ -602,6 +578,8 @@ internal fun SettingsRootCategoryContent(
                             onSearchSuggestionsChange = actions.onSearchSuggestionsChange,
                             onPrivacyContentAuthenticationChange = actions.onPrivacyContentAuthenticationChange,
                             onPermissionClick = actions.onPermissionClick,
+                            onSpacePrivacyClick = actions.onSpacePrivacyClick,
+                            onLoginActivityClick = actions.onLoginActivityClick,
                             onMessageNotificationClick = actions.onMessageNotificationClick,
                             onBlockedListClick = actions.onBlockedListClick,
                             onCommentFraudHistoryClick = actions.onCommentFraudHistoryClick // [New]
@@ -611,7 +589,7 @@ internal fun SettingsRootCategoryContent(
             }
             SettingsRootCategory.STORAGE_BACKUP -> {
                 SettingsRootCategoryEntranceSection {
-                    SettingsDetailGroup(title = "存储与备份") {
+                    SettingsDetailGroup(title = "备份与缓存") {
                         DataStorageSection(
                             customDownloadPath = state.customDownloadPath,
                             customImageSavePath = state.customImageSavePath,
@@ -754,8 +732,6 @@ internal fun SettingsRootCategoryContent(
                             onDynamicTabVisibilityChange = actions.onDynamicTabVisibilityChange,
                             dynamicTabOrder = state.dynamicTabOrder,
                             onDynamicTabOrderChange = actions.onDynamicTabOrderChange,
-                            homeRefreshCount = state.homeRefreshCount,
-                            onHomeRefreshCountChange = actions.onHomeRefreshCountChange
                         )
                     }
                 }
@@ -825,6 +801,8 @@ internal fun SettingsRootCategoryContent(
                             onSearchSuggestionsChange = actions.onSearchSuggestionsChange,
                             onPrivacyContentAuthenticationChange = actions.onPrivacyContentAuthenticationChange,
                             onPermissionClick = actions.onPermissionClick,
+                            onSpacePrivacyClick = actions.onSpacePrivacyClick,
+                            onLoginActivityClick = actions.onLoginActivityClick,
                             onMessageNotificationClick = actions.onMessageNotificationClick,
                             onBlockedListClick = actions.onBlockedListClick,
                             onCommentFraudHistoryClick = actions.onCommentFraudHistoryClick // [New]
@@ -1084,9 +1062,8 @@ fun FeedApiSection(
     onDynamicTabVisibilityChange: (String) -> Unit,
     dynamicTabOrder: List<String>,
     onDynamicTabOrderChange: (List<String>) -> Unit,
-    homeRefreshCount: Int,
-    onHomeRefreshCountChange: (Int) -> Unit
 ) {
+    ContentDisplayPreferences()
     val siblingTints = rememberSettingsSiblingIconTints(10, paletteOffset = 1)
     val feedIcon = rememberSettingsSemanticIcon(SettingsIconRole.FEED_API)
     val refreshIcon = rememberSettingsSemanticIcon(SettingsIconRole.REFRESH_COUNT)
@@ -1110,7 +1087,7 @@ fun FeedApiSection(
             SettingSwitchItem(
                 icon = refreshIcon,
                 title = settingItemTitle("home.incremental_timeline_refresh_enabled"),
-                subtitle = "下拉刷新只把新动态加到顶部，不重新排列已看到的内容",
+                subtitle = "动态流下拉刷新只把新动态加到顶部，不重新排列已看到的内容",
                 checked = incrementalTimelineRefreshEnabled,
                 onCheckedChange = onIncrementalTimelineRefreshChange,
                 iconTint = siblingTints[1]
@@ -1127,6 +1104,8 @@ fun FeedApiSection(
                 iconTint = siblingTints[9]
             )
         }
+        SettingsAdaptiveDivider()
+        com.android.purebilibili.feature.settings.DynamicVisibilityCheckPreference()
         SettingsAdaptiveDivider()
         SettingsItemAnchor("home.dynamic_image_preview_text_visible") {
             SettingSwitchItem(
@@ -1191,18 +1170,6 @@ fun FeedApiSection(
             tabOrder = dynamicTabOrder,
             onTabOrderChange = onDynamicTabOrderChange,
             iconTint = siblingTints[7]
-        )
-        SettingsAdaptiveDivider()
-        SettingSliderItem(
-            icon = refreshIcon,
-            title = "首页刷新数量",
-            subtitle = resolveHomeRefreshCountSummary(homeRefreshCount),
-            value = homeRefreshCount.toFloat(),
-            onValueChange = { value -> onHomeRefreshCountChange(value.roundToInt()) },
-            valueRange = resolveHomeRefreshSliderRange(),
-            steps = resolveHomeRefreshSliderSteps(),
-            valueFormatter = { value -> value.roundToInt().toString() },
-            iconTint = siblingTints[8]
         )
     }
 }
@@ -1329,17 +1296,8 @@ private fun FeedDynamicTabVisibilityItem(
     }
 }
 
-internal fun resolveHomeRefreshCountSummary(count: Int): String {
-    return "单次最多请求 $count 条推荐内容，实际显示可能更少"
-}
 
-internal fun resolveHomeRefreshSliderRange(): ClosedFloatingPointRange<Float> {
-    return MIN_HOME_REFRESH_COUNT.toFloat()..MAX_HOME_REFRESH_COUNT.toFloat()
-}
 
-internal fun resolveHomeRefreshSliderSteps(): Int {
-    return (MAX_HOME_REFRESH_COUNT - MIN_HOME_REFRESH_COUNT - 1).coerceAtLeast(0)
-}
 
 @Composable
 fun PrivacySection(
@@ -1350,6 +1308,8 @@ fun PrivacySection(
     onSearchSuggestionsChange: (Boolean) -> Unit,
     onPrivacyContentAuthenticationChange: (Boolean) -> Unit,
     onPermissionClick: () -> Unit,
+    onSpacePrivacyClick: () -> Unit,
+    onLoginActivityClick: () -> Unit,
     onMessageNotificationClick: () -> Unit,
     onBlockedListClick: () -> Unit, // [New]
     onCommentFraudHistoryClick: () -> Unit // [New]
@@ -1364,15 +1324,45 @@ fun PrivacySection(
     }.collectAsStateWithLifecycle(initialValue = false)
     val siblingTints = rememberSettingsSiblingIconTints(4, paletteOffset = 4)
     val permissionVisual = rememberSettingsEntryVisual(SettingsSearchTarget.PERMISSION)
+    val spacePrivacyVisual = rememberSettingsEntryVisual(SettingsSearchTarget.SPACE_PRIVACY)
+    val loginActivityVisual = rememberSettingsEntryVisual(SettingsSearchTarget.LOGIN_ACTIVITY)
     val messageNotificationVisual =
         rememberSettingsEntryVisual(SettingsSearchTarget.MESSAGE_NOTIFICATION)
     val blockedListVisual = rememberSettingsEntryVisual(SettingsSearchTarget.BLOCKED_LIST)
-    val visibilityOffIcon = rememberSettingsSemanticIcon(SettingsIconRole.PRIVACY_HISTORY)
+    val historyIcon = rememberSettingsSemanticIcon(SettingsIconRole.PRIVACY_HISTORY)
+    val searchRecommendationIcon = rememberSettingsSemanticIcon(SettingsIconRole.PRIVACY_SEARCH_RECOMMENDATION)
+    val personalRecapIcon = rememberSettingsSemanticIcon(SettingsIconRole.PERSONAL_RECAP)
     val contentAuthenticationIcon = rememberSettingsSemanticIcon(
         SettingsIconRole.PRIVACY_CONTENT_AUTHENTICATION,
     )
 
+    val showHotControl by SettingsManager.getSearchLandingSectionVisible(context, 0).collectAsStateWithLifecycle(initialValue = true)
+    val showHistoryControl by SettingsManager.getSearchLandingSectionVisible(context, 1).collectAsStateWithLifecycle(initialValue = true)
+    val showDiscoverControl by SettingsManager.getSearchLandingSectionVisible(context, 2).collectAsStateWithLifecycle(initialValue = true)
+
     SettingsCardGroup {
+        listOf(
+            Triple("privacy.search_hot_control", showHotControl, SettingsIconRole.SEARCH_HOT_SECTION),
+            Triple("privacy.search_history_control", showHistoryControl, SettingsIconRole.SEARCH_HISTORY_SECTION),
+            Triple("privacy.search_discover_control", showDiscoverControl, SettingsIconRole.SEARCH_DISCOVER_SECTION),
+        ).forEachIndexed { index, (id, visible, iconRole) ->
+            SettingsItemAnchor(id) {
+                SettingSwitchItem(
+                    icon = rememberSettingsSemanticIcon(iconRole),
+                    title = settingItemTitle(id),
+                    subtitle = when (index) {
+                        0 -> "关闭后隐藏搜索页的「大家都在搜」分区"
+                        1 -> "关闭后隐藏搜索历史，记录设置和已有历史不变"
+                        else -> "关闭后隐藏搜索页的「搜索发现」分区"
+                    },
+                    checked = visible,
+                    onCheckedChange = { enabled ->
+                        scope.launch { SettingsManager.setSearchLandingSectionVisible(context, index, enabled) }
+                    },
+                )
+            }
+            SettingsAdaptiveDivider()
+        }
         SettingSwitchItem(
             icon = rememberSettingsSemanticIcon(SettingsIconRole.HOME_SEARCH_GLASS),
             title = "搜索框推荐词",
@@ -1389,7 +1379,7 @@ fun PrivacySection(
 
         SettingsItemAnchor("privacy.search_suggestions_enabled") {
             SettingSwitchItem(
-                icon = visibilityOffIcon,
+                icon = searchRecommendationIcon,
                 title = settingItemTitle("privacy.search_suggestions_enabled"),
                 subtitle = "开启时使用官方搜索推荐；关闭后改用公开热搜词",
                 checked = searchSuggestionsEnabled,
@@ -1400,7 +1390,7 @@ fun PrivacySection(
         SettingsAdaptiveDivider()
         SettingsItemAnchor("privacy.privacy_mode_enabled") {
             SettingSwitchItem(
-                icon = visibilityOffIcon,
+                icon = historyIcon,
                 title = settingItemTitle("privacy.privacy_mode_enabled"),
                 subtitle = "开启后不再新增播放和搜索历史，已有记录不会被删除",
                 checked = privacyModeEnabled,
@@ -1410,7 +1400,7 @@ fun PrivacySection(
         }
         SettingsAdaptiveDivider()
         SettingSwitchItem(
-            icon = visibilityOffIcon,
+            icon = personalRecapIcon,
             title = "我的回顾",
             subtitle = "在历史页显示阅读与观看统计、趋势图和最近爱看的 UP 主",
             checked = personalRecapEnabled,
@@ -1430,6 +1420,24 @@ fun PrivacySection(
                 iconTint = siblingTints[1]
             )
         }
+        SettingsAdaptiveDivider()
+        SettingClickableItem(
+            icon = spacePrivacyVisual.icon,
+            iconPainter = spacePrivacyVisual.iconResId?.let { painterResource(id = it) },
+            title = settingsDestinationCopy(SettingsSearchTarget.SPACE_PRIVACY).title,
+            subtitle = settingsDestinationCopy(SettingsSearchTarget.SPACE_PRIVACY).summary,
+            onClick = onSpacePrivacyClick,
+            iconTint = spacePrivacyVisual.iconTint,
+        )
+        SettingsAdaptiveDivider()
+        SettingClickableItem(
+            icon = loginActivityVisual.icon,
+            iconPainter = loginActivityVisual.iconResId?.let { painterResource(id = it) },
+            title = settingsDestinationCopy(SettingsSearchTarget.LOGIN_ACTIVITY).title,
+            subtitle = settingsDestinationCopy(SettingsSearchTarget.LOGIN_ACTIVITY).summary,
+            onClick = onLoginActivityClick,
+            iconTint = loginActivityVisual.iconTint,
+        )
         SettingsAdaptiveDivider()
         SettingClickableItem(
             icon = permissionVisual.icon,
@@ -1478,6 +1486,8 @@ fun DataStorageSection(
     val downloadPathVisual = rememberSettingsEntryVisual(SettingsSearchTarget.DOWNLOAD_PATH)
     val imageSavePathVisual = rememberSettingsEntryVisual(SettingsSearchTarget.IMAGE_SAVE_PATH)
     val clearCacheVisual = rememberSettingsEntryVisual(SettingsSearchTarget.CLEAR_CACHE)
+    val autoClearCacheIcon = rememberSettingsSemanticIcon(SettingsIconRole.AUTO_CLEAR_CACHE)
+    val cacheCapacityIcon = rememberSettingsSemanticIcon(SettingsIconRole.CACHE_CAPACITY_LIMIT)
     val siblingTints = rememberSettingsSiblingIconTints(7, paletteOffset = 2)
     val showExplicitActionChevron =
         rememberAdaptiveListVisualCapabilities().showExplicitActionChevron
@@ -1542,13 +1552,13 @@ fun DataStorageSection(
                 )
             },
             selectedValue = autoCacheClearInterval,
-            icon = clearCacheVisual.icon,
+            icon = autoClearCacheIcon,
             iconTint = siblingTints[5],
             onSelectionChange = onAutoCacheClearIntervalChange
         )
         SettingsAdaptiveDivider()
         SettingSliderItem(
-            icon = clearCacheVisual.icon,
+            icon = cacheCapacityIcon,
             title = "缓存容量上限",
             subtitle = "缓存超过设定容量后，在应用启动时自动清理；默认 5 GB",
             value = autoCacheClearThresholdGb.toFloat(),
@@ -2255,6 +2265,21 @@ internal val AboutDevelopers = listOf(
         name = "converk",
         githubLogin = "converk",
         avatarUrl = "https://avatars.githubusercontent.com/u/34793421?v=4"
+    ),
+    AboutDeveloper(
+        name = "Hikari0618",
+        githubLogin = "Hikari0618",
+        avatarUrl = "https://avatars.githubusercontent.com/u/90288898?v=4"
+    ),
+    AboutDeveloper(
+        name = "ajax-prog",
+        githubLogin = "ajax-prog",
+        avatarUrl = "https://avatars.githubusercontent.com/u/175576147?v=4"
+    ),
+    AboutDeveloper(
+        name = "bugrsix",
+        githubLogin = "bugrsix",
+        avatarUrl = "https://avatars.githubusercontent.com/u/104134191?v=4"
     )
 )
 

@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.core.theme.AppUiStyle
 import com.android.purebilibili.core.theme.LocalAppUiStyle
@@ -186,10 +187,28 @@ object AppSurfaceTokens {
         materialFallback = MaterialTheme.colorScheme.primary
     )
 
-    /** Shared subtle selection fill for opaque Miuix navigation and categories. */
+    /** 原生 Miuix 统一先合成到页面底色，避免同一选中态随 dock、列表底面变色。 */
+    fun resolveSelectionContainer(
+        accent: Color,
+        pageSurface: Color,
+        uiStyle: AppUiStyle,
+        liquidGlassEnabled: Boolean,
+    ): Color {
+        val tint = accent.copy(alpha = 0.14f)
+        return if (isMiuixNonGlassEnabled(uiStyle, liquidGlassEnabled)) {
+            tint.compositeOver(pageSurface.copy(alpha = 1f))
+        } else tint
+    }
+
+    /** MD3 与玻璃保留原有透明度；原生 Miuix 的导航、分类共用不透明选中底色。 */
     @Composable
     @ReadOnlyComposable
-    fun selectionContainer(): Color = primary().copy(alpha = 0.14f)
+    fun selectionContainer(): Color = resolveSelectionContainer(
+        accent = primary(),
+        pageSurface = background(),
+        uiStyle = LocalAppUiStyle.current,
+        liquidGlassEnabled = LocalAppThemeConfig.current.liquidGlassEnabled,
+    )
 
     @Composable
     @ReadOnlyComposable

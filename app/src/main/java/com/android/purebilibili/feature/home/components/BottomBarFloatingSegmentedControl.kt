@@ -43,6 +43,7 @@ import com.android.purebilibili.core.ui.AppSurfaceTokens
 import com.android.purebilibili.core.ui.LocalGlobalWallpaperBackdropVisible
 import com.android.purebilibili.core.ui.wallpaper.LocalGlobalWallpaperBackdropSource
 import com.android.purebilibili.core.ui.components.AppText
+import com.android.purebilibili.core.ui.components.clipLiquidDockScrollContent
 import com.android.purebilibili.feature.home.components.miuix.DampedDragTrackingMode
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -85,6 +86,7 @@ internal fun BottomBarFloatingSegmentedControl(
     indicatorIdleSurfaceColorOverride: Color? = null,
     geometryMode: FloatingBottomBarGeometryMode = FloatingBottomBarGeometryMode.Segmented,
     adaptIndicatorToLabel: Boolean = true,
+    liquidGlassAlignShellStart: Boolean = false,
     liquidGlassLabelHorizontalPadding: Dp? = null,
     liquidGlassMeasurementLabels: List<String>? = null,
     liquidGlassAnimateLabelWidthChanges: Boolean = false,
@@ -135,7 +137,9 @@ internal fun BottomBarFloatingSegmentedControl(
     // Inline docks must not sample an ancestor page source that also records the dock.
     // The root wallpaper-only source is independent, contains real pixels at this position,
     // and remains mounted across navigation. Prefer an explicitly supplied sibling source.
-    val suppliedBackdrop = miuixBackdrop ?: wallpaperBackdrop
+    val parentGlass = com.android.purebilibili.core.ui.blur.LocalAppGlassContainer.current
+        .takeIf { liquidGlassEnabled }
+    val suppliedBackdrop = if (parentGlass != null) parentGlass.backdrop else miuixBackdrop ?: wallpaperBackdrop
     // A supplied page backdrop already contains the pixels behind this dock. Combining it
     // with a local source can make MIUI's native background-blur graph sample itself when
     // nested pages mount another backdrop (for example Bangumi/Film), overflowing RenderThread.
@@ -172,7 +176,11 @@ internal fun BottomBarFloatingSegmentedControl(
     val effectiveItemWidth = itemWidth?.coerceAtLeast(0.dp)
     // This wrapper can also render without glass. Content-width capsules and shell trimming
     // belong exclusively to glass; disabled renderers retain their established slot geometry.
-    val contentAdaptiveIndicatorEnabled = adaptIndicatorToLabel && liquidGlassEnabled
+    // 文字标签统一由全局开关控制；自定义图标内容仍由入口声明是否有文字测量依据。
+    // 原生材质不读取此策略，继续使用原来的槽位几何。
+    val dynamicLengthEnabled = com.android.purebilibili.core.ui.animation.LocalLiquidIndicatorDynamicLengthEnabled.current
+    val contentAdaptiveIndicatorEnabled = liquidGlassEnabled && dynamicLengthEnabled &&
+        (itemContent == null || adaptIndicatorToLabel)
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val resolvedLabelFontSize = if (itemContent == null) {
@@ -217,11 +225,28 @@ internal fun BottomBarFloatingSegmentedControl(
     val contentWidth = effectiveItemWidth?.let { it * itemCount + horizontalPadding * 2 }
     // A scroll state enables overflow; it must not stretch a short glass shell to
     // the whole available viewport. width() still respects the parent's maximum.
-    val rootModifier = if (contentWidth != null) {
+    val widthModifier = if (contentWidth != null) {
         modifier.width(contentWidth)
     } else {
         modifier
     }
+    // 仅页面显式要求时补偿动态长度裁掉的首槽空白，外壳起点不随计数与字号变化。
+    // 滚动量在布局阶段读取，原生材质与其他 dock 的默认几何不变。
+    val rootModifier = if (liquidGlassAlignShellStart && contentAdaptiveIndicatorEnabled && effectiveItemWidth != null) {
+        widthModifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val leadingInsetPx = indicatorContentWidths?.firstOrNull()?.let { width ->
+                resolveFloatingDockScrollableShellInsetPx(
+                    slotWidthPx = effectiveItemWidth.toPx(),
+                    capsuleWidthPx = width.toPx(),
+                    distanceFromContentEdgePx = scrollState?.value?.toFloat() ?: 0f,
+                ).roundToInt()
+            } ?: 0
+            layout(placeable.width, placeable.height) {
+                placeable.placeRelative(-leadingInsetPx, 0)
+            }
+        }
+    } else widthModifier
     val selectedIndexState = rememberUpdatedState(safeSelectedIndex)
     val onSelectedState = rememberUpdatedState(onSelected)
     val enabledState = rememberUpdatedState(enabled)
@@ -315,9 +340,31 @@ internal fun BottomBarFloatingSegmentedControl(
         }
         val floatingModifier = if (scrollState != null && contentWidth != null) {
             Modifier
-                // Expand the scroll clip in both axes, then inset its content by
-                // the same amount. Slots and scroll range retain their resting geometry,
-                // while the first/last indicator can bloom outside the dock ends.
+                .then(
+                    if (liquidGlassEnabled) Modifier.clipLiquidDockScrollContent(
+                        leadingInsetPx = {
+                            if (!contentAdaptiveIndicatorEnabled) 0f else indicatorContentWidths?.firstOrNull()?.let {
+                                resolveFloatingDockScrollableShellInsetPx(
+                                    with(density) { fittedSegmentedIndicatorWidth.toPx() },
+                                    with(density) { it.toPx() }, scrollState.value.toFloat(),
+                                ).roundToInt().toFloat()
+                            } ?: 0f
+                        },
+                        trailingInsetPx = {
+                            if (!contentAdaptiveIndicatorEnabled) 0f else indicatorContentWidths?.lastOrNull()?.let {
+                                resolveFloatingDockScrollableShellInsetPx(
+                                    with(density) { fittedSegmentedIndicatorWidth.toPx() },
+                                    with(density) { it.toPx() },
+                                    (scrollState.maxValue - scrollState.value).toFloat(),
+                                ).roundToInt().toFloat()
+                            } ?: 0f
+                        },
+                        translationYPx = { dockTranslationProvider.value() },
+                        verticalOverflowPx = with(density) { captureInsets.verticalDp.dp.toPx() },
+                    ) else Modifier
+                )
+                // 左右按外壳收口，上下与采样层共享形变余量，避免放大指示器被静态行高截断。
+                // 不改变槽位尺寸、滚动范围或原生路径。
                 .bottomBarMatchedCaptureOverflow(
                     horizontalInset = captureInsets.horizontalDp.dp,
                     verticalInset = captureInsets.verticalDp.dp,

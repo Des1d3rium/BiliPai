@@ -33,17 +33,30 @@ internal fun ListenVideoCollectionPlayer(
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(mediaId, seasonId) { viewModel.open(mediaId, seasonId) }
     Box(modifier = modifier.fillMaxSize()) {
-        player(state.firstTrack?.bvid.orEmpty(), state.firstTrack?.cid ?: 0L)
-        if (state.firstTrack == null && state.error != null) {
-            AppSurface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        state.firstTrack?.let { track -> player(track.bvid, track.cid) }
+        if (state.firstTrack == null && state.error == null) {
+            AppSurface(modifier = Modifier.fillMaxSize(), color = com.android.purebilibili.feature.audio.lyrics.halcyon.PlayerPalette.Default.middle) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AppTextButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp)) {
-                        AppText("返回")
+                        AppText("返回", color = androidx.compose.ui.graphics.Color.White)
                     }
                     Column(modifier = Modifier.align(Alignment.Center).padding(24.dp)) {
-                        AppText(title, style = MaterialTheme.typography.titleLarge)
-                        AppText(state.error.orEmpty())
-                        AppTextButton(onClick = viewModel::retry) { AppText("重试") }
+                        AppText(title, style = MaterialTheme.typography.titleLarge, color = androidx.compose.ui.graphics.Color.White)
+                        AppText("正在读取播放列表", color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f))
+                    }
+                }
+            }
+        }
+        if (state.firstTrack == null && state.error != null) {
+            AppSurface(modifier = Modifier.fillMaxSize(), color = com.android.purebilibili.feature.audio.lyrics.halcyon.PlayerPalette.Default.middle) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AppTextButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp)) {
+                        AppText("返回", color = androidx.compose.ui.graphics.Color.White)
+                    }
+                    Column(modifier = Modifier.align(Alignment.Center).padding(24.dp)) {
+                        AppText(title, style = MaterialTheme.typography.titleLarge, color = androidx.compose.ui.graphics.Color.White)
+                        AppText(state.error.orEmpty(), color = androidx.compose.ui.graphics.Color.White)
+                        AppTextButton(onClick = viewModel::retry) { AppText("重试", color = androidx.compose.ui.graphics.Color.White) }
                     }
                 }
             }

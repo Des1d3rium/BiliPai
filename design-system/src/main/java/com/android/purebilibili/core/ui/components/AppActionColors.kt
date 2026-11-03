@@ -33,6 +33,15 @@ object AppTextButtonDefaults {
     @Composable
     fun colors(): androidx.compose.material3.ButtonColors {
         val chromeColor = LocalAppActionContentColor.current
+        if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+            val native = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors()
+            return ButtonDefaults.textButtonColors(
+                containerColor = native.color,
+                contentColor = if (chromeColor == Color.Unspecified) native.textColor else chromeColor,
+                disabledContainerColor = native.disabledColor,
+                disabledContentColor = native.disabledTextColor,
+            )
+        }
         val contentColor = if (chromeColor == Color.Unspecified) AppContentColors.neutralAction() else chromeColor
         return ButtonDefaults.textButtonColors(
             contentColor = contentColor,
@@ -42,10 +51,21 @@ object AppTextButtonDefaults {
 
     /** Explicit opt-in for a primary text action, such as submit or confirm. */
     @Composable
-    fun primaryColors(): androidx.compose.material3.ButtonColors = ButtonDefaults.textButtonColors(
-        contentColor = AppContentColors.link(),
-        disabledContentColor = AppContentColors.disabled(),
-    )
+    fun primaryColors(): androidx.compose.material3.ButtonColors {
+        if (com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+            val native = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColorsPrimary()
+            return ButtonDefaults.textButtonColors(
+                containerColor = native.color,
+                contentColor = native.textColor,
+                disabledContainerColor = native.disabledColor,
+                disabledContentColor = native.disabledTextColor,
+            )
+        }
+        return ButtonDefaults.textButtonColors(
+            contentColor = AppContentColors.link(),
+            disabledContentColor = AppContentColors.disabled(),
+        )
+    }
 }
 
 

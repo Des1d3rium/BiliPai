@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.live.components
 
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.ui.AppContentColors
 
 import androidx.compose.foundation.combinedClickable
@@ -167,12 +169,12 @@ fun LiveEmoticonPanel(
             liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
             role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
             options = packages.mapIndexed { index, pkg -> AppSegmentOption(index, pkg.name) },
-            selectedValue = pager.currentPage,
+            selectedValue = pager.tabSelectedPage,
             onSelectionChange = { scope.launch { com.android.purebilibili.navigation.animatePagerSelection(pager, it) } },
             scrollable = true,
             centerContent = false,
             enabled = enabled,
-            indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+            indicatorPositionProvider = { pager.tabIndicatorPosition },
             isScrollInProgressProvider = { pager.isScrollInProgress },
             modifier = Modifier.fillMaxWidth(),
         )
@@ -276,9 +278,9 @@ fun LiveDmBlockSheet(
                                 liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
                                 role = com.android.purebilibili.core.ui.components.AppTabRowRole.SECONDARY,
                                 options = listOf(AppSegmentOption(0, "关键词"), AppSegmentOption(1, "用户")),
-                                selectedValue = pager.currentPage,
+                                selectedValue = pager.tabSelectedPage,
                                 onSelectionChange = { scope.launch { com.android.purebilibili.navigation.animatePagerSelection(pager, it) } },
-                                indicatorPositionProvider = { pager.currentPage + pager.currentPageOffsetFraction },
+                                indicatorPositionProvider = { pager.tabIndicatorPosition },
                                 isScrollInProgressProvider = { pager.isScrollInProgress },
                                 modifier = Modifier.fillMaxWidth(),
                             )

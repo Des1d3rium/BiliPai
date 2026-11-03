@@ -35,12 +35,6 @@ import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.HazeColorEffect
 import kotlin.math.roundToInt
 
-// 状态栏/黑边模糊条的采样间隔：过大会让变色明显滞后于画面；500ms 已远低于
-// 96x54 采样的开销上限（见 ImmersiveStatusBarBackdropPolicyTest 的下限断言）。
-internal const val VIDEO_STATUS_BAR_AMBIENT_CAPTURE_INTERVAL_MS = 500L
-internal const val VIDEO_STATUS_BAR_AMBIENT_SAMPLE_WIDTH_PX = 96
-internal const val VIDEO_STATUS_BAR_AMBIENT_SAMPLE_HEIGHT_PX = 54
-
 internal fun resolveVideoStatusBarAmbientHazeStyle(): HazeBlurStyle = HazeBlurStyle {
     backgroundColor(Color.Black)
     colorEffects(emptyList())

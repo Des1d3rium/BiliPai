@@ -31,12 +31,11 @@ data class VideoDetailActionActiveColors(
 fun resolveVideoDetailActionActiveColors(
     primary: Color,
     secondary: Color,
-    tertiary: Color,
     uiStyle: AppUiStyle = AppUiStyle.MATERIAL3,
 ): VideoDetailActionActiveColors {
     return VideoDetailActionActiveColors(
         primaryAction = primary,
-        watchLater = if (uiStyle == AppUiStyle.MIUIX) primary else tertiary,
+        watchLater = primary,
         downloadInProgress = if (uiStyle == AppUiStyle.MIUIX) primary else secondary,
         downloaded = primary
     )

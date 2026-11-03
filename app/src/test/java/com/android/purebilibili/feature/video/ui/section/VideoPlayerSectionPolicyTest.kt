@@ -483,58 +483,6 @@ class VideoPlayerSectionPolicyTest {
     }
 
     @Test
-    fun danmakuLayerTopOffset_keepsInlinePortraitDanmakuAnchoredToViewportTop() {
-        assertEquals(
-            0,
-            resolveDanmakuLayerTopOffsetPx(
-                isFullscreen = false,
-                statusBarHeightPx = 96
-            )
-        )
-        assertEquals(
-            0,
-            resolveDanmakuLayerTopOffsetPx(
-                isFullscreen = true,
-                statusBarHeightPx = 96,
-                useScreenTopSurface = false
-            )
-        )
-        assertEquals(
-            96,
-            resolveDanmakuLayerTopOffsetPx(
-                isFullscreen = true,
-                statusBarHeightPx = 96,
-                useScreenTopSurface = true
-            )
-        )
-    }
-
-    @Test
-    fun screenTopDanmakuSurface_onlyAppliesOutsideLandscapeFullscreen() {
-        assertTrue(
-            shouldUseScreenTopDanmakuSurface(
-                portraitDisplayAreaMode =
-                    com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode.SCREEN_TOP,
-                isLandscapeFullscreen = false
-            )
-        )
-        assertFalse(
-            shouldUseScreenTopDanmakuSurface(
-                portraitDisplayAreaMode =
-                    com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode.SCREEN_TOP,
-                isLandscapeFullscreen = true
-            )
-        )
-        assertFalse(
-            shouldUseScreenTopDanmakuSurface(
-                portraitDisplayAreaMode =
-                    com.android.purebilibili.core.store.PortraitDanmakuDisplayAreaMode.VIDEO_VIEWPORT,
-                isLandscapeFullscreen = false
-            )
-        )
-    }
-
-    @Test
     fun danmakuSettingsScope_usesFullscreenFontProfileForBothFullscreenRoutes() {
         assertEquals(
             com.android.purebilibili.core.store.DanmakuSettingsScope.LANDSCAPE,
@@ -981,6 +929,35 @@ class VideoPlayerSectionPolicyTest {
                 liveBackPreview = true
             )
         )
+    }
+
+    @Test
+    fun inlinePlayerBinding_retainsExistingOutputDuringForegroundCardReturnOnly() {
+        val retain = shouldRetainInlineSurfaceForCardReturn(
+            cardMorphEnabled = true,
+            entryRemoving = true,
+            windowStarted = true,
+            hasBoundPlayer = true,
+        )
+        assertTrue(retain)
+        // 导航退场已把 entry 降为 CREATED，但前台原输出继续参与卡片交接。
+        assertTrue(shouldBindInlinePlayerViewToPlayer(
+            isPortraitFullscreen = false,
+            hostLifecycleStarted = false,
+            isInPipMode = false,
+            retainBoundSurfaceForReturn = retain,
+        ))
+        // 竖屏播放器接管时，不能因外层卡片退场继续占用内联输出。
+        assertFalse(shouldBindInlinePlayerViewToPlayer(
+            isPortraitFullscreen = true,
+            hostLifecycleStarted = false,
+            isInPipMode = false,
+            retainBoundSurfaceForReturn = retain,
+        ))
+        assertFalse(shouldRetainInlineSurfaceForCardReturn(true, true, false, true))
+        assertFalse(shouldRetainInlineSurfaceForCardReturn(true, true, true, false))
+        assertFalse(shouldRetainInlineSurfaceForCardReturn(true, false, true, true))
+        assertFalse(shouldRetainInlineSurfaceForCardReturn(false, true, true, true))
     }
 
     @Test
@@ -1617,25 +1594,6 @@ class VideoPlayerSectionPolicyTest {
     }
 
     @Test
-    fun longPressSpeedFeedback_usesLightweightTextAndNoDefaultLockInstruction() {
-        val source = loadVideoPlayerSectionSource()
-
-        assertTrue(source.contains("\"倍速播放中 ${'$'}{effectiveLongPressSpeed}x\""))
-        assertFalse(source.contains("拖至上下区域锁定"))
-        assertFalse(source.contains("rememberInfiniteTransition(label = \"fast_forward\")"))
-    }
-
-    @Test
-    fun longPressSpeedLockHint_usesNonModalPromptActions() {
-        val source = loadVideoPlayerSectionSource()
-
-        assertTrue(source.contains("需要长按锁定倍速吗？"))
-        assertTrue(source.contains("开启锁定"))
-        assertTrue(source.contains("不再提示"))
-        assertFalse(source.contains("AlertDialog"))
-    }
-
-    @Test
     fun longPressSpeedLockHint_waitsUntilAccelerationEnds() {
         assertFalse(
             shouldShowLongPressSpeedLockHint(
@@ -1651,16 +1609,6 @@ class VideoPlayerSectionPolicyTest {
                 isInPipMode = false,
             )
         )
-    }
-
-    @Test
-    fun longPressSpeedLockHint_dismissActionEndsCurrentLongPressSpeed() {
-        val source = loadVideoPlayerSectionSource()
-        val dismissAction = source
-            .substringAfter("TextButton(\n                            onClick = {\n                                showLongPressSpeedLockHint = false")
-            .substringBefore("Text(\"不再提示\")")
-
-        assertTrue(dismissAction.contains("finishLongPressSpeedGesture(gestureEnded = true)"))
     }
 
     @Test
@@ -2158,7 +2106,10 @@ class VideoPlayerSectionPolicyTest {
             .substringAfter("onDragStart = { offset ->")
             .substringBefore("onDragEnd = {")
 
-        assertTrue(dragStartBlock.contains("if (isLongPressing || longPressSpeedLocked)"))
+        // 长按进行中阻断常规拖拽（此时竖移在调倍速值）。
+        assertTrue(dragStartBlock.contains("if (isLongPressing) {"))
+        // 仅锁定倍速（手指已松开）不得阻断音量/亮度/进度滑动。
+        assertFalse(dragStartBlock.contains("longPressSpeedLocked"))
     }
 
     @Test

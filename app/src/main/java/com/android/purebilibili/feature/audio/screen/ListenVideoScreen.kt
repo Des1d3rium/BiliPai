@@ -1,5 +1,7 @@
 package com.android.purebilibili.feature.audio.screen
 
+import com.android.purebilibili.navigation.tabSelectedPage
+import com.android.purebilibili.navigation.tabIndicatorPosition
 import com.android.purebilibili.core.ui.AppContentColors
 
 import com.android.purebilibili.navigation.animatePagerSelection
@@ -257,7 +259,7 @@ internal fun ListenVideoScreen(
                 // Glass indicator fills the measured slot; native geometry keeps its defaults.
                 liquidGlassAdaptIndicatorToLabel = !com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
                 items = sectionLabels,
-                selectedIndex = pagerState.currentPage,
+                selectedIndex = pagerState.tabSelectedPage,
                 onSelected = { index ->
                     scope.launch { animatePagerSelection(pagerState, index) }
                 },
@@ -274,7 +276,7 @@ internal fun ListenVideoScreen(
                 dragSelectionEnabled = sectionLabels.size > 1,
                 tapPressRefractionEnabled = true,
                 indicatorPositionProvider = {
-                    pagerState.currentPage + pagerState.currentPageOffsetFraction
+                    pagerState.tabIndicatorPosition
                 },
                 isScrollInProgressProvider = { pagerState.isScrollInProgress },
                 externalPagerMotionEffectsEnabled = true,
@@ -501,6 +503,7 @@ private fun ListenVideoPlaylistPage(
                     coverUrl = playlist.coverUrl,
                     fallbackIcon = Icons.Filled.LibraryMusic,
                     onClick = { onSelected(playlist) },
+                    alignTitleLines = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -556,6 +559,7 @@ private fun ListenVideoAlbumPage(
                         coverUrl = album.coverUrl,
                         fallbackIcon = Icons.Filled.Album,
                         onClick = { onSelected(album) },
+                        alignTitleLines = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -620,6 +624,7 @@ private fun ListenVideoArtistPage(
                         fallbackIcon = Icons.Filled.Person,
                         circularCover = true,
                         onClick = { onSelected(artist) },
+                        alignTitleLines = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -678,7 +683,8 @@ private fun MusicEntityCard(
     fallbackIcon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    circularCover: Boolean = false
+    circularCover: Boolean = false,
+    alignTitleLines: Boolean = false,
 ) {
     AppSurface(
         modifier = modifier
@@ -724,6 +730,7 @@ private fun MusicEntityCard(
             Column(modifier = Modifier.weight(1f)) {
                 AppText(
                     text = title,
+                    minLines = if (alignTitleLines) 2 else 1,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,

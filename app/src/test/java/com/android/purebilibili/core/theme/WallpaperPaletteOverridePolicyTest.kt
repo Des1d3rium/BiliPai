@@ -70,7 +70,7 @@ class WallpaperPaletteOverridePolicyTest {
     }
 
     @Test
-    fun nativeMiuixSecondaryOnlyChangesOnExplicitOptIn() {
+    fun explicitWallpaperSecondaryOverridesTheMappedControlRole() {
         val base = lightColorScheme()
         val scheme = applyWallpaperPaletteOverrides(base, WallpaperPaletteOverrides(
             light = mapOf(WallpaperPaletteRole.SECONDARY to "#007AFF"),
@@ -85,7 +85,7 @@ class WallpaperPaletteOverridePolicyTest {
         ).miuix
         assertEquals(scheme.secondary, edited.secondary)
         assertEquals(scheme.onSecondary, edited.onSecondary)
-        assertEquals(native.surface, edited.surface)
-        assertEquals(native.secondaryContainer, edited.secondaryContainer)
+        assertEquals(scheme.surface, edited.surface)
+        assertEquals(scheme.secondaryContainer, edited.secondaryContainer)
     }
 }

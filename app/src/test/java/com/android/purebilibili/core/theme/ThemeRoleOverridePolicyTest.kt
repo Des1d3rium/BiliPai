@@ -53,7 +53,7 @@ class ThemeRoleOverridePolicyTest {
     }
 
     @Test
-    fun miuixStyle_disablesAdvancedRoleOverridesWithoutDeletingThem() {
+    fun customSource_keepsAdvancedRoleOverrides() {
         val overrides = ThemeRoleOverrides(
             enabled = true,
             light = ThemeModeRoleOverrides("#F4F0E8", "#201A17", "#655D57", "#FFF000"),
@@ -62,12 +62,29 @@ class ThemeRoleOverridePolicyTest {
         val result = resolveEffectiveThemeRoleOverrides(
             source = Md3ColorSource.CUSTOM,
             overrides = overrides,
-            uiStyle = AppUiStyle.MIUIX,
         )
 
-        assertFalse(result.enabled)
+        assertTrue(result.enabled)
         assertEquals(overrides.light, result.light)
         assertEquals(overrides.dark, result.dark)
+    }
+
+    @Test
+    fun miuixAdvancedStartingValues_useNativeCanvasAndTextIncludingAmoled() {
+        val light = lightColorScheme(background = Color.Red, onBackground = Color.Green)
+        val dark = darkColorScheme(background = Color.Blue, onBackground = Color.Yellow)
+        for (amoled in listOf(false, true)) {
+            val result = themeRoleOverridesFromSchemes(light, dark, AppUiStyle.MIUIX, amoled)
+            val nativeLight = resolveMiuixColorsFromMaterialBridge(createMiuixMaterialBridge(light), false, useMonetMapping = true)
+            val nativeDark = resolveMiuixColorsFromMaterialBridge(createMiuixMaterialBridge(dark), true, useMonetMapping = true)
+            assertFalse(result.enabled)
+            assertEquals(formatMd3CustomColorHex(nativeLight.surface), result.light.backgroundHex)
+            assertEquals(formatMd3CustomColorHex(nativeLight.onSurface), result.light.primaryTextHex)
+            assertEquals(formatMd3CustomColorHex(nativeLight.onSurfaceVariantSummary), result.light.secondaryTextHex)
+            assertEquals(formatMd3CustomColorHex(nativeDark.surface), result.dark.backgroundHex)
+            assertEquals(formatMd3CustomColorHex(nativeDark.onSurface), result.dark.primaryTextHex)
+            assertEquals(formatMd3CustomColorHex(nativeDark.onSurfaceVariantSummary), result.dark.secondaryTextHex)
+        }
     }
 
     @Test

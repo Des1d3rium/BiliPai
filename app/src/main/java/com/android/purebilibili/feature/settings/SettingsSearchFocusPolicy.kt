@@ -204,6 +204,8 @@ internal fun resolveSettingsSceneDetailFocus(
     SettingsSearchTarget.PLAYBACK,
     SettingsSearchTarget.BOTTOM_BAR,
     SettingsSearchTarget.PERMISSION,
+    SettingsSearchTarget.SPACE_PRIVACY,
+    SettingsSearchTarget.LOGIN_ACTIVITY,
     SettingsSearchTarget.BLOCKED_LIST,
     SettingsSearchTarget.SETTINGS_SHARE,
     SettingsSearchTarget.WEBDAV_BACKUP,

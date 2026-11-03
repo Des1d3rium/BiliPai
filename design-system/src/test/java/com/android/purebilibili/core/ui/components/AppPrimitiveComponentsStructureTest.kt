@@ -121,8 +121,8 @@ class AppPrimitiveComponentsStructureTest {
         assertTrue(material.contains("import androidx.compose.material3.HorizontalDivider"))
         assertTrue(miuix.contains("import top.yukonga.miuix.kmp.basic.Surface"))
         assertTrue(miuix.contains("import top.yukonga.miuix.kmp.basic.HorizontalDivider"))
-        assertTrue(miuix.contains("isMiuixNonGlassEnabled()"))
-        assertTrue(miuix.contains("adaptiveMiuixPressFeedback("))
+        assertTrue(miuix.contains("interactionSource = resolvedInteractionSource"))
+        assertFalse(miuix.contains("adaptiveMiuixPressFeedback("))
         assertFalse(miuix.contains("import androidx.compose.material3"))
     }
 

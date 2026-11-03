@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -75,6 +76,22 @@ fun AppCompactMenuItem(
     val feedbackClick = appActionWithFeedback(com.android.purebilibili.core.ui.AppHapticScene.MENUS, onClick)
     val glassScope = LocalAppGlassMenuScope.current
     val menuModifier = modifier.glassMenuItem(enabled, dismissOnClick, feedbackClick).glassMenuSelectedItem(selected)
+    if (glassScope == null && com.android.purebilibili.core.ui.isMiuixNonGlassEnabled()) {
+        top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = menuModifier.semantics(mergeDescendants = true) {
+                this.selected = selected
+                if (!enabled) disabled()
+            },
+            title = text,
+            summary = summary,
+            startAction = leadingIcon,
+            endActions = trailingIcon?.let { slot -> { slot() } },
+            onClick = feedbackClick,
+            enabled = enabled,
+            holdDownState = selected,
+        )
+        return
+    }
     val contentColor = when {
         !enabled -> AppContentColors.disabled()
         selected -> AppContentColors.accent()

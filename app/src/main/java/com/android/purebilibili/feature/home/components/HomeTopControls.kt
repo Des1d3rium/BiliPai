@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,10 +54,11 @@ internal fun HomeTopAvatarContent(
     fallbackBackgroundColor: Color,
     modifier: Modifier = Modifier
 ) {
-    if (user.isLogin && user.face.isNotEmpty()) {
+    val displayFace = user.face
+    if (user.isLogin && displayFace.isNotEmpty()) {
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
-                .data(FormatUtils.fixImageUrl(user.face))
+                .data(FormatUtils.fixImageUrl(displayFace))
                 .size(128, 128)
                 .crossfade(true)
                 .build(),
@@ -92,6 +94,7 @@ internal fun HomeTopSearchPillContent(
     iconTextGap: Dp,
     modifier: Modifier = Modifier,
     pressed: Boolean = false,
+    searchIconOpticalScale: Float = 1f,
 ) {
     AppPressShiftContent(
         pressed = pressed,
@@ -106,7 +109,12 @@ internal fun HomeTopSearchPillContent(
                 imageVector = searchIcon,
                 contentDescription = "搜索",
                 tint = contentColor,
-                modifier = Modifier.size(AppSpacingTokens.Large + AppSpacingTokens.Micro)
+                modifier = Modifier
+                    .size(AppSpacingTokens.Large + AppSpacingTokens.Micro)
+                    .graphicsLayer {
+                        scaleX = searchIconOpticalScale
+                        scaleY = searchIconOpticalScale
+                    }
             )
             Spacer(modifier = Modifier.width(iconTextGap))
             AppText(

@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
-/** One continuous position drives both page content and the existing native/glass tab renderer. */
+/** Page content may skip distant tabs; native/glass rails retain independent continuous motion. */
 @Composable
 internal fun rememberContentTabPager(
     pageCount: Int,
@@ -79,6 +79,7 @@ internal fun Modifier.contentTabPagerGestures(
     pager: PagerState,
     enabled: Boolean,
     contentTopPx: () -> Float,
+    dragInteractionSource: androidx.compose.foundation.interaction.MutableInteractionSource? = null,
 ): Modifier = composed {
     val latestContentTop = rememberUpdatedState(contentTopPx)
     val yieldGesture = remember { booleanArrayOf(false) }
@@ -103,6 +104,7 @@ internal fun Modifier.contentTabPagerGestures(
         state = pager,
         enabled = enabled,
         forceVerticalPriority = true,
+        dragInteractionSource = dragInteractionSource,
         shouldYield = { yieldGesture[0] },
     )
 }

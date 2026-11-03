@@ -62,6 +62,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.testTag
@@ -81,6 +83,11 @@ import com.android.purebilibili.core.ui.components.AppSwitch
 import com.android.purebilibili.core.ui.components.AppWindowAction
 import com.android.purebilibili.core.ui.components.AppWindowActionMenu
 import com.android.purebilibili.core.player.resolveProgressFraction as resolveSharedProgressFraction
+import android.os.SystemClock
+import com.android.purebilibili.core.player.SeekTickHapticPolicy
+import com.android.purebilibili.core.ui.AppHapticScene
+import com.android.purebilibili.core.util.HapticType
+import com.android.purebilibili.core.util.rememberHapticFeedback
 import com.android.purebilibili.core.ui.drawMediaProgressTrack
 import com.android.purebilibili.data.model.response.SponsorProgressMarker
 import com.android.purebilibili.feature.video.progress.PbpRidgeDensity
@@ -520,6 +527,15 @@ fun BottomControlBar(
     val onSubtitlePositionLockedChange = subtitleControlCallbacks.onPositionLockedChange
 
     val nearbyHandoff = com.android.purebilibili.feature.nearby.LocalNearbyHandoff.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val hideCenterPlayback = rememberHideGlassCenterPlayback()
+    val toggleCenterPlayback: () -> Unit = {
+        scope.launch {
+            com.android.purebilibili.core.store.player.PlayerSettingsStore
+                .setHideGlassCenterPlayback(context, !hideCenterPlayback)
+        }
+    }
     val configuration = LocalConfiguration.current
     val uiLayoutWidthDp = remember(configuration.screenWidthDp, viewportWidthDpOverride) {
         (viewportWidthDpOverride ?: configuration.screenWidthDp).coerceAtLeast(1)
@@ -740,7 +756,8 @@ fun BottomControlBar(
     val inlineTimeGlassDock = !isFullscreen && com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled
     val compactInlineGlassControls = inlineTimeGlassDock && uiLayoutWidthDp < 600
     // 移除重复播放按钮后优先恢复倍速；更窄窗口仍保留菜单回退。
-    val showInlineSpeedAction = !compactInlineGlassControls || uiLayoutWidthDp >= 360
+    val showInlineSpeedAction = !compactInlineGlassControls ||
+        (uiLayoutWidthDp >= 360 && !showPortraitSwitchButtonInline)
     val compactLandscapeGlassControls = isFullscreen && liquidGlassEnabled && uiLayoutWidthDp < 600
     // 横屏玻璃使用独立胶囊间距；原生路径保留原有文字间距。
     val actionSpacing = if (isFullscreen && liquidGlassEnabled) 6.dp
@@ -890,8 +907,8 @@ fun BottomControlBar(
         ) {
             // 横屏保留两侧功能分组，玻璃材质在各入口独立提供。
             if (isFullscreen) {
-                // 玻璃使用中央播放入口，原生横屏保留左下角播放按钮。
-                if (!liquidGlassEnabled) {
+                // 隐藏玻璃中央按钮时，在控制栏保留播放入口。
+                if (!liquidGlassEnabled || hideCenterPlayback) {
                     PlayerPlayPauseButton(
                         isPlaying = isPlaying,
                         onClick = onPlayPauseClick,
@@ -1309,6 +1326,11 @@ fun BottomControlBar(
                                                     onPipClick()
                                                 },
                                             ) else null,
+                                            if (liquidGlassEnabled) AppWindowAction(
+                                                label = "隐藏中央播放按钮",
+                                                selected = hideCenterPlayback,
+                                                onClick = toggleCenterPlayback,
+                                            ) else null,
                                             if (sponsorContributionAvailable) {
                                                 AppWindowAction(
                                                     label = if (sponsorContributionMarking) "结束标记片段" else "标记片段起点",
@@ -1415,20 +1437,30 @@ fun BottomControlBar(
                             }
 
                             // 📱 [修复] 竖屏全屏按钮 - 仅在非全屏且有需要时显示，避免挤压平板控制栏
-                            if (showPortraitSwitchButtonInline && !liquidGlassEnabled) {
-                                AppText(
-                                    text = "竖屏",
-                                    color = Color.White,
-                                    fontSize = layoutPolicy.actionTextFontSp.sp,
-                                    lineHeight = (layoutPolicy.actionTextFontSp + 2).sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier
-                                        .then(if (isFullscreen) Modifier.heightIn(min = PlayerChromeLayout.CircularButtonSizeDp.dp) else Modifier)
-                                        .appActionClickable(onClick = onPortraitFullscreen)
-                                        .then(if (isFullscreen) Modifier.wrapContentSize(Alignment.Center) else Modifier)
-                                )
+                            if (showPortraitSwitchButtonInline) {
+                                PlayerGlassActionShell(enabled = liquidGlassEnabled) {
+                                    AppText(
+                                        text = "竖屏",
+                                        color = Color.White,
+                                        fontSize = layoutPolicy.actionTextFontSp.sp,
+                                        lineHeight = (layoutPolicy.actionTextFontSp + 2).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier
+                                            .then(if (isFullscreen) Modifier.heightIn(min = PlayerChromeLayout.CircularButtonSizeDp.dp) else Modifier)
+                                            .appActionClickable(onClick = onPortraitFullscreen)
+                                            .testTag("player_portrait_fullscreen")
+                                            .then(
+                                                if (liquidGlassEnabled) Modifier
+                                                    .heightIn(min = 40.dp)
+                                                    .padding(horizontal = 10.dp)
+                                                    .wrapContentSize(Alignment.Center)
+                                                else Modifier
+                                            )
+                                            .then(if (isFullscreen) Modifier.wrapContentSize(Alignment.Center) else Modifier)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1450,8 +1482,8 @@ fun BottomControlBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = if (compactInlineGlassControls) Arrangement.SpaceBetween else Arrangement.Start,
                 ) {
-                    // 原生保留原有播放槽位与间距，玻璃内嵌播放器统一由中央入口控制播放。
-                    if (!liquidGlassEnabled) {
+                    // 原生保留播放槽位；玻璃仅在隐藏中央按钮时使用该槽位。
+                    if (!liquidGlassEnabled || hideCenterPlayback) {
                         PlayerPlayPauseButton(
                             isPlaying = isPlaying,
                             onClick = onPlayPauseClick,
@@ -1796,6 +1828,11 @@ fun BottomControlBar(
                                                         onClick = { controller.openDevices() },
                                                     )
                                                 },
+                                                if (liquidGlassEnabled) AppWindowAction(
+                                                    label = "隐藏中央播放按钮",
+                                                    selected = hideCenterPlayback,
+                                                    onClick = toggleCenterPlayback,
+                                                ) else null,
                                                 if (sponsorContributionAvailable) {
                                                     AppWindowAction(
                                                         label = if (sponsorContributionMarking) "结束标记片段" else "标记片段起点",
@@ -1848,7 +1885,7 @@ fun BottomControlBar(
                                                         onAudioQualityClick()
                                                     }
                                                 ) else null,
-                                                if ((showPortraitSwitchButton || (liquidGlassEnabled && showPortraitSwitchButtonInline)) && !showDirectTools) {
+                                                if (showPortraitSwitchButton && !showDirectTools) {
                                                     AppWindowAction(label = "竖屏", onClick = {
                                                             showMoreActionsPanel = false
                                                             onPortraitFullscreen()
@@ -1899,18 +1936,28 @@ fun BottomControlBar(
                             }
 
                             // 📱 [修复] 竖屏全屏按钮 - 仅在非全屏且有需要时显示，避免挤压平板控制栏
-                            if (showPortraitSwitchButtonInline && !liquidGlassEnabled) {
-                                AppText(
-                                    text = "竖屏",
-                                    color = Color.White,
-                                    fontSize = layoutPolicy.actionTextFontSp.sp,
-                                    lineHeight = (layoutPolicy.actionTextFontSp + 2).sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier
-                                        .appActionClickable(onClick = onPortraitFullscreen)
-                                )
+                            if (showPortraitSwitchButtonInline) {
+                                PlayerGlassActionShell(enabled = liquidGlassEnabled) {
+                                    AppText(
+                                        text = "竖屏",
+                                        color = Color.White,
+                                        fontSize = layoutPolicy.actionTextFontSp.sp,
+                                        lineHeight = (layoutPolicy.actionTextFontSp + 2).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier
+                                            .appActionClickable(onClick = onPortraitFullscreen)
+                                            .testTag("player_portrait_fullscreen")
+                                            .then(
+                                                if (liquidGlassEnabled) Modifier
+                                                    .heightIn(min = 40.dp)
+                                                    .padding(horizontal = 10.dp)
+                                                    .wrapContentSize(Alignment.Center)
+                                                else Modifier
+                                            )
+                                    )
+                                }
                             }
                         }
                     }
@@ -2576,12 +2623,16 @@ fun VideoProgressBar(
     val currentOnSeekDragStart by rememberUpdatedState(onSeekDragStart)
     val currentOnSeekDragUpdate by rememberUpdatedState(onSeekDragUpdate)
     val currentOnSeekDragCancel by rememberUpdatedState(onSeekDragCancel)
+    // 拖动进度条刻度触感：拖起轻振，跨过整秒时短振，快速滑动按 60ms 限频。
+    val seekHaptic = rememberHapticFeedback(AppHapticScene.PLAYER_SEEK)
+    val seekHapticPolicy = remember { SeekTickHapticPolicy() }
     LaunchedEffect(displayPositionMs, isSeekScrubbing) {
         if (!isSeekScrubbing) {
             dragTargetPositionMs = displayPositionMs.coerceAtLeast(0L)
         }
     }
 
+    val glassTrackHighlight = rememberPlayerProgressGlassHighlight()
     val uiSkinState = LocalUiSkinState.current
     val progressSkin = uiSkinState.activeSkin?.takeIf {
         uiSkinState.enabled && UiSkinSurface.PLAYER_PROGRESS in it.manifest.surfaces
@@ -2630,7 +2681,9 @@ fun VideoProgressBar(
         layoutPolicy.baseHeightWithoutChapterDp.dp
     }
     val previewImageHeightDp = if (videoshotData?.isValid == true) {
-        resolveSeekPreviewBubbleHeightDp(LocalConfiguration.current.screenWidthDp)
+        resolveSeekPreviewBubbleHeightDp(
+            LocalConfiguration.current.screenWidthDp, LocalConfiguration.current.screenHeightDp,
+        ).takeIf { it > 0 }
     } else null
     val previewAreaHeightDp = if (isSeekScrubbing) {
         resolveVideoProgressPreviewAreaHeightDp(
@@ -2699,6 +2752,10 @@ fun VideoProgressBar(
                                     currentOnSeekStart()
                                     currentOnSeekDragStart(targetPositionMs)
                                     currentOnSeekDragUpdate(targetPositionMs)
+                                    if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                                        seekHaptic(HapticType.LIGHT)
+                                    }
+                                    seekHapticPolicy.finish()
                                     currentOnSeek(targetPositionMs)
                                 }
                             }
@@ -2720,6 +2777,9 @@ fun VideoProgressBar(
                                             dragTargetPositionMs = targetPositionMs
                                             currentOnSeekStart()
                                             currentOnSeekDragStart(targetPositionMs)
+                                            if (seekHapticPolicy.start(targetPositionMs, duration, SystemClock.uptimeMillis())) {
+                                                seekHaptic(HapticType.LIGHT)
+                                            }
                                         },
                                         onDrag = { change, _ ->
                                             change.consume()
@@ -2731,6 +2791,9 @@ fun VideoProgressBar(
                                             latestDragPositionMs = targetPositionMs
                                             dragTargetPositionMs = targetPositionMs
                                             currentOnSeekDragUpdate(targetPositionMs)
+                                            if (seekHapticPolicy.update(targetPositionMs, SystemClock.uptimeMillis())) {
+                                                seekHaptic(HapticType.GESTURE_STEP)
+                                            }
                                         },
                                         onDragEnd = {
                                             val commitPositionMs = resolveSeekDragCommitPositionMs(
@@ -2739,15 +2802,18 @@ fun VideoProgressBar(
                                             )
                                             dragInProgress = false
                                             currentOnSeek(commitPositionMs)
+                                            seekHapticPolicy.finish()
                                         },
                                         onDragCancel = {
                                             dragInProgress = false
                                             currentOnSeekDragCancel()
+                                            seekHapticPolicy.finish()
                                         }
                                     )
                                 } finally {
                                     if (shouldCancelSeekDragOnPointerInputCompletion(dragInProgress)) {
                                         currentOnSeekDragCancel()
+                                        seekHapticPolicy.finish()
                                     }
                                 }
                             }
@@ -2875,6 +2941,7 @@ fun VideoProgressBar(
                                         bufferedColor = bufferedTrackColor,
                                         inactiveColor = inactiveTrackColor,
                                     )
+                                    glassTrackHighlight?.draw(this, trackHeightPx)
                                     sponsorLines.forEach { (start, end, color) ->
                                         drawLine(color, start, end, trackHeightPx, StrokeCap.Round)
                                     }

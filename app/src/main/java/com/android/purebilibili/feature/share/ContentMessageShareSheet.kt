@@ -113,38 +113,57 @@ private class MessageShareState(val payload: ContentSharePayload, private val se
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ContentMessageShareSheet(payload: ContentSharePayload, onDismiss: () -> Unit, modifier: Modifier = Modifier, onSuccess: (Int) -> Unit = {}) {
+internal fun ContentMessageShareSheet(payload: ContentSharePayload, onDismiss: () -> Unit, modifier: Modifier = Modifier, presentationOverride: com.android.purebilibili.core.ui.AppModalPresentation? = null, onSuccess: (Int) -> Unit = {}) {
     val senderMid = TokenManager.midCache
     val state = remember(payload.key, senderMid) { MessageShareState(payload, senderMid) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(state) { state.load(recent = true) }
     val visible = state.contacts.filter { state.query.isBlank() || it.name.contains(state.query.trim(), true) || it.mid.toString().contains(state.query.trim()) }
     val listHeight = (LocalConfiguration.current.screenHeightDp * 0.38f).coerceIn(100f, 360f).dp
-    AppModalBottomSheet(modifier = modifier, onDismissRequest = { if (!state.sending) onDismiss() }) {
-        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.9f).dp).verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AppModalBottomSheet(modifier = modifier, presentationOverride = presentationOverride, onDismissRequest = { if (!state.sending) onDismiss() }) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .then(if (presentationOverride == com.android.purebilibili.core.ui.AppModalPresentation.SideSheet) {
+                    Modifier.fillMaxHeight()
+                } else {
+                    Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.9f).dp)
+                })
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             AppText("分享给 B 站好友", style = MaterialTheme.typography.titleLarge)
-            AppText(payload.title, maxLines = 2)
-            AppSearchField(query = state.query, onQueryChange = { state.query = it }, placeholder = "搜索联系人或输入 UID", modifier = Modifier.fillMaxWidth())
-            AppLazyColumn(Modifier.fillMaxWidth().heightIn(max = listHeight)) {
-                items(visible, key = { it.mid }) { user ->
-                    AppListItem(
-                        headlineContent = { AppText(user.name.ifBlank { "用户${user.mid}" }) },
-                        leadingContent = { AsyncImage(user.avatar, null, modifier = Modifier.size(40.dp)) },
-                        trailingContent = { AppCheckbox(checked = user.mid in state.selected, onCheckedChange = { checked -> if (!state.sending) state.selected = if (checked) state.selected + user.mid else state.selected - user.mid }) },
-                        modifier = Modifier.clickable(enabled = !state.sending) { state.selected = if (user.mid in state.selected) state.selected - user.mid else state.selected + user.mid },
-                    )
+            Column(
+                Modifier
+                    .weight(1f, fill = presentationOverride == com.android.purebilibili.core.ui.AppModalPresentation.SideSheet)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AppText(payload.title, maxLines = 2)
+                AppSearchField(query = state.query, onQueryChange = { state.query = it }, placeholder = "搜索联系人或输入 UID", modifier = Modifier.fillMaxWidth())
+                AppLazyColumn(Modifier.fillMaxWidth().heightIn(max = listHeight)) {
+                    items(visible, key = { it.mid }) { user ->
+                        AppListItem(
+                            headlineContent = { AppText(user.name.ifBlank { "用户${user.mid}" }) },
+                            leadingContent = { AsyncImage(user.avatar, null, modifier = Modifier.size(40.dp)) },
+                            trailingContent = { AppCheckbox(checked = user.mid in state.selected, onCheckedChange = { checked -> if (!state.sending) state.selected = if (checked) state.selected + user.mid else state.selected - user.mid }) },
+                            modifier = Modifier.clickable(enabled = !state.sending) { state.selected = if (user.mid in state.selected) state.selected - user.mid else state.selected + user.mid },
+                        )
+                    }
+                    if (visible.isEmpty() && !state.loading) item { AppText("暂无匹配联系人，可加载关注用户或通过 UID 添加") }
+                    if (state.loading) item { AppText("正在加载联系人…") }
                 }
-                if (visible.isEmpty() && !state.loading) item { AppText("暂无匹配联系人，可加载关注用户或通过 UID 添加") }
-                if (state.loading) item { AppText("正在加载联系人…") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!state.more || state.hasMore) AppTextButton(enabled = !state.loading && !state.sending, onClick = { state.more = true; scope.launch { state.load(recent = false) } }) { AppText(if (state.more) "加载更多关注" else "更多联系人") }
+                    if (state.query.trim().toLongOrNull() != null) AppTextButton(enabled = !state.loading && !state.sending, onClick = { scope.launch { state.addMid() } }) { AppText("添加此 UID") }
+                    if (state.error != null) AppTextButton(enabled = !state.loading && !state.sending, onClick = { scope.launch { state.load(recent = !state.more) } }) { AppText("重试加载") }
+                }
+                AppTextField(value = state.note, onValueChange = { if (!state.sending) state.note = it.take(100) }, placeholder = "说说你的想法…（可选，100 字以内）", modifier = Modifier.fillMaxWidth())
+                state.error?.let { AppText(it, color = MaterialTheme.colorScheme.error) }
+                state.status?.let { AppText(it) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!state.more || state.hasMore) AppTextButton(enabled = !state.loading && !state.sending, onClick = { state.more = true; scope.launch { state.load(recent = false) } }) { AppText(if (state.more) "加载更多关注" else "更多联系人") }
-                if (state.query.trim().toLongOrNull() != null) AppTextButton(enabled = !state.loading && !state.sending, onClick = { scope.launch { state.addMid() } }) { AppText("添加此 UID") }
-                if (state.error != null) AppTextButton(enabled = !state.loading && !state.sending, onClick = { scope.launch { state.load(recent = !state.more) } }) { AppText("重试加载") }
-            }
-            AppTextField(value = state.note, onValueChange = { if (!state.sending) state.note = it.take(100) }, placeholder = "说说你的想法…（可选，100 字以内）", modifier = Modifier.fillMaxWidth())
-            state.error?.let { AppText(it, color = MaterialTheme.colorScheme.error) }
-            state.status?.let { AppText(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 AppButton(onClick = onDismiss, enabled = !state.sending, modifier = Modifier.weight(1f)) { AppText("取消") }
                 AppButton(onClick = { scope.launch { state.send { onSuccess(it); onDismiss() } } }, enabled = !state.sending && state.selected.isNotEmpty(), modifier = Modifier.weight(1f)) { AppText(if (state.sending) "发送中…" else "发送给 ${state.selected.size} 人") }

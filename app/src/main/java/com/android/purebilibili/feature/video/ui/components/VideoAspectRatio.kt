@@ -153,8 +153,9 @@ internal fun applyPlayerViewResizeMode(
     playerView.requestLayout()
     contentFrame?.requestLayout()
     if (forceRelayout && playerView.width > 0 && playerView.height > 0) {
-        playerView.forceLayout()
-        contentFrame?.forceLayout()
+        // 外框已被 AndroidView 更新时，内部相同 MeasureSpec 的缓存仍可能有效。
+        // 清除整棵视图树的测量缓存，确保画面、快门及字幕一起按当前视口布局。
+        forcePlayerViewportLayout(playerView)
         playerView.measure(
             android.view.View.MeasureSpec.makeMeasureSpec(
                 playerView.width, android.view.View.MeasureSpec.EXACTLY,
@@ -166,6 +167,15 @@ internal fun applyPlayerViewResizeMode(
         playerView.layout(playerView.left, playerView.top, playerView.right, playerView.bottom)
     }
     playerView.invalidate()
+}
+
+private fun forcePlayerViewportLayout(view: android.view.View) {
+    view.forceLayout()
+    if (view is android.view.ViewGroup) {
+        for (index in 0 until view.childCount) {
+            forcePlayerViewportLayout(view.getChildAt(index))
+        }
+    }
 }
 
 internal fun shouldRefreshMeasuredPlayerViewport(
@@ -195,6 +205,7 @@ private class PlayerViewportRefreshController(
     private var requested: Request? = null
     private var completed: Request? = null
     private var pending: Runnable? = null
+    private var pendingPreDraw: androidx.core.view.OneShotPreDrawListener? = null
 
     init {
         playerView.addOnAttachStateChangeListener(this)
@@ -203,7 +214,7 @@ private class PlayerViewportRefreshController(
 
     fun schedule(mode: Int, width: Int, height: Int, videoWidth: Int, videoHeight: Int) {
         val request = Request(mode, width, height, videoWidth, videoHeight, playerView.player)
-        if (requested == request && pending != null) return
+        if (requested == request && (pending != null || pendingPreDraw != null)) return
         // Pager callers may omit expected dimensions: do not cache those as a known
         // completed viewport, since their next request can represent a new View size.
         if (completed == request && playerView.resizeMode == mode && !playerView.isLayoutRequested &&
@@ -223,6 +234,14 @@ private class PlayerViewportRefreshController(
             pending = null
             if (requested != request || !playerView.isAttachedToWindow) return@Runnable
             applyPlayerViewResizeMode(playerView, request.resizeMode, forceRelayout = true)
+            // postOnAnimation 早于本帧布局；保留一次绘制前校正，避免随后原生
+            // 父布局只改外框，内部画面继续保留分栏尺寸。此回调不逐帧循环。
+            pendingPreDraw = androidx.core.view.OneShotPreDrawListener.add(playerView) {
+                pendingPreDraw = null
+                if (requested == request && playerView.isAttachedToWindow) {
+                    applyPlayerViewResizeMode(playerView, request.resizeMode, forceRelayout = true)
+                }
+            }
             // At most one follow-up, and only when there is a known size mismatch.
             if (!retry && request.width > 0 && request.height > 0 &&
                 shouldRefreshMeasuredPlayerViewport(
@@ -241,6 +260,8 @@ private class PlayerViewportRefreshController(
     private fun cancelPending() {
         pending?.let(playerView::removeCallbacks)
         pending = null
+        pendingPreDraw?.removeListener()
+        pendingPreDraw = null
     }
 
     fun cancel() {

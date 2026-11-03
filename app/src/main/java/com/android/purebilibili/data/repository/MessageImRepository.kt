@@ -86,7 +86,7 @@ internal object MessageImRepository {
 
     suspend fun clearUnread(pageType: Int, session: ImSession? = null): Result<Unit> = request(
         "ClearUnread", ProtoWire.message(ProtoWire.int32(1, pageType), ProtoWire.bytes(2, session?.id ?: byteArrayOf())),
-    ) { Unit }
+    ) { Unit }.onSuccess { MessageRepository.notifyReadStateChanged() }
 
     suspend fun clearList(pageType: Int): Result<Unit> = request("DeleteSessionList", ProtoWire.int32(1, pageType)) { Unit }
 

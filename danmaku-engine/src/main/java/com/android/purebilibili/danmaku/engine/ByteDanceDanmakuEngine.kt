@@ -111,6 +111,7 @@ internal class ByteDanceDanmakuEngine(
     }
 
     override fun replaceWindow(window: DanmakuWindow, currentPositionMs: Long) {
+        clearClickSelection()
         if (closed) return
         this.currentPositionMs = currentPositionMs.coerceAtLeast(0L)
         if (currentWindowItems === window.items && currentSegmentIndices == window.segmentIndices) {
@@ -210,6 +211,7 @@ internal class ByteDanceDanmakuEngine(
     }
 
     override fun seekTo(positionMs: Long) {
+        clearClickSelection()
         if (closed) return
         currentPositionMs = positionMs.coerceAtLeast(0L)
         val shouldResume = playbackState == DanmakuPlaybackState.PLAYING
@@ -239,6 +241,7 @@ internal class ByteDanceDanmakuEngine(
     }
 
     override fun stop() {
+        clearClickSelection()
         if (closed) return
         controller.stop()
         currentWindowItems = null
@@ -247,6 +250,7 @@ internal class ByteDanceDanmakuEngine(
     }
 
     override fun clear() {
+        clearClickSelection()
         if (closed) return
         controller.clear()
     }
@@ -255,10 +259,21 @@ internal class ByteDanceDanmakuEngine(
         if (!closed) controller.invalidateView()
     }
 
-    override fun captureClick(x: Float, y: Float): (() -> Unit)? {
+    private var clickSelection: DanmakuClickCapture? = null
+
+    override fun clearClickSelection() {
+        clickSelection?.cancel()
+        clickSelection = null
+    }
+
+    override fun captureClick(x: Float, y: Float): DanmakuClickCapture? {
+        clearClickSelection()
         if (closed) return null
-        val click = controller.captureDanmakuClick(x, y) ?: return null
-        return { if (!closed) click() }
+        val (confirm, release) = controller.captureDanmakuClick(x, y) ?: return null
+        return DanmakuClickCapture(
+            confirm = { if (!closed) confirm() },
+            release = { if (!closed) release() },
+        ).also { clickSelection = it }
     }
 
     override fun setOnItemClickListener(listener: ((DanmakuItem, android.graphics.RectF, android.graphics.PointF) -> Unit)?) {
@@ -280,6 +295,7 @@ internal class ByteDanceDanmakuEngine(
     }
 
     override fun close() {
+        clearClickSelection()
         if (closed) return
         closed = true
         visibility.close()

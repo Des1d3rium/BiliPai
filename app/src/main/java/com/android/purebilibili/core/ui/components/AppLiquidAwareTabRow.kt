@@ -55,8 +55,9 @@ fun <T> AppThemeAdaptiveTabRow(
     scrollable: Boolean = false,
     minTabWidth: Dp = Dp.Unspecified,
     liquidGlassLabelHorizontalPadding: Dp? = null,
-    // Glass-only: fill each measured slot when short labels need uniform edge insets.
+    // 玻璃文字指示器长度由全局开关统一决定；此参数仅保留调用接口。
     liquidGlassAdaptIndicatorToLabel: Boolean = true,
+    liquidGlassAlignShellStart: Boolean = false,
     compactMiuixWhenTwoOptions: Boolean = true,
     height: Dp = AppChromeSizeTokens.BottomBarMatchedSegmentedControlHeightDp.dp,
     indicatorHeight: Dp = AppChromeSizeTokens.BottomBarMatchedSegmentedIndicatorHeightDp.dp,
@@ -85,6 +86,7 @@ fun <T> AppThemeAdaptiveTabRow(
         minTabWidth = minTabWidth,
         liquidGlassLabelHorizontalPadding = liquidGlassLabelHorizontalPadding,
         liquidGlassAdaptIndicatorToLabel = liquidGlassAdaptIndicatorToLabel,
+        liquidGlassAlignShellStart = liquidGlassAlignShellStart,
         compactMiuixWhenTwoOptions = compactMiuixWhenTwoOptions,
         height = height,
         indicatorHeight = indicatorHeight,
@@ -119,8 +121,9 @@ fun <T> AppLiquidAwareTabRow(
     scrollable: Boolean = false,
     minTabWidth: Dp = Dp.Unspecified,
     liquidGlassLabelHorizontalPadding: Dp? = null,
-    // Glass-only: fill each measured slot when short labels need uniform edge insets.
+    // 玻璃文字指示器长度由全局开关统一决定；此参数仅保留调用接口。
     liquidGlassAdaptIndicatorToLabel: Boolean = true,
+    liquidGlassAlignShellStart: Boolean = false,
     compactMiuixWhenTwoOptions: Boolean = true,
     height: Dp = AppChromeSizeTokens.BottomBarMatchedSegmentedControlHeightDp.dp,
     indicatorHeight: Dp = AppChromeSizeTokens.BottomBarMatchedSegmentedIndicatorHeightDp.dp,
@@ -198,7 +201,7 @@ fun <T> AppLiquidAwareTabRow(
         requestedMinWidth = resolveHomeTopDockMinimumSlotWidth(
             shellHeight = height,
             contentMinWidth = resolvedMinTabWidth,
-            liquidGlassEnabled = liquidGlassEnabled && liquidGlassAdaptIndicatorToLabel,
+            liquidGlassEnabled = liquidGlassEnabled && com.android.purebilibili.core.ui.animation.LocalLiquidIndicatorDynamicLengthEnabled.current,
         ),
         labels = measurementLabels,
         textStyle = MaterialTheme.typography.labelLarge.copy(
@@ -248,13 +251,11 @@ fun <T> AppLiquidAwareTabRow(
                 geometryMode = FloatingBottomBarGeometryMode.Segmented,
             )
             val indicatorOverflow = indicatorCaptureInsets.verticalDp.dp
-            val indicatorHorizontalOverflow = indicatorCaptureInsets.horizontalDp.dp
             val scrollState = rememberScrollState()
             val density = LocalDensity.current
             BoxWithConstraints(
                 modifier = Modifier.liquidDockViewport(
                     verticalOverflow = indicatorOverflow,
-                    horizontalOverflow = indicatorHorizontalOverflow,
                 ),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -285,13 +286,13 @@ fun <T> AppLiquidAwareTabRow(
                     liquidGlassAnimateLabelWidthChanges = animateLabelWidths,
                     liquidGlassLabelHorizontalPadding = liquidGlassLabelHorizontalPadding,
                     liquidGlassAdaptIndicatorToLabel = liquidGlassAdaptIndicatorToLabel,
+                    liquidGlassAlignShellStart = liquidGlassAlignShellStart,
                     selectedIndex = selectedIndex,
                     onSelected = { index ->
                         options.getOrNull(index)?.let { onSelectionChange(it.value) }
                     },
                     modifier = Modifier.liquidDockViewport(
                         verticalOverflow = indicatorOverflow,
-                        horizontalOverflow = indicatorHorizontalOverflow,
                     ),
                     scrollState = scrollState,
                     enabled = enabled,
@@ -361,6 +362,7 @@ fun <T> AppLiquidAwareTabRow(
                 liquidGlassAnimateLabelWidthChanges = animateLabelWidths,
                 liquidGlassLabelHorizontalPadding = liquidGlassLabelHorizontalPadding,
                 liquidGlassAdaptIndicatorToLabel = liquidGlassAdaptIndicatorToLabel,
+                liquidGlassAlignShellStart = liquidGlassAlignShellStart,
                 selectedIndex = selectedIndex,
                 onSelected = { index ->
                     options.getOrNull(index)?.let { onSelectionChange(it.value) }

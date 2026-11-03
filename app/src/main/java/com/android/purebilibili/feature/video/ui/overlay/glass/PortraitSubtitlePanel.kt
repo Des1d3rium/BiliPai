@@ -3,6 +3,9 @@ package com.android.purebilibili.feature.video.ui.overlay.glass
 import com.android.purebilibili.feature.video.ui.overlay.*
 
 import com.android.purebilibili.core.ui.AppContentColors
+import com.android.purebilibili.feature.video.ui.components.playerOptionContainerColor
+import com.android.purebilibili.feature.video.ui.components.playerOptionContentColor
+import com.android.purebilibili.feature.video.ui.components.playerOptionShape
 import com.android.purebilibili.core.ui.components.AppDropdownMenuItem
 import com.android.purebilibili.core.ui.components.AppHorizontalDivider
 
@@ -140,21 +143,17 @@ internal fun PortraitSubtitlePanel(
                             if (option.enabled) onDisplayModeChange(option.mode)
                         },
                         enabled = option.enabled,
-                        shape = AppShapes.container(ContainerLevel.Field),
-                        color = if (selected) {
-                            AppContentColors.accent().copy(alpha = 0.22f)
-                        } else {
-                            Color.Transparent
-                        },
+                        shape = playerOptionShape(AppShapes.container(ContainerLevel.Field)),
+                        color = playerOptionContainerColor(selected,
+                                if (selected) AppContentColors.accent().copy(alpha = 0.22f) else Color.Transparent,
+                                surface = Color.Black),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         AppText(
                             text = option.label,
-                            color = if (selected) {
-                                AppContentColors.accent()
-                            } else {
-                                Color.White.copy(alpha = if (option.enabled) 1f else 0.4f)
-                            },
+                            color = playerOptionContentColor(selected,
+                                if (selected) AppContentColors.accent() else Color.White.copy(alpha = if (option.enabled) 1f else 0.4f),
+                                surface = Color.Black),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
@@ -173,21 +172,17 @@ internal fun PortraitSubtitlePanel(
                     trackOptions.forEach { option ->
                         AppSurface(
                             onClick = { onTrackSelected(option.trackKey) },
-                            shape = AppShapes.container(ContainerLevel.Field),
-                            color = if (option.selected) {
-                                AppContentColors.accent().copy(alpha = 0.22f)
-                            } else {
-                                Color.Transparent
-                            },
+                            shape = playerOptionShape(AppShapes.container(ContainerLevel.Field)),
+                            color = playerOptionContainerColor(option.selected,
+                                if (option.selected) AppContentColors.accent().copy(alpha = 0.22f) else Color.Transparent,
+                                surface = Color.Black),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             AppText(
                                 text = option.label,
-                                color = if (option.selected) {
-                                    AppContentColors.accent()
-                                } else {
-                                    Color.White
-                                },
+                                color = playerOptionContentColor(option.selected,
+                                    if (option.selected) AppContentColors.accent() else Color.White,
+                                    surface = Color.Black),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (option.selected) FontWeight.SemiBold else FontWeight.Normal,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
@@ -241,7 +236,7 @@ internal fun PortraitSubtitlePanel(
                 if (canResetPosition) {
                     AppSurface(
                         onClick = onResetPosition,
-                        shape = AppShapes.container(ContainerLevel.Field),
+                        shape = playerOptionShape(AppShapes.container(ContainerLevel.Field)),
                         color = Color.White.copy(alpha = 0.10f),
                         modifier = Modifier.fillMaxWidth()
                     ) {

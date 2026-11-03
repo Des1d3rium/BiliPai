@@ -165,8 +165,8 @@ private fun WeeklySeriesContent(
                 displayMode = homeSettings.displayMode,
                 fixedColumnCount = resolveHomeFeedStoredColumnCount(
                     widthSizeClass = windowSizeClass.widthSizeClass,
-                    compactColumnCount = homeSettings.gridColumnCountCompact,
-                    defaultColumnCount = homeSettings.gridColumnCount,
+                    compactColumnCount = homeSettings.effectiveGridColumnCountCompact,
+                    defaultColumnCount = homeSettings.effectiveGridColumnCount,
                 ),
                 cardWidthPreset = homeSettings.homeFeedCardWidthPreset,
                 widthSizeClass = windowSizeClass.widthSizeClass,
@@ -227,9 +227,13 @@ private fun WeeklySeriesContent(
                             }
                         }
                     }
-                    itemsIndexed(state.videos, key = { index, video -> "${video.bvid}:$index" }) { index, video ->
+                    val videoKeys = state.videos.mapIndexed { index, video -> "${video.bvid}:$index" }
+                    val alignRows = gridColumns > 1 && !homeSettings.showFullVideoCardContent
+                    val renderCard: @Composable (Int, Modifier) -> Unit = { index, cardModifier ->
+                        val video = state.videos[index]
                         ElegantVideoCard(
                             video = video,
+                            modifier = cardModifier,
                             index = index,
                             animationEnabled = false,
                             glassEnabled = false,
@@ -244,6 +248,22 @@ private fun WeeklySeriesContent(
                             showUpAvatar = homeSettings.showHomeUpAvatars,
                             onClick = { _, _ -> onVideoClick(video) },
                         )
+                    }
+                    if (!alignRows) {
+                        itemsIndexed(state.videos, key = { index, _ -> videoKeys[index] }) { index, _ -> renderCard(index, Modifier) }
+                    } else {
+                        resolveHomeFeedAlignedRows(state.videos.size, gridColumns).forEach { row ->
+                            item(key = "weekly_row_${videoKeys[row.first]}", span = { GridItemSpan(maxLineSpan) }) {
+                                HomeAlignedVideoRow(
+                                    indices = row,
+                                    itemKeys = videoKeys,
+                                    columns = gridColumns,
+                                    horizontalArrangement = Arrangement.spacedBy(cardLayout.itemSpacingDp.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    content = renderCard,
+                                )
+                            }
+                        }
                     }
                 }
             }

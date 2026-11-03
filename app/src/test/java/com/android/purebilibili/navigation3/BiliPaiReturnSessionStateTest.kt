@@ -53,6 +53,42 @@ class BiliPaiReturnSessionStateTest {
         assertTrue(decision.shouldRestore)
     }
 
+    @Test
+    fun switchingCollectionVideoInPlaceKeepsTheNextRelatedCardsGeometryOwnedByItsEntry() {
+        val parent = BiliPaiNavKey.VideoDetail(bvid = "BV_ENTRY")
+        val recordedRoute = com.android.purebilibili.feature.video.ui.components.resolveRelatedVideoCardHostRoute(
+            parent.toLegacyRoute(), displayedBvid = "BV_PLAYING_AFTER_SWITCH",
+        )
+        val source = resolveBiliPaiVideoSource(
+            bvid = "BV_RELATED",
+            explicitSourceRoute = "video/${parent.bvid}",
+            currentKey = parent,
+            previousSourceRoute = "home",
+        )
+        val bounds = Rect(12f, 300f, 360f, 470f)
+        val session = VideoCardTransitionSession.create(
+            bvid = "BV_RELATED",
+            source = source,
+            recordedSourceKey = "$recordedRoute:BV_RELATED",
+            cardBounds = bounds,
+            sourceCornerDp = 12,
+            cardSourceDirection = BiliPaiNavCardSourceDirection.NONE,
+            coverIdentity = "related-cover",
+            cardFullyVisible = true,
+            isSingleColumnCard = true,
+            sourceLayout = VideoCardSourceLayout.SIDE_BY_SIDE,
+        )
+        assertEquals("video/BV_ENTRY", session.sourceRoute)
+        assertEquals(bounds, session.cardBounds)
+        assertTrue(session.hasUsableSourceGeometry)
+        assertEquals(BiliPaiVideoCardMorphMode.PRIMARY_WHOLE_CARD, resolveBiliPaiVideoCardMorphMode(
+            cardTransitionEnabled = true,
+            reduceMotion = false,
+            sourceRoute = session.sourceRoute,
+            hasUsableSourceBounds = session.cardBounds != null,
+        ))
+    }
+
     private fun transitionSession(
         bvid: String,
         sourceRoute: String,

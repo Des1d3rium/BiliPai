@@ -51,7 +51,10 @@ internal fun SettingsNavigationContainerOrigin(
     val groupRadius = rememberAdaptiveListVisualCapabilities().componentSpec.groupCornerRadiusDp
     val radius = if (isFlatGroup) 0f else with(density) { groupRadius.dp.toPx() }
     SideEffect {
-        sources.sources[target]?.takeIf { it.anchor === anchor }?.layer = layer
+        sources.sources[target]?.takeIf { it.anchor === anchor }?.let { source ->
+            source.layer = layer
+            source.color = color
+        }
     }
     DisposableEffect(anchor) {
         onDispose { anchor.detach() }
@@ -63,7 +66,9 @@ internal fun SettingsNavigationContainerOrigin(
             .drawWithContent {
                 layer.record { this@drawWithContent.drawContent() }
                 anchor.recorded = true
-                drawLayer(layer)
+                if (sources.sources[target]?.takeIf { it.anchor === anchor }?.returnInFlight?.invoke() != true) {
+                    drawLayer(layer)
+                }
             },
     ) {
         content {
@@ -86,6 +91,8 @@ internal fun resolveSettingsContainerTarget(target: SettingsSearchTarget): BiliP
         SettingsSearchTarget.PLAYBACK -> BiliPaiNavKey.PlaybackSettings
         SettingsSearchTarget.BOTTOM_BAR -> BiliPaiNavKey.BottomBarSettings
         SettingsSearchTarget.PERMISSION -> BiliPaiNavKey.PermissionSettings
+        SettingsSearchTarget.SPACE_PRIVACY -> BiliPaiNavKey.SpacePrivacySettings
+        SettingsSearchTarget.LOGIN_ACTIVITY -> BiliPaiNavKey.LoginActivitySettings
         SettingsSearchTarget.MESSAGE_NOTIFICATION -> BiliPaiNavKey.MessageNotificationSettings
         SettingsSearchTarget.PLUGINS -> BiliPaiNavKey.PluginsSettings()
         SettingsSearchTarget.SETTINGS_SHARE -> BiliPaiNavKey.SettingsShare

@@ -161,9 +161,9 @@ class AppearanceThemeSegmentPolicyTest {
     }
 
     @Test
-    fun `advanced palette subtitle explains that overrides only affect material3`() {
+    fun `advanced palette subtitle describes editable roles for both styles`() {
         assertEquals(
-            "已保留配置，仅切换到 Material 3 后生效",
+            "自定义明暗模式的背景、文字与控件色，卡片层次随背景调整",
             resolveAdvancedPaletteSubtitle(com.android.purebilibili.core.theme.AppUiStyle.MIUIX),
         )
         assertEquals(

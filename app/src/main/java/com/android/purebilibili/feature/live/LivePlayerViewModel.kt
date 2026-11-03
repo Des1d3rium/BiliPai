@@ -89,7 +89,8 @@ data class LiveDanmakuItem(
     val superChatDuration: Int = 0,
     val superChatStartTime: Long = 0,
     val superChatEndTime: Long = 0,
-    val isSystem: Boolean = false
+    val isSystem: Boolean = false,
+    val originRoomId: Long = 0L,
 )
 
 data class LiveChatMessage(
@@ -122,6 +123,8 @@ data class RoomInfo(
     val liveStartTime: Long = 0,
     val isPortrait: Boolean = false,
     val background: String = "",
+    // 房间页面背景与封面来源独立，空值使用默认背景。
+    val appBackground: String = "",
     val watchedText: String = "",
     val onlineRankText: String = "",
     val description: String = "",
@@ -477,6 +480,7 @@ class LivePlayerViewModel : ViewModel() {
                         online = roomInfo.online.takeIf { it > 0 } ?: roomH5Snapshot.online,
                         liveStartTime = roomInfo.liveStartTime.takeIf { it > 0L } ?: roomH5Snapshot.liveStartTime,
                         background = roomInfo.background.ifBlank { roomH5Snapshot.appBackground },
+                        appBackground = roomH5Snapshot.appBackground,
                         watchedText = roomInfo.watchedText.ifBlank { roomH5Snapshot.watchedText }
                     )
                     anchorInfo = anchorInfo.copy(
@@ -1308,12 +1312,12 @@ class LivePlayerViewModel : ViewModel() {
     }
 
     fun reportDanmaku(item: LiveDanmakuItem, reason: LiveReportReason) {
-        if (currentRoomId == 0L) return
+        val reportRoomId = resolveLiveDanmakuReportRoomId(currentRoomId, item.originRoomId) ?: return
         viewModelScope.launch {
             val result = if (item.isSuperChat) {
                 LiveRepository.reportSuperChat(
                     LiveSuperChatReportRequest(
-                        roomId = currentRoomId,
+                        roomId = reportRoomId,
                         uid = item.uid,
                         uname = item.uname,
                         message = item.text,
@@ -1326,7 +1330,7 @@ class LivePlayerViewModel : ViewModel() {
             } else {
                 LiveRepository.reportLiveDanmaku(
                     LiveDanmakuReportRequest(
-                        roomId = currentRoomId,
+                        roomId = reportRoomId,
                         uid = item.uid,
                         uname = item.uname,
                         message = item.text,
@@ -1419,13 +1423,14 @@ class LivePlayerViewModel : ViewModel() {
             is LiveRealtimeAction.EmitSuperChat -> {
                 if (!superChatEnabled) return
                 if (!persistSuperChats && shouldExpireLiveSuperChat(action.item.superChatEndTime, System.currentTimeMillis() / 1000L)) return
+                val roomBoundItem = action.item.copy(originRoomId = currentRoomId)
                 _superChatItems.value = (
-                    listOf(action.item) + _superChatItems.value
+                    listOf(roomBoundItem) + _superChatItems.value
                         .filterNot { it.superChatId > 0L && it.superChatId == action.id }
                 ).take(MAX_ACTIVE_SUPER_CHAT_ITEMS)
                 scheduleSuperChatExpiry()
-                emitLiveChatItem(action.item)
-                _superChatFlashFlow.tryEmit(action.item)
+                emitLiveChatItem(roomBoundItem)
+                _superChatFlashFlow.tryEmit(roomBoundItem)
             }
             is LiveRealtimeAction.RemoveSuperChats -> {
                 val ids = action.ids.toSet()
@@ -1486,7 +1491,7 @@ class LivePlayerViewModel : ViewModel() {
             android.util.Log.d("LivePlayer", "🔄 Skipped duplicate self-sent danmaku: ${item.text}")
             return
         }
-        val resolved = resolveLiveMessageEmoteResources(item, _emoticonPackages.value)
+        val resolved = resolveLiveMessageEmoteResources(item, _emoticonPackages.value).copy(originRoomId = currentRoomId)
         appendChatHistory(resolved)
         if (!resolved.isSuperChat) _danmakuFlow.tryEmit(resolved)
     }
@@ -1506,7 +1511,7 @@ class LivePlayerViewModel : ViewModel() {
     }
 
     private fun emitOwnLiveChatItem(item: LiveDanmakuItem) {
-        val resolved = resolveLiveMessageEmoteResources(item, _emoticonPackages.value)
+        val resolved = resolveLiveMessageEmoteResources(item, _emoticonPackages.value).copy(originRoomId = currentRoomId)
         appendChatHistory(resolved)
         _danmakuFlow.tryEmit(resolved)
     }

@@ -763,24 +763,6 @@ class BottomBarIndicatorPolicyTest {
     }
 
     @Test
-    fun `settle rebound transform expands on both axes and returns to neutral`() {
-        val compressed = resolveBottomBarSettleReboundTransform(progress = 0.1f)
-        val rebound = resolveBottomBarSettleReboundTransform(progress = 0.46f)
-        val idle = resolveBottomBarSettleReboundTransform(progress = 1f)
-
-        assertTrue(compressed.scaleX < 1f)
-        assertTrue(compressed.scaleX >= 0.96f)
-        assertTrue(compressed.scaleY > 1f)
-        assertTrue(compressed.scaleY <= 1.03f)
-        assertTrue(rebound.scaleX > 1f)
-        assertTrue(rebound.scaleX <= 1.10f)
-        assertTrue(rebound.scaleY > 1f)
-        assertTrue(rebound.scaleY <= 1.09f)
-        assertEquals(1f, idle.scaleX, 0.001f)
-        assertEquals(1f, idle.scaleY, 0.001f)
-    }
-
-    @Test
     fun `shared segmented control ignores tap press for refraction when disabled`() {
         assertEquals(
             0f,
@@ -1120,36 +1102,6 @@ class BottomBarIndicatorPolicyTest {
 
         assertEquals(1.2f, notCoveredScale, 0.001f)
         assertEquals(1.2f, partiallyCoveredScale, 0.001f)
-    }
-
-    @Test
-    fun `click pulse transform rebounds horizontally without vertical lift`() {
-        val pressed = resolveBottomBarClickPulseTransform(progress = 0.18f)
-        val overshoot = resolveBottomBarClickPulseTransform(progress = 0.46f)
-        val settleBack = resolveBottomBarClickPulseTransform(progress = 0.72f)
-        val idle = resolveBottomBarClickPulseTransform(progress = 1f)
-
-        assertEquals(0.945f, pressed.scaleX, 0.001f)
-        assertTrue(pressed.scaleX < 1f)
-        assertTrue(overshoot.scaleX > 1f)
-        assertTrue(overshoot.scaleX >= 1.03f)
-        assertTrue(settleBack.scaleX > 1f)
-        assertTrue(settleBack.scaleX < overshoot.scaleX)
-        assertEquals(1f, pressed.scaleY, 0.001f)
-        assertEquals(1f, overshoot.scaleY, 0.001f)
-        assertEquals(1f, idle.scaleX, 0.001f)
-        assertEquals(1f, idle.scaleY, 0.001f)
-    }
-
-    @Test
-    fun `click pulse release decays without a second compression twitch`() {
-        val rebound = resolveBottomBarClickPulseTransform(progress = 0.46f)
-        val settle = resolveBottomBarClickPulseTransform(progress = 0.68f)
-        val nearlyIdle = resolveBottomBarClickPulseTransform(progress = 0.88f)
-
-        assertTrue(rebound.scaleX > settle.scaleX)
-        assertTrue(settle.scaleX > nearlyIdle.scaleX)
-        assertTrue(nearlyIdle.scaleX >= 1f)
     }
 
     @Test

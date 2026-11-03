@@ -57,7 +57,7 @@ internal fun shouldActivatePortraitFullscreenState(
 
 internal fun resolveStandalonePortraitPagerMotionSpec(): StandalonePortraitPagerMotionSpec {
     return StandalonePortraitPagerMotionSpec(
-        enterDurationMillis = 0,
+        enterDurationMillis = 240,
         exitDurationMillis = 220,
         exitScaleTarget = 0.96f,
         exitTranslateUpFraction = 0.08f,
@@ -70,11 +70,24 @@ internal fun shouldHidePausedInlinePlayerForComments(
     selectedTabIndex: Int,
     isPlaybackPaused: Boolean,
     isCommentThreadVisible: Boolean = false,
-): Boolean = isPlaybackPaused && (selectedTabIndex == 1 || isCommentThreadVisible)
+): Boolean = isPlaybackPaused && (selectedTabIndex in 0..1 || isCommentThreadVisible)
 
 /** Restore the whole player before giving a downward comment drag to refresh. */
 internal fun shouldEnableCommentPullToRefresh(playerCollapseProgress: Float): Boolean =
     playerCollapseProgress <= 0f
+
+/** 暂停画面收向工具栏终点时提前挂载，显隐跟随折叠进度；紧凑预览仍保留播放器控件。 */
+internal fun shouldShowCollapsedPlayerPlayToolbar(
+    isPlaybackPaused: Boolean,
+    collapseProgress: Float,
+    collapsedViewportHeightDp: Float,
+    isFullscreen: Boolean,
+): Boolean = !isFullscreen && isPlaybackPaused && collapseProgress > 0f &&
+    collapsedViewportHeightDp in 0f..56.5f
+
+/** 渐显中的工具栏不抢暂停画面的点击与无障碍焦点。 */
+internal fun canInteractWithCollapsedPlayerPlayToolbar(collapseProgress: Float): Boolean =
+    collapseProgress >= 0.98f
 
 internal fun shouldEnableInlinePortraitScrollTransform(
     collapseMode: PortraitPlayerCollapseMode,
@@ -100,7 +113,7 @@ internal fun shouldEnableInlinePortraitScrollTransform(
  *
  * The detail player and fullscreen pager share one player. Cross-fading the old inline
  * viewport with the new pager makes swipe-to-fullscreen visibly pause in a centered frame.
- * Keep entry direct for every source; exit still owns its independent soft transition.
+ * 不交叉淡化播放面；内嵌进入时由视口边界展开承接，直接入场继续由路由负责。
  */
 internal fun shouldAnimateStandalonePortraitPager(
     useSharedPlayer: Boolean,
@@ -210,11 +223,14 @@ internal fun resolveInlinePortraitPlayerCommentCollapseDurationMillis(
     return tabSwitchAnimationSpec.durationMs
 }
 
-/** Paused comment scrolling hides the media viewport; other contexts keep their compact size. */
+/** 暂停浏览详情时收起画面，可保留固定高度的恢复播放工具栏。 */
 internal fun resolveInlinePlayerCollapsedViewportHeightDp(
     standardCollapsedHeightDp: Float,
     hidePausedPlayerForComments: Boolean,
-): Float = if (hidePausedPlayerForComments) 0f else standardCollapsedHeightDp.coerceAtLeast(0f)
+    retainPlayToolbar: Boolean = false,
+): Float = if (hidePausedPlayerForComments) {
+    if (retainPlayToolbar) 56f else 0f
+} else standardCollapsedHeightDp.coerceAtLeast(0f)
 
 /**
  * Inline portrait detail player size.

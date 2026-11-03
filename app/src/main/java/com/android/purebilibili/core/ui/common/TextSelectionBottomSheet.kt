@@ -171,6 +171,8 @@ fun TextSelectionBottomSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // Measure the title and actions first; only the text viewport may shrink.
+                    .weight(1f, fill = false)
                     .heightIn(min = 90.dp, max = 340.dp)
                     .background(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),

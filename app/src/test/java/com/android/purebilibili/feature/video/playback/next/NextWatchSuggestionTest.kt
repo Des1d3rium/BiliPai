@@ -59,6 +59,10 @@ class NextWatchSuggestionTest {
         val withParts = info.copy(pages = listOf(Page(cid = 10L), Page(cid = 20L)))
         assertEquals(20L, resolveCollectionNextWatch(withParts)?.cid)
         assertEquals("BV-one", resolveCollectionNextWatch(withParts)?.bvid)
+        assertEquals("BV-one", resolvePageWatchTarget(withParts)?.bvid)
+        assertEquals(20L, resolvePageWatchTarget(withParts)?.cid)
+        assertEquals("BV-two", resolveSeasonWatchTarget(withParts)?.bvid)
+        assertEquals(30L, resolveSeasonWatchTarget(withParts)?.cid)
     }
 
     @Test fun reversedPartsChangeActualLookaheadAndRemainIndependentOfSeasonOrder() {
@@ -87,6 +91,22 @@ class NextWatchSuggestionTest {
             assertEquals(10L, resolveCollectionNextWatch(info)?.cid)
         } finally {
             PiliPlaybackOrder.setReversed(88L, info.bvid, false)
+        }
+    }
+
+    @Test fun previousPartUsesTheOppositeDirectionWithoutWrappingAtPartBoundaries() {
+        val info = ViewInfo(bvid = "BV-previous-parts", cid = 20L,
+            pages = listOf(Page(cid = 10L), Page(cid = 20L), Page(cid = 30L)))
+        assertEquals(10L, resolvePageWatchTarget(info, forward = false)?.cid)
+        assertNull(resolvePageWatchTarget(info.copy(cid = 10L), forward = false))
+        PiliPlaybackOrder.setReversed(0L, info.bvid, true)
+        try {
+            assertEquals(30L, resolvePageWatchTarget(info, forward = false)?.cid)
+            assertEquals(10L, resolvePageWatchTarget(info)?.cid)
+            assertNull(resolvePageWatchTarget(info.copy(cid = 10L)))
+            assertNull(resolvePageWatchTarget(info.copy(cid = 30L), forward = false))
+        } finally {
+            PiliPlaybackOrder.setReversed(0L, info.bvid, false)
         }
     }
 

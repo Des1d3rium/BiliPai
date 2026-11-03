@@ -57,11 +57,6 @@ internal fun SettingsCardMotionPreview(
     )
     val caption = when (feature) {
         SettingsFeaturePreview.CARD_ENTRANCE -> stringResource(if (enabled) R.string.preview_caption_card_entrance_on else R.string.preview_caption_card_entrance_off)
-        SettingsFeaturePreview.RELATED_EXPAND -> if (enabled) listOf(
-            stringResource(R.string.preview_caption_related_step_1),
-            stringResource(R.string.preview_caption_related_step_2),
-            stringResource(R.string.preview_caption_related_step_3),
-        )[phase] else stringResource(R.string.preview_caption_related_off)
         SettingsFeaturePreview.LIVE_FRAME -> stringResource(if (enabled) R.string.preview_caption_live_on else R.string.preview_caption_live_off)
         SettingsFeaturePreview.RETURN_CONTENT -> stringResource(if (enabled) R.string.preview_caption_return_content_on else R.string.preview_caption_return_content_off)
         SettingsFeaturePreview.RETURN_TILT -> stringResource(if (enabled) R.string.preview_caption_return_tilt_on else R.string.preview_caption_return_tilt_off)
@@ -106,15 +101,11 @@ internal fun SettingsCardMotionPreview(
                 }
                 return@Canvas
             }
-            val small = if (feature == SettingsFeaturePreview.RELATED_EXPAND) {
-                Rect(size.width * 0.55f, contentHeight * 0.55f, size.width * 0.94f, contentHeight * 0.88f)
-            } else {
-                Rect(size.width * 0.05f, contentHeight * 0.12f, size.width * 0.47f, contentHeight * 0.55f)
-            }
+            val small = Rect(size.width * 0.05f, contentHeight * 0.12f, size.width * 0.47f, contentHeight * 0.55f)
             val large = Rect(size.width * 0.06f, contentHeight * 0.06f, size.width * 0.94f, contentHeight * 0.94f)
             val expansion = when {
                 returning -> 1f - eased
-                feature in setOf(SettingsFeaturePreview.CARD_EXPAND, SettingsFeaturePreview.RELATED_EXPAND) && !enabled -> if (p < 0.5f) 0f else 1f
+                feature == SettingsFeaturePreview.CARD_EXPAND && !enabled -> if (p < 0.5f) 0f else 1f
                 else -> eased
             }
             fun interpolate(a: Float, b: Float) = a + (b - a) * expansion

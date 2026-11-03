@@ -31,6 +31,21 @@ internal object InboxSessionPaginationPolicy {
         return "invalid_${session.talker_id}_${session.session_type}_$fallback"
     }
 
+    fun applyReadAck(
+        session: SessionItem,
+        talkerId: Long,
+        sessionType: Int,
+        ackSeqno: Long,
+    ): SessionItem {
+        if (session.talker_id != talkerId || session.session_type != sessionType ||
+            ackSeqno <= session.ack_seqno
+        ) return session
+        return session.copy(
+            ack_seqno = ackSeqno,
+            unread_count = if (ackSeqno >= session.max_seqno) 0 else session.unread_count,
+        )
+    }
+
     fun normalizeSessions(sessions: List<SessionItem>): List<SessionItem> =
         sortSessions(sessions).distinctBy(::resolveSessionKey)
 

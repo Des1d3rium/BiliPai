@@ -82,6 +82,9 @@ import com.android.purebilibili.core.ui.AppSpacingTokens
 import com.android.purebilibili.core.ui.isMiuixNonGlassEnabled
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.purebilibili.core.ui.AppShapes
+import com.android.purebilibili.feature.video.ui.components.playerOptionContainerColor
+import com.android.purebilibili.feature.video.ui.components.playerOptionContentColor
+import com.android.purebilibili.feature.video.ui.components.playerOptionShape
 import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.feature.settings.SettingsIconRole
 import com.android.purebilibili.feature.settings.rememberSettingsSemanticIcon
@@ -199,6 +202,7 @@ private fun rememberVideoSettingsPanelVisualSpec(): VideoSettingsPanelVisualSpec
 
 @Composable
 private fun videoSettingsChipContainerColor(isSelected: Boolean): Color {
+    if (isMiuixNonGlassEnabled()) return playerOptionContainerColor(isSelected, AppSurfaceTokens.surfaceContainerHigh())
     val usesTonalContainerTreatment = rememberAppPlayerChromeProfile()
         .effects
         .usesTonalContainerTreatment
@@ -211,6 +215,7 @@ private fun videoSettingsChipContainerColor(isSelected: Boolean): Color {
 
 @Composable
 private fun videoSettingsChipContentColor(isSelected: Boolean): Color {
+    if (isMiuixNonGlassEnabled()) return playerOptionContentColor(isSelected, AppContentColors.secondaryText())
     val usesTonalContainerTreatment = rememberAppPlayerChromeProfile()
         .effects
         .usesTonalContainerTreatment
@@ -342,6 +347,9 @@ fun VideoSettingsPanel(
 
     chapterDisplayMode: ChapterDisplayMode = ChapterDisplayMode.WITH_CONTROLS,
     onChapterDisplayModeChange: ((ChapterDisplayMode) -> Unit)? = null,
+    // 两种方向与材质共用已有的诊断显示设置；未接入的调用方不显示此入口。
+    playerDiagnosticsEnabled: Boolean = false,
+    onPlayerDiagnosticsChange: ((Boolean) -> Unit)? = null,
     // 关闭面板
     onDismiss: () -> Unit
 ) {
@@ -349,6 +357,7 @@ fun VideoSettingsPanel(
     // Glass opens fully so its header can stretch the groups upward without competing
     // with a half-expanded anchor. Non-glass retains the original partial-sheet behavior.
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = controlCenterMotion != null)
+    var showTransformDetails by remember { mutableStateOf(false) }
     val useMiuixNonGlassPresentation = isMiuixNonGlassEnabled()
     val panelSpec = rememberVideoSettingsPanelVisualSpec()
     val customSectionHorizontalPadding = if (useMiuixNonGlassPresentation) {
@@ -464,6 +473,20 @@ fun VideoSettingsPanel(
             )
         ) {
             val groups = VideoControlCenterGroups(this, controlCenterMotion)
+            onPlayerDiagnosticsChange?.let { change ->
+                groups.item {
+                    VideoSettingsSwitchRow(
+                        icon = com.android.purebilibili.feature.settings.rememberSettingsSemanticIcon(
+                            com.android.purebilibili.feature.settings.SettingsIconRole.PLAYER_DIAGNOSTICS
+                        ),
+                        title = "播放器诊断",
+                        subtitle = "显示解码方式、码率、掉帧等播放信息，点击可查看详情",
+                        checked = playerDiagnosticsEnabled,
+                        onCheckedChange = change,
+                    )
+                    SettingsDivider()
+                }
+            }
 
             if (onChapterDisplayModeChange != null) {
                 groups.item {
@@ -668,52 +691,28 @@ fun VideoSettingsPanel(
             }
 
             groups.item {
-                //  镜像翻转按钮组
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = customSectionHorizontalPadding,
-                            vertical = customSectionVerticalPadding,
+                SettingsItem(
+                    icon = flipHorizontalIcon,
+                    title = "画面变换",
+                    subtitle = buildList {
+                        if (isFlippedHorizontal) add("左右翻转")
+                        if (isFlippedVertical) add("上下翻转")
+                    }.joinToString("、").ifEmpty { "默认" },
+                    onClick = { showTransformDetails = !showTransformDetails },
+                )
+                if (showTransformDetails) {
+                    VideoSettingsSwitchRow(flipHorizontalIcon, "左右翻转", null, isFlippedHorizontal) { onFlipHorizontal() }
+                    VideoSettingsSwitchRow(flipVerticalIcon, "上下翻转", null, isFlippedVertical) { onFlipVertical() }
+                    if (isFlippedHorizontal || isFlippedVertical) {
+                        SettingsItem(
+                            icon = refreshIcon,
+                            title = "恢复默认",
+                            onClick = {
+                                if (isFlippedHorizontal) onFlipHorizontal()
+                                if (isFlippedVertical) onFlipVertical()
+                            },
                         )
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(actionPolicy.rowItemSpacingDp.dp)
-                ) {
-                    // 左右翻转
-                    FlipButton(
-                        icon = flipHorizontalIcon,
-                        label = "左右翻转",
-                        isActive = isFlippedHorizontal,
-                        onClick = {
-                            onFlipHorizontal()
-                            onDismiss()
-                        },
-                        policy = actionPolicy
-                    )
-
-                    // 上下翻转
-                    FlipButton(
-                        icon = flipVerticalIcon,
-                        label = "上下翻转",
-                        isActive = isFlippedVertical,
-                        onClick = {
-                            onFlipVertical()
-                            onDismiss()
-                        },
-                        policy = actionPolicy
-                    )
-
-                    // 听视频（音频模式）
-                    FlipButton(
-                        icon = headphonesIcon,
-                        label = "听视频",
-                        isActive = isAudioOnly,
-                        onClick = {
-                            onAudioOnlyToggle()
-                            onDismiss()
-                        },
-                        policy = actionPolicy
-                    )
+                    }
                 }
                 SettingsDivider()
             }
@@ -785,7 +784,7 @@ fun VideoSettingsPanel(
                                         }
                                     },
                                     enabled = isSelected || isEnabled,
-                                    shape = RoundedCornerShape(panelSpec.chipCornerRadius),
+                                    shape = playerOptionShape(RoundedCornerShape(panelSpec.chipCornerRadius)),
                                     color = containerColor,
                                     modifier = Modifier.height(panelSpec.chipHeight)
                                 ) {
@@ -860,8 +859,9 @@ fun VideoSettingsPanel(
                             val isSelected = currentCodec == codec
                             AppSurface(
                                 onClick = { onCodecChange(codec) },
-                                shape = AppShapes.container(ContainerLevel.Card),
-                                color = if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = playerOptionShape(AppShapes.container(ContainerLevel.Card)),
+                                color = playerOptionContainerColor(isSelected,
+                                    if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant),
                                 modifier = Modifier.height(
                                     if (useMiuixNonGlassPresentation) panelSpec.chipHeight else 32.dp
                                 )
@@ -880,7 +880,8 @@ fun VideoSettingsPanel(
                                         text = label,
                                         role = VideoSettingsPanelTextRole.OPTION,
 
-                                        color = if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText()
+                                        color = playerOptionContentColor(isSelected,
+                                            if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText())
                                     )
                                 }
                             }
@@ -942,8 +943,9 @@ fun VideoSettingsPanel(
                             val isSelected = currentSecondCodec == codec
                             AppSurface(
                                 onClick = { onSecondCodecChange(codec) },
-                                shape = AppShapes.container(ContainerLevel.Card),
-                                color = if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = playerOptionShape(AppShapes.container(ContainerLevel.Card)),
+                                color = playerOptionContainerColor(isSelected,
+                                    if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant),
                                 modifier = Modifier.height(
                                     if (useMiuixNonGlassPresentation) panelSpec.chipHeight else 32.dp
                                 )
@@ -962,7 +964,8 @@ fun VideoSettingsPanel(
                                         text = label,
                                         role = VideoSettingsPanelTextRole.OPTION,
 
-                                        color = if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText()
+                                        color = playerOptionContentColor(isSelected,
+                                            if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText())
                                     )
                                 }
                             }
@@ -1021,8 +1024,9 @@ fun VideoSettingsPanel(
                             val isSelected = currentAudioQuality == option.preferenceId
                             AppSurface(
                                 onClick = { onAudioQualityChange(option.preferenceId) },
-                                shape = AppShapes.container(ContainerLevel.Card),
-                                color = if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = playerOptionShape(AppShapes.container(ContainerLevel.Card)),
+                                color = playerOptionContainerColor(isSelected,
+                                    if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant),
                                 modifier = Modifier.height(48.dp)
                             ) {
                                 Row(
@@ -1034,7 +1038,8 @@ fun VideoSettingsPanel(
                                         text = option.label,
                                         role = VideoSettingsPanelTextRole.OPTION,
 
-                                        color = if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText()
+                                        color = playerOptionContentColor(isSelected,
+                                            if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText())
                                     )
                                     if (option.isHiRes) {
                                         HiResBadge()
@@ -1092,8 +1097,9 @@ fun VideoSettingsPanel(
                                 val isSelected = currentAudioLang == item.langCode
                                 AppSurface(
                                     onClick = { onAudioLangChange(item.langCode) },
-                                    shape = AppShapes.container(ContainerLevel.Card),
-                                    color = if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = playerOptionShape(AppShapes.container(ContainerLevel.Card)),
+                                    color = playerOptionContainerColor(isSelected,
+                                    if (isSelected) AppContentColors.accent() else MaterialTheme.colorScheme.surfaceVariant),
                                     modifier = Modifier.height(
                                         if (useMiuixNonGlassPresentation) panelSpec.chipHeight else 32.dp
                                     )
@@ -1112,7 +1118,8 @@ fun VideoSettingsPanel(
                                             text = item.langDoc,
                                             role = VideoSettingsPanelTextRole.OPTION,
 
-                                            color = if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText()
+                                            color = playerOptionContentColor(isSelected,
+                                            if (isSelected) AppContentColors.onAccent() else AppContentColors.secondaryText())
                                         )
                                     }
                                 }
@@ -1653,7 +1660,7 @@ private fun SleepTimerOptions(
             val isSelected = currentMinutes == minutes
             AppSurface(
                 onClick = { onSelect(minutes) },
-                shape = RoundedCornerShape(spec.chipCornerRadius),
+                shape = playerOptionShape(RoundedCornerShape(spec.chipCornerRadius)),
                 color = videoSettingsChipContainerColor(isSelected),
                 modifier = Modifier.height(spec.chipHeight)
             ) {
@@ -1698,7 +1705,7 @@ private fun SpeedOptions(
             val isSelected = currentSpeed == speed
             AppSurface(
                 onClick = { onSelect(speed) },
-                shape = RoundedCornerShape(spec.chipCornerRadius),
+                shape = playerOptionShape(RoundedCornerShape(spec.chipCornerRadius)),
                 color = videoSettingsChipContainerColor(isSelected),
                 modifier = Modifier.heightIn(min = 48.dp)
             ) {
@@ -1838,7 +1845,7 @@ private fun SeekSecondsOptions(
             val isSelected = currentSeconds == seconds
             AppSurface(
                 onClick = { onSelect(seconds) },
-                shape = RoundedCornerShape(spec.chipCornerRadius),
+                shape = playerOptionShape(RoundedCornerShape(spec.chipCornerRadius)),
                 color = videoSettingsChipContainerColor(isSelected),
                 modifier = Modifier.height(spec.chipHeight)
             ) {
