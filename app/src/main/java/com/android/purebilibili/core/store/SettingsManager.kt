@@ -25,6 +25,7 @@ import com.android.purebilibili.core.ui.transition.VIDEO_SHARED_TRANSITION_CUSTO
 import com.android.purebilibili.core.ui.transition.VideoSharedTransitionSpeed
 import com.android.purebilibili.core.ui.transition.normalizeVideoSharedTransitionCustomDurationMillis
 import com.android.purebilibili.core.store.home.HomeSettingsStore
+import com.android.purebilibili.core.store.home.dynamicUpListVisiblePreferencesKey
 import com.android.purebilibili.core.store.home.dynamicCommentPreviewVisiblePreferencesKey
 import com.android.purebilibili.core.store.home.glassPopupPalettePreferencesKey
 import com.android.purebilibili.core.store.home.liquidGlassReadabilityModePreferencesKey
@@ -649,6 +650,7 @@ data class HomeSettings(
     val navigationIconCrossScaleEnabled: Boolean = true,
     val bottomBarLabelMode: Int = 0,       // (0=图标+文字, 1=仅图标, 2=仅文字)
     val topTabLabelMode: Int = 2,          // (0=图标+文字, 1=仅图标, 2=仅文字)
+    val partitionSideRailOnRight: Boolean = false,
     val hideTopTabs: Boolean = false,
     val homeTopRightAction: HomeTopRightAction = HomeTopRightAction.SETTINGS,
     val homeTopLayoutOrder: HomeTopLayoutOrder = HomeTopLayoutOrder.SEARCH_THEN_TABS,
@@ -1498,6 +1500,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
     private val KEY_BOTTOM_BAR_LABEL_MODE = intPreferencesKey("bottom_bar_label_mode")
     //  [新增] 顶部标签显示模式 (0=图标+文字, 1=仅图标, 2=仅文字)
     private val KEY_TOP_TAB_LABEL_MODE = intPreferencesKey("top_tab_label_mode")
+    private val KEY_PARTITION_SIDE_RAIL_ON_RIGHT = booleanPreferencesKey("partition_side_rail_on_right")
     private val KEY_HIDE_TOP_TABS = booleanPreferencesKey("hide_top_tabs")
     private val KEY_HOME_TOP_RIGHT_ACTION = intPreferencesKey("home_top_right_action")
     //  [新增] 顶部标签自定义 - 顺序和可见性
@@ -1835,6 +1838,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
                 preferences[KEY_NAVIGATION_ICON_CROSS_SCALE_ENABLED] ?: true,
             bottomBarLabelMode = preferences[KEY_BOTTOM_BAR_LABEL_MODE] ?: BottomBarLabelMode.ICON_AND_TEXT,
             topTabLabelMode = preferences[KEY_TOP_TAB_LABEL_MODE] ?: TopTabLabelMode.TEXT_ONLY,
+            partitionSideRailOnRight = preferences[KEY_PARTITION_SIDE_RAIL_ON_RIGHT] ?: false,
             hideTopTabs = preferences[KEY_HIDE_TOP_TABS] ?: false,
             homeTopRightAction = HomeTopRightAction.fromValue(
                 preferences[KEY_HOME_TOP_RIGHT_ACTION] ?: HomeTopRightAction.SETTINGS.value
@@ -4210,6 +4214,13 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
     //  [新增] --- 顶部标签显示模式 (0=图标+文字, 1=仅图标, 2=仅文字) ---
     fun getTopTabLabelMode(context: Context): Flow<Int> = context.settingsDataStore.data
         .map { preferences -> preferences[KEY_TOP_TAB_LABEL_MODE] ?: TopTabLabelMode.TEXT_ONLY }
+
+    fun getPartitionSideRailOnRight(context: Context): Flow<Boolean> = context.settingsDataStore.data
+        .map { preferences -> preferences[KEY_PARTITION_SIDE_RAIL_ON_RIGHT] ?: false }
+
+    suspend fun setPartitionSideRailOnRight(context: Context, onRight: Boolean) {
+        context.settingsDataStore.edit { preferences -> preferences[KEY_PARTITION_SIDE_RAIL_ON_RIGHT] = onRight }
+    }
 
     suspend fun setTopTabLabelMode(context: Context, value: Int) {
         context.settingsDataStore.edit { preferences -> preferences[KEY_TOP_TAB_LABEL_MODE] = value }
@@ -8632,6 +8643,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
             ),
             IntShareablePreferenceDefinition(KEY_BOTTOM_BAR_LABEL_MODE, SettingsShareSection.APPEARANCE),
             IntShareablePreferenceDefinition(KEY_TOP_TAB_LABEL_MODE, SettingsShareSection.APPEARANCE),
+            BooleanShareablePreferenceDefinition(KEY_PARTITION_SIDE_RAIL_ON_RIGHT, SettingsShareSection.APPEARANCE),
             BooleanShareablePreferenceDefinition(KEY_HIDE_TOP_TABS, SettingsShareSection.APPEARANCE),
             IntShareablePreferenceDefinition(KEY_HOME_TOP_RIGHT_ACTION, SettingsShareSection.APPEARANCE),
             StringShareablePreferenceDefinition(KEY_TOP_TAB_ORDER, SettingsShareSection.APPEARANCE),
@@ -8986,6 +8998,7 @@ private val KEY_APP_FONT_WEIGHT = intPreferencesKey("app_font_weight")
                 KEY_DYNAMIC_IMAGE_PREVIEW_TEXT_VISIBLE,
                 SettingsShareSection.NAVIGATION
             ),
+            BooleanShareablePreferenceDefinition(dynamicUpListVisiblePreferencesKey, SettingsShareSection.NAVIGATION),
             BooleanShareablePreferenceDefinition(
                 dynamicCommentPreviewVisiblePreferencesKey,
                 SettingsShareSection.NAVIGATION

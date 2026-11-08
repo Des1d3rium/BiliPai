@@ -142,6 +142,8 @@ import com.android.purebilibili.feature.video.playback.resolver.resolvePlaybackN
 import com.android.purebilibili.feature.video.playback.resolver.resolvePlayInOrderNextSource
 import com.android.purebilibili.feature.video.playback.resolver.resolvePlayInOrderPreviousSource
 import com.android.purebilibili.feature.video.playback.session.PlaybackSessionStore
+import com.android.purebilibili.feature.video.playback.session.PlayerHistorySessions
+import com.android.purebilibili.feature.video.playback.session.PlaybackHistoryProgress
 import com.android.purebilibili.feature.video.interaction.InteractiveChoicePanelUiState
 import com.android.purebilibili.feature.video.interaction.InteractiveChoiceUiModel
 import com.android.purebilibili.feature.video.interaction.normalizeInteractiveCountdownMs
@@ -286,25 +288,18 @@ internal fun shouldResumePlaybackAfterSponsorBlockSkip(
     return true
 }
 
-private const val SPONSOR_SKIP_END_GUARD_MS = 1_000L
 private const val PUBLIC_VIDEO_NOTE_PAGE_SIZE = 10
 
 internal fun resolveSponsorBlockSkipTargetPositionMs(
     requestedPositionMs: Long,
     durationMs: Long,
-    category: String?,
 ): Long {
     val safeRequestedPositionMs = requestedPositionMs.coerceAtLeast(0L)
     if (durationMs <= 0L) return safeRequestedPositionMs
 
-    // 片尾跳过允许自然进入播放完成；其他社区片段不能因时间轴误差 seek 到
-    // duration 或其后，否则部分 Media3/解码器组合会直接进入 STATE_ENDED。
-    if (category == com.android.purebilibili.data.model.response.SponsorCategory.OUTRO) {
-        return safeRequestedPositionMs.coerceAtMost(durationMs)
-    }
-    val latestContinuousPlaybackPositionMs =
-        (durationMs - SPONSOR_SKIP_END_GUARD_MS).coerceAtLeast(0L)
-    return safeRequestedPositionMs.coerceAtMost(latestContinuousPlaybackPositionMs)
+    // 所有类别都可能覆盖视频末尾。跳到实际结尾以进入正常完成流程，
+    // 不再拉回结尾前一秒，避免重播已跳过的尾段或将短视频跳回开头。
+    return safeRequestedPositionMs.coerceAtMost(durationMs)
 }
 
 internal fun buildSponsorBlockVideoSnapshot(currentState: VideoPlaybackUiState): SponsorBlockVideoSnapshot? {
@@ -2428,6 +2423,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
 
         exoPlayer = player
         playbackUseCase.attachPlayer(player)
+        PlayerHistorySessions.forPlayer(player)
         com.android.purebilibili.core.player.PlayerVolumeController.applyPreferredVolume(player)
         
         // 防止重复添加同一个 listener（同一 player 多次 attach 的场景）
@@ -3180,8 +3176,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
 
         // 💾 [修复] 在清除状态前明确保存进度，防止 loadVideo 读取到 0
         if (currentPos > 0) {
-            playbackUseCase.savePosition(bvid, currentCid)
-            Logger.d("PlayerVM", "💾 reloadVideo: Saved position $currentPos ms")
+            saveCurrentPosition()
         }
 
         Logger.d("PlayerVM", "🔄 Reloading video (forced)...")
@@ -3734,6 +3729,11 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         if (preparationAccount != com.android.purebilibili.data.repository.videoPlaybackAccountScope()) {
                             throw CancellationException("Playback account changed")
                         }
+                        exoPlayer?.let {
+                            PlayerHistorySessions.forPlayer(it).bindMedia(
+                                result.info.bvid, result.info.cid, preserveStarted = shouldSkipPlayerPrepare
+                            )
+                        }
                         logVideoLoadStage(VideoLoadStage.PLAY_URL_READY, requestToken)
                         Logger.d(
                             "PlayerVM",
@@ -3793,6 +3793,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                              relatedFirstFrameToken = requestToken
                              Logger.d("PlayerVM", "🎯 Skipping player preparation (reuse intent=$shouldAutoPlay)")
                              exoPlayer?.let { p ->
+                                 PlayerHistorySessions.forPlayer(p).onIsPlayingChanged(p.isPlaying)
                                  com.android.purebilibili.core.player.PlayerVolumeController.applyPreferredVolume(p)
                                  val autoPlayNow = activeLoadAutoPlay ?: shouldAutoPlay
                                  if (autoPlayNow && !p.isPlaying) p.play()
@@ -8317,6 +8318,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         onPageIdentityCommitted?.invoke(targetBvid, page.cid)
                         currentCid = page.cid
                         _uiState.value = switchedState
+                        exoPlayer?.let { PlayerHistorySessions.forPlayer(it).bindMedia(targetBvid, page.cid) }
                         playResolvedPlayback(
                             videoUrl = cdnSelection.playUrl,
                             audioUrl = cdnSelection.audioUrl,
@@ -8739,7 +8741,12 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                     delay(500L)
                     return@repeat
                 }
-                val related = result.getOrDefault(emptyList())
+                // Tag metadata is opt-in ancillary work, not part of the related API's timeout.
+                val related = com.android.purebilibili.feature.plugin.filterVideoTagMatches(
+                    result.getOrDefault(emptyList()),
+                    bvid = { it.bvid },
+                    asVideoItem = { it.toVideoItem() },
+                )
                 val loadState = if (result.isSuccess) VideoPlaybackUiState.RelatedLoadState.READY
                     else VideoPlaybackUiState.RelatedLoadState.FAILED
                 // Keep the request concurrent with entry, but publish its UI and playlist work
@@ -9011,7 +9018,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                                 val resolvedTargetPositionMs = resolveSponsorBlockSkipTargetPositionMs(
                                     requestedPositionMs = action.positionMs,
                                     durationMs = playerDurationMs,
-                                    category = action.category,
                                 )
                                 clearSponsorSkipUi()
                                 playbackUseCase.seekTo(
@@ -9103,7 +9109,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         val entry = currentSponsorSessionEntry() ?: return
         val plugin = entry.session as SponsorBlockSessionApi
         val segment = segmentId?.let(plugin::markAsSkipped)
-        val segmentCategory = segment?.category
         recordSponsorBlockSkip(
             snapshot = snapshot,
             segmentId = segment?.UUID ?: segmentId,
@@ -9115,7 +9120,6 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         val resolvedTargetPosition = resolveSponsorBlockSkipTargetPositionMs(
             requestedPositionMs = targetPosition,
             durationMs = playbackUseCase.getDuration(),
-            category = segmentCategory,
         )
         playbackUseCase.seekTo(
             position = resolvedTargetPosition,
@@ -9379,7 +9383,12 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     fun seekTo(pos: Long) { playbackUseCase.seekTo(pos) }
     fun getPlayerCurrentPosition() = playbackUseCase.getCurrentPosition()
     fun getPlayerDuration() = playbackUseCase.getDuration()
+    private fun hasPlaybackHistoryStarted(): Boolean = exoPlayer?.let { player ->
+        PlayerHistorySessions.forPlayer(player).canWriteHistory(currentBvid, currentCid)
+    } == true
+
     fun saveCurrentPosition() {
+        if (!hasPlaybackHistoryStarted()) return
         playbackUseCase.savePosition(currentBvid, currentCid)
         // 普通视频的离场保存也更新共享断点，避免再次听视频时恢复更早的音频记录。
         val context = appContext ?: return
@@ -9410,46 +9419,65 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         }
     }
     fun flushPlaybackHeartbeatSnapshot(reason: String = "manual") {
-        if (currentBvid.isBlank() || currentCid <= 0L) return
-        viewModelScope.launch {
+        if (!hasPlaybackHistoryStarted()) return
+        val player = exoPlayer ?: return
+        val info = (_uiState.value as? VideoPlaybackUiState.Success)?.info ?: return
+        if (info.bvid != currentBvid || info.cid != currentCid) return
+        // Capture both identity and progress before either network call can suspend and a
+        // video/part switch can commit. The old part must never report the new part's seek.
+        val progress = PlayerHistorySessions.forPlayer(player).captureProgress(
+            currentBvid, currentCid, player.currentPosition, player.duration,
+            playbackEnded = player.playbackState == Player.STATE_ENDED
+        )
+        val startTsSec = heartbeatSessionStartTsSec
+        val requestToken = currentLoadRequestToken
+        val partGeneration = pageSwitchGeneration
+        viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             reportPlaybackHeartbeatSnapshot(forceFlush = true, reason = reason)
-            // 推荐系统判断「已看过」靠 history/report，跟心跳是两条独立的链路：
-            // 官方客户端在 onPause、播放器可用性变化、离开页面、切后台都会报，
-            // 没有最小时长门槛。这里跟着同一个 flush 时机走。
-            reportVideoWatchProgress(scene = if (reason == "background") "background" else "front")
+        }
+        if (progress != null && info.aid > 0L) {
+            viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                reportVideoWatchProgress(
+                    scene = if (reason == "background") "background" else "front",
+                    aid = info.aid,
+                    progress = progress,
+                    startTsSec = startTsSec,
+                    requestToken = requestToken,
+                    partGeneration = partGeneration
+                )
+            }
         }
     }
 
-    /** 上报观看进度，用于推荐系统过滤已看内容。进度变化 ≤1 秒时跳过，避免重复请求。 */
-    private suspend fun reportVideoWatchProgress(scene: String) {
-        val info = (_uiState.value as? VideoPlaybackUiState.Success)?.info ?: return
-        val aid = info.aid
-        val cid = currentCid
-        if (aid <= 0L || cid <= 0L) return
-        val player = exoPlayer ?: return
-        // 用播放器报告的时长；还没准备好（C.TIME_UNSET）时这次不报，等下次事件。
-        val durationMs = player.duration
-        if (durationMs == androidx.media3.common.C.TIME_UNSET || durationMs <= 0L) return
-        val positionMs = if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) {
-            durationMs
-        } else {
-            player.currentPosition.coerceAtLeast(0L)
-        }
+    /** A flush remains authorized after pausing, but only for the media actually watched. */
+    private suspend fun reportVideoWatchProgress(
+        scene: String,
+        aid: Long,
+        progress: PlaybackHistoryProgress,
+        startTsSec: Long,
+        requestToken: Long,
+        partGeneration: Long
+    ) {
+        val positionMs = progress.positionMs
+        val durationMs = progress.durationMs
         val previous = lastReportedHistoryProgressMs
-        // 看完之后不再重复上报；进度几乎没动也不报。
         if (previous == HISTORY_PROGRESS_FINISHED) return
         val finished = positionMs + HISTORY_FINISH_THRESHOLD_MS >= durationMs
         if (!finished && previous >= 0L && kotlin.math.abs(positionMs - previous) <= 1000L) return
         val result = com.android.purebilibili.data.repository.HistoryRepository.reportVideoProgress(
             aid = aid,
-            cid = cid,
+            cid = progress.cid,
             progressMs = positionMs,
             durationMs = durationMs,
-            startTsSec = heartbeatSessionStartTsSec,
+            startTsSec = startTsSec,
             scene = scene,
         )
         if (result.isSuccess) {
-            lastReportedHistoryProgressMs = if (finished) HISTORY_PROGRESS_FINISHED else positionMs
+            if (currentBvid == progress.bvid && currentCid == progress.cid &&
+                currentLoadRequestToken == requestToken && pageSwitchGeneration == partGeneration
+            ) {
+                lastReportedHistoryProgressMs = if (finished) HISTORY_PROGRESS_FINISHED else positionMs
+            }
         } else {
             Logger.d(
                 "HistoryReport",
@@ -9498,6 +9526,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         forceFlush: Boolean,
         reason: String
     ): Boolean {
+        if (!hasPlaybackHistoryStarted()) return false
         if (currentBvid.isBlank() || currentCid <= 0L) return false
 
         val nowEpochSec = System.currentTimeMillis() / 1000L
@@ -9524,6 +9553,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
 
         val shouldSend = if (forceFlush) {
             shouldFlushPlaybackHeartbeatSnapshot(
+                hasStartedPlayback = hasPlaybackHistoryStarted(),
                 currentBvid = currentBvid,
                 currentCid = currentCid,
                 snapshot = snapshot,
@@ -9538,6 +9568,11 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             )
         }
         if (!shouldSend) return false
+        val reportedBvid = currentBvid
+        val reportedCid = currentCid
+        val reportedRequestToken = currentLoadRequestToken
+        val reportedPartGeneration = pageSwitchGeneration
+        val reportedSessionStartTsSec = heartbeatSessionStartTsSec
 
         try {
             // 补上官方心跳里的进度/时长字段，缺了服务端只能算 VV。
@@ -9568,7 +9603,11 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 session = heartbeatSessionStartTsSec.toString(),
             )
             if (reported) {
-                lastReportedHeartbeatSnapshot = snapshot
+                if (currentBvid == reportedBvid && currentCid == reportedCid &&
+                    currentLoadRequestToken == reportedRequestToken &&
+                    pageSwitchGeneration == reportedPartGeneration &&
+                    heartbeatSessionStartTsSec == reportedSessionStartTsSec
+                ) lastReportedHeartbeatSnapshot = snapshot
                 Logger.d(
                     "PlayerVM",
                         "🔴 Heartbeat snapshot sent: reason=$reason, bvid=$currentBvid, cid=$currentCid, " +
@@ -9576,6 +9615,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 )
             }
             return reported
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Logger.d("PlayerVM", " Heartbeat snapshot failed($reason): ${e.message}")
             return false
@@ -9708,6 +9749,9 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         cdnFallbackState: PlaybackCdnFallbackState = PlaybackCdnFallbackState.Inactive,
         cdnCacheKeysByUrl: Map<String, String> = emptyMap()
     ) {
+        exoPlayer?.let {
+            PlayerHistorySessions.forPlayer(it).bindMedia(currentBvid, currentCid, preserveStarted = true)
+        }
         playbackRecoveryGeneration++
         cancelPlaybackStallRecovery()
         armPlaybackCdnFallback(cdnFallbackState, playWhenReady)
@@ -10002,35 +10046,16 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         heartbeatJob?.cancel()
         beginHeartbeatSession()
         heartbeatJob = viewModelScope.launch {
-            if (shouldSendInitialPlaybackHeartbeat(
+            if (hasPlaybackHistoryStarted() && shouldSendInitialPlaybackHeartbeat(
                     isActivelyPlaying = exoPlayer?.isPlaying == true,
                     isInBackground = BackgroundManager.isInBackground,
                     currentBvid = currentBvid,
                     currentCid = currentCid
                 )
             ) {
-                try {
-                    val reported = VideoRepository.reportPlayHeartbeat(
-                        bvid = currentBvid,
-                        cid = currentCid,
-                        aid = (_uiState.value as? VideoPlaybackUiState.Success)?.info?.aid ?: 0L,
-                        playedTime = 0L,
-                        realPlayedTime = 0L,
-                        startTsSec = heartbeatSessionStartTsSec
-                    )
-                    if (reported) {
-                        lastReportedHeartbeatSnapshot = PlaybackHeartbeatSnapshot(
-                            playedTimeSec = 0L,
-                            realPlayedTimeSec = 0L
-                        )
-                        Logger.d(
-                            "PlayerVM",
-                            " Initial heartbeat reported for $currentBvid startTs=$heartbeatSessionStartTsSec"
-                        )
-                    }
-                } catch (e: Exception) {
-                    Logger.d("PlayerVM", " Initial heartbeat failed: ${e.message}")
-                }
+                // Resumed playback starts at its restored position, not an artificial zero
+                // that could overwrite a newer cross-device progress checkpoint.
+                reportPlaybackHeartbeatSnapshot(forceFlush = false, reason = "initial")
             }
             syncHeartbeatPlaybackTracking(isActivelyPlaying = exoPlayer?.isPlaying == true)
             
@@ -10044,6 +10069,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun recordCreatorWatchProgressSnapshot() {
+        if (!hasPlaybackHistoryStarted()) return
         val context = appContext ?: return
         val current = _uiState.value as? VideoPlaybackUiState.Success ?: return
         val mid = current.info.owner.mid

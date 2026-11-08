@@ -3,6 +3,8 @@
 
 package com.android.purebilibili.feature.video.player
 
+import androidx.datastore.preferences.core.edit
+
 import com.android.purebilibili.core.player.withAppVideoDecoderDiagnostics
 import com.android.purebilibili.core.player.withAppVideoDecoderPreference
 
@@ -79,6 +81,8 @@ import com.android.purebilibili.core.lifecycle.BackgroundManager
 import com.android.purebilibili.feature.video.danmaku.DanmakuManager
 import com.android.purebilibili.feature.video.playback.policy.resolvePlaybackWakeMode
 import com.android.purebilibili.feature.video.playback.session.resolveShouldContinuePlaybackDuringPause
+import com.android.purebilibili.feature.video.playback.session.PlaybackFirstFrameTracker
+import com.android.purebilibili.feature.video.playback.session.PlayerHistorySessions
 import com.android.purebilibili.feature.video.state.isPlaybackActiveForLifecycle
 import com.android.purebilibili.feature.video.usecase.VideoLoadResult
 import com.android.purebilibili.feature.video.usecase.VideoPlaybackUseCase
@@ -2239,6 +2243,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
                 .build().withAppVideoDecoderDiagnostics(context)
                 .apply {
                     addListener(playerListener)
+                    PlaybackFirstFrameTracker.observe(this)
                     //  [修复] 确保音量正常
                     volume = com.android.purebilibili.core.player.PlayerVolumeController
                         .preferredVolumeSync()
@@ -2575,6 +2580,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
         mediaSession?.release()
         mediaSession = null
         mediaSessionNavigationAvailability = null
+        com.android.purebilibili.feature.widget.PlaybackWidgetProvider.requestUpdate(context)
     }
 
     private fun clearPlaybackNotificationArtifacts(stopServiceDirectly: Boolean = false) {
@@ -2600,6 +2606,7 @@ class MiniPlayerManager private constructor(private val context: Context) :
 
 
     private fun replaceExternalPlayer(incomingPlayer: ExoPlayer) {
+        PlaybackFirstFrameTracker.observe(incomingPlayer)
         if (remoteAudio.active) {
             remotePreferencesJob?.cancel()
             remoteAudio.close()
@@ -2905,6 +2912,12 @@ class MiniPlayerManager private constructor(private val context: Context) :
                 )
             ) {
                 is VideoLoadResult.Success -> {
+                    // Queue navigation can outlive every detail ViewModel. Bind before preparing
+                    // the next source so its real playback is recorded under its own identity.
+                    PlayerHistorySessions.forPlayer(currentPlayer).bindMedia(
+                        loadResult.info.bvid,
+                        loadResult.info.cid,
+                    )
                     if (loadResult.audioUrl != null) {
                         backgroundPlaybackUseCase.playDashVideo(
                             videoUrl = loadResult.playUrl,
@@ -3131,7 +3144,53 @@ class MiniPlayerManager private constructor(private val context: Context) :
     }
 
     // --- 播放器监听器 ---
+    private var libraryCheckpointJob: Job? = null
+
+    private fun publishSystemMediaState() {
+        if (remoteAudio.active) return
+        val local = player ?: return
+        val bvid = currentBvid ?: return
+        if (isLiveMode || currentCid <= 0L || local.currentMediaItem == null) return
+        com.android.purebilibili.feature.widget.PlaybackWidgetProvider.publish(context,
+            mediaSession?.player ?: local, currentTitle, bvid)
+        if (NetworkModule.playbackAccount() != null) return
+        val all = PlaylistManager.playlist.value
+        val selected = all.indexOfFirst { it.bvid == bvid && (it.cid == currentCid || it.cid == 0L) }
+        val queue = if (selected >= 0) {
+            val start = (selected - 64).coerceAtLeast(0)
+            all.drop(start).take(128).filterNot { it.isBangumi }
+        } else listOf(PlaylistItem(bvid, currentCid, currentTitle, currentCover, currentOwner))
+        val index = queue.indexOfFirst { it.bvid == bvid && (it.cid == currentCid || it.cid == 0L) }
+        if (index < 0) return
+        val request = com.android.purebilibili.feature.audio.player.BackgroundAudioSnapshot(
+            queue = queue.toMutableList().also { it[index] = it[index].copy(cid = currentCid) },
+            index = index, positionMs = local.currentPosition.coerceAtLeast(0L), playing = false,
+            speed = local.playbackParameters.speed, accountMid = TokenManager.midCache,
+            playMode = PlaylistManager.savedTransport.value.playMode,
+            shuffle = PlaylistManager.savedTransport.value.shuffleEnabled,
+            audioQuality = cachedUiState?.selectedAudioQuality ?: -1,
+            audioLanguage = cachedUiState?.currentAudioLang,
+            reportHistory = !SettingsManager.isPrivacyModeEnabledSync(context),
+        )
+        libraryCheckpointJob?.cancel()
+        libraryCheckpointJob = scope.launch {
+            try {
+                com.android.purebilibili.core.store.MultiProcessPreferences.get(context, "background_audio").edit {
+                    it[androidx.datastore.preferences.core.stringPreferencesKey("library_snapshot")] =
+                        com.android.purebilibili.feature.audio.player.backgroundAudioJson.encodeToString(
+                            com.android.purebilibili.feature.audio.player.BackgroundAudioSnapshot.serializer(), request)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { Logger.w(TAG, "System playback checkpoint failed", error) }
+        }
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED,
+                    Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_AVAILABLE_COMMANDS_CHANGED,
+                    Player.EVENT_POSITION_DISCONTINUITY)) publishSystemMediaState()
+        }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (remoteAudio.active) return
             if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {

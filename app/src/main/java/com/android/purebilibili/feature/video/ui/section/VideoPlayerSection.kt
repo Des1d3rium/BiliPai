@@ -148,6 +148,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import com.android.purebilibili.feature.video.ui.components.LocalPlayerPanelViewport
 import com.android.purebilibili.feature.video.ui.components.PlayerPanelViewportState
@@ -263,9 +264,7 @@ import com.android.purebilibili.feature.video.playback.session.updatePlaybackSee
 import dev.chrisbanes.haze.HazeState
 import com.android.purebilibili.core.ui.blur.hazeSourceCompat
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -753,6 +752,9 @@ private fun VideoPlayerSectionContent(
     actions: VideoPlayerSectionActions,
 ) {
     val playerState = state.playerState
+    var playerInViewport by remember { mutableStateOf(false) }
+    val playerVisualWorkActive = com.android.purebilibili.core.ui.rememberVisualWorkActive() &&
+        playerInViewport
     val uiState = state.uiState
     val isFullscreen = state.isFullscreen
     val isInPipMode = state.isInPipMode
@@ -1354,15 +1356,8 @@ private fun VideoPlayerSectionContent(
 
     // 📱 [优化] 复用 VideoPlayerState 中的视频尺寸状态，避免重复监听
     val videoSizeState by playerState.videoSize.collectAsStateWithLifecycle()
-    // The cover needs only first-frame readiness; telemetry belongs to the control overlay.
-    val renderedFirstFrameFlow = remember(playerState) {
-        playerState.debugInfo
-            .map { it.firstFrame.equals("rendered", ignoreCase = true) }
-            .distinctUntilChanged()
-    }
-    val persistedRenderedFirstFrame by renderedFirstFrameFlow.collectAsStateWithLifecycle(
-        initialValue = playerState.debugInfo.value.firstFrame.equals("rendered", ignoreCase = true)
-    )
+    // Keep real first-frame readiness across detail/mini-player handoffs, without telemetry.
+    val persistedRenderedFirstFrame by playerState.hasRenderedFirstFrame.collectAsStateWithLifecycle()
     val currentPlaybackIdentity = remember(bvid, uiState) {
         val success = uiState as? VideoPlaybackUiState.Success
         resolvePlayerInteractionIdentity(
@@ -2183,6 +2178,8 @@ private fun VideoPlayerSectionContent(
         currentQualityId = (uiState as? VideoPlaybackUiState.Success)?.currentQuality ?: 0,
         colorTransfer = videoInputFormat?.colorInfo?.colorTransfer ?: 0
     )
+    val effectiveFlippedHorizontal = isFlippedHorizontal && !navigationHdrSurfaceRequired
+    val effectiveFlippedVertical = isFlippedVertical && !navigationHdrSurfaceRequired
     val playerPageBackdrop = rememberPlayerPageBackdrop()
     val pageGlassSupported = supportsPlayerPageGlass(
         liquidGlassEnabled = com.android.purebilibili.core.ui.LocalAppThemeConfig.current.liquidGlassEnabled,
@@ -2277,6 +2274,9 @@ private fun VideoPlayerSectionContent(
         modifier = rootModifier
             .onGloballyPositioned {
                 danmakuTapCoordinates.value = it
+                val bounds = it.boundsInWindow()
+                val rootBounds = it.findRootCoordinates().boundsInWindow()
+                playerInViewport = it.isAttached && bounds.width > 0f && bounds.height > 0f && bounds.overlaps(rootBounds)
                 playerRightInWindow = it.boundsInWindow().right.roundToInt()
             }
             .videoInputDiagnostics("player") {
@@ -3124,12 +3124,16 @@ private fun VideoPlayerSectionContent(
             }
     ) {
         val scope = rememberCoroutineScope()  //  用于设置弹幕开关
-        val activeDanmakuScope = remember(isFullscreen, isPortraitFullscreen) {
+        val useTabletDanmakuStyle = LocalUseTabletDanmakuStyle.current
+        val activeDanmakuScope = remember(isFullscreen, isPortraitFullscreen, useTabletDanmakuStyle) {
             resolveVideoPlayerDanmakuSettingsScope(
                 isFullscreen = isFullscreen,
-                isPortraitFullscreen = isPortraitFullscreen
+                isPortraitFullscreen = isPortraitFullscreen,
+                useTabletLayout = useTabletDanmakuStyle,
             )
         }
+        val useFullscreenDanmakuBaseline =
+            activeDanmakuScope == com.android.purebilibili.core.store.DanmakuSettingsScope.LANDSCAPE
 
         val danmakuSettings by remember(context, activeDanmakuScope) {
             com.android.purebilibili.core.store.SettingsManager.getDanmakuSettings(context, activeDanmakuScope)
@@ -3445,10 +3449,7 @@ private fun VideoPlayerSectionContent(
             repeat(MEDIA_SWITCH_SURFACE_RETRY_ATTEMPTS) { retryIndex ->
                 delay(MEDIA_SWITCH_SURFACE_RETRY_INTERVAL_MS)
                 val currentPlayer = playerState.player
-                val hasRenderedFirstFrame = playerState.debugInfo.value.firstFrame.equals(
-                    "rendered",
-                    ignoreCase = true
-                )
+                val hasRenderedFirstFrame = playerState.hasRenderedFirstFrame.value
                 if (
                     !hasRenderedFirstFrame &&
                     currentPlayer.playWhenReady &&
@@ -3912,8 +3913,8 @@ private fun VideoPlayerSectionContent(
             retainedGlassTexture = hasUsedPageGlassTexture,
             hdr = requiresHdrSurface,
             existingTextureRequest = shouldUseTextureSurfaceForFlip(
-                isFlippedHorizontal = isFlippedHorizontal,
-                isFlippedVertical = isFlippedVertical,
+                isFlippedHorizontal = effectiveFlippedHorizontal,
+                isFlippedVertical = effectiveFlippedVertical,
                 liveBackPreview = liveBackPreview || hasUsedLiveBackPreviewTexture,
                 navigationTransformEnabled = useTextureSurfaceForNavigation,
                 requiresHdrSurfaceOutput = requiresHdrSurface,
@@ -3927,7 +3928,7 @@ private fun VideoPlayerSectionContent(
         // isPortraitFullscreen 不作为 key：退出竖屏全屏保留 PlayerView 实例，由上方
         // LaunchedEffect 在退出瞬间直接重绑 surface（rebindPlayerSurfaceIfNeeded）恢复画面。
         // HDR/色彩元数据与纹理翻转维度仍触发重建。
-        key(isFlippedHorizontal, isFlippedVertical, useTextureSurface) {
+        key(effectiveFlippedHorizontal, effectiveFlippedVertical, useTextureSurface) {
             val viewportAspectRatio = if (liquidGlassLayoutEnabled && !isFullscreen) VideoAspectRatio.FIT else currentAspectRatio
             val playerVideoSize = playerState.player.videoSize
             BoxWithConstraints(
@@ -4123,8 +4124,8 @@ private fun VideoPlayerSectionContent(
                         sizeModifier
                             .onSizeChanged { measuredPlayerViewportSize = it }
                             .graphicsLayer {
-                                scaleX = if (isFlippedHorizontal) -scale else scale
-                                scaleY = if (isFlippedVertical) -scale else scale
+                                scaleX = if (effectiveFlippedHorizontal) -scale else scale
+                                scaleY = if (effectiveFlippedVertical) -scale else scale
                                 translationX = panX
                                 translationY = panY
                             }
@@ -4143,8 +4144,8 @@ private fun VideoPlayerSectionContent(
                                     height = viewportLayout.height.toDp(),
                                 )
                                 .graphicsLayer {
-                                    scaleX = if (isFlippedHorizontal) -scale else scale
-                                    scaleY = if (isFlippedVertical) -scale else scale
+                                    scaleX = if (effectiveFlippedHorizontal) -scale else scale
+                                    scaleY = if (effectiveFlippedVertical) -scale else scale
                                     translationX = panX
                                     translationY = panY
                                 }
@@ -4175,7 +4176,7 @@ private fun VideoPlayerSectionContent(
                                 }
                                 updateConfig(anime4kConfig)
                                 updateInputSize(videoSizeState.first, videoSizeState.second)
-                                updateFlip(isFlippedHorizontal, isFlippedVertical)
+                                updateFlip(effectiveFlippedHorizontal, effectiveFlippedVertical)
                                 updateDisplayScaleMode(viewportAspectRatio.toAnime4KDisplayScaleMode())
                                 visibility = View.VISIBLE
                             }
@@ -4200,7 +4201,7 @@ private fun VideoPlayerSectionContent(
                             }
                             surfaceView.updateConfig(anime4kConfig)
                             surfaceView.updateInputSize(videoSizeState.first, videoSizeState.second)
-                            surfaceView.updateFlip(isFlippedHorizontal, isFlippedVertical)
+                            surfaceView.updateFlip(effectiveFlippedHorizontal, effectiveFlippedVertical)
                             surfaceView.updateDisplayScaleMode(viewportAspectRatio.toAnime4KDisplayScaleMode())
                             surfaceView.visibility = View.VISIBLE
                         },
@@ -4760,7 +4761,7 @@ private fun VideoPlayerSectionContent(
                     AndroidView(
                         factory = { ctx ->
                             DanmakuRenderView(ctx).apply {
-                                danmakuManager.isFullscreenSurface = isFullscreen
+                                danmakuManager.useFullscreenTextSize = useFullscreenDanmakuBaseline
                                 danmakuManager.updateViewport(viewport)
                                 addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
                                     if (view.width > 0 && view.height > 0) danmakuManager.attachView(this)
@@ -4781,7 +4782,7 @@ private fun VideoPlayerSectionContent(
                             Logger.d("VideoPlayerSection") {
                                 "DanmakuView update: size=${view.width}x${view.height}, isFullscreen=$isFullscreen"
                             }
-                            danmakuManager.isFullscreenSurface = isFullscreen
+                            danmakuManager.useFullscreenTextSize = useFullscreenDanmakuBaseline
                             // 只有当视图有有效尺寸时才 re-attach
                             if (view.width > 0 && view.height > 0) {
                                 val sizeTag = "${view.width}x${view.height}"
@@ -5449,6 +5450,18 @@ private fun VideoPlayerSectionContent(
             }
         }
 
+        if (playerVisualWorkActive && uiState is VideoPlaybackUiState.Loading && !isInPipMode &&
+            !state.forceCoverOnly && !state.liveBackPreview && !suppressTransientOverlaysForTransition
+        ) {
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                com.android.purebilibili.feature.video.ui.overlay.BiliTvAnimatedBufferingIndicator(tint = Color.White)
+                AppText("正在加载", color = Color.White, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
         if (uiState is VideoPlaybackUiState.Success && !isInPipMode) {
             val currentPageIndex = uiState.info.pages.indexOfFirst { it.cid == uiState.info.cid }.coerceAtLeast(0)
             val displayedQualityId = resolveDisplayedQualityId(
@@ -5573,8 +5586,8 @@ private fun VideoPlayerSectionContent(
                     currentVideoUrl = uiState.playUrl,
                     currentAudioUrl = uiState.audioUrl ?: "",
                     coverUrl = uiState.info.pic,
-                    isFlippedHorizontal = isFlippedHorizontal,
-                    isFlippedVertical = isFlippedVertical,
+                    isFlippedHorizontal = effectiveFlippedHorizontal,
+                    isFlippedVertical = effectiveFlippedVertical,
                     //  [新增] CDN 线路切换
                     currentCdnIndex = currentCdnIndex,
                     cdnCount = cdnCount,
@@ -5701,8 +5714,16 @@ private fun VideoPlayerSectionContent(
                     },
                     //  [新增] 视频设置面板回调
                     onReloadVideo = onReloadVideo,
-                    onFlipHorizontal = { isFlippedHorizontal = !isFlippedHorizontal },
-                    onFlipVertical = { isFlippedVertical = !isFlippedVertical },
+                    onFlipHorizontal = {
+                        if (navigationHdrSurfaceRequired) {
+                            Toast.makeText(context, "HDR 原色输出不支持画面翻转，请先切换至普通画质", Toast.LENGTH_SHORT).show()
+                        } else isFlippedHorizontal = !isFlippedHorizontal
+                    },
+                    onFlipVertical = {
+                        if (navigationHdrSurfaceRequired) {
+                            Toast.makeText(context, "HDR 原色输出不支持画面翻转，请先切换至普通画质", Toast.LENGTH_SHORT).show()
+                        } else isFlippedVertical = !isFlippedVertical
+                    },
                     //  [新增] 画质切换（用于设置面板）
                     onQualityChange = { qid ->
                         onQualityChange(qid)
@@ -5872,6 +5893,20 @@ private fun VideoPlayerSectionContent(
                         },
                 ) {
                     renderVideoPlayerOverlay()
+                }
+            }
+
+            // 起播反馈独立于控制栏透明度；暂停、离页、离屏或返回预览时停止。
+            if (playerVisualWorkActive && !isFirstFrameRendered && isBuffering &&
+                playerState.player.playWhenReady && !keepCoverForManualStart &&
+                !state.forceCoverOnly && !state.liveBackPreview && !suppressTransientOverlaysForTransition
+            ) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center).padding(top = 88.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    com.android.purebilibili.feature.video.ui.overlay.BiliTvAnimatedBufferingIndicator(tint = Color.White)
+                    AppText("正在缓冲", color = Color.White, style = MaterialTheme.typography.labelMedium)
                 }
             }
 
